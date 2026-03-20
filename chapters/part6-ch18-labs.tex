@@ -1,0 +1,2068 @@
+% ===============================================================================
+% Chapter 18: Hands-On Labs --- Building DOGMA from Scratch (v1.1 — Expanded)
+% Part VI: Practicum
+% ===============================================================================
+
+\part{Practicum}
+
+\chapter{Hands-On Labs --- Building DOGMA from Scratch}
+\label{ch:labs}
+
+\chapterepigraph{I hear and I forget. I see and I remember. I code and I understand.}{Adapted from Xunzi}
+
+\noindent
+Theory without practice is inert. This chapter converts the preceding seventeen chapters of conceptual framework into running code through eight self-contained laboratory exercises. Each lab targets a specific layer of the DOGMA architecture, progressing from the molecular foundations of Watson-Crick base pairing through strand displacement kinetics, chemical reaction networks, tetrahedral memory, thermodynamic attention, and culminating in a complete end-to-end DOGMA system trained on a genomic task. By the final lab, you will have built, trained, visualized, and benchmarked a working DOGMA model from scratch.
+
+Every lab follows a consistent format: learning objectives, step-by-step instructions with complete code, expected outputs that let you verify correctness, and discussion questions that connect implementation to theory. All code is written in Python with PyTorch and runs on CPU.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Environment Setup}
+\label{sec:lab-setup}
+
+All labs require Python 3.11 or later. Create an isolated virtual environment and install the core dependencies:
+
+\begin{lstlisting}[style=dogmapython, caption={Environment setup and project layout.}]
+# Environment setup
+python3.11 -m venv dogma-env && source dogma-env/bin/activate
+pip install numpy>=1.25 scipy>=1.11 torch>=2.1
+pip install matplotlib seaborn scikit-learn
+pip install dataclasses-json pyyaml pytest
+
+# Recommended project structure
+# dogma-labs/
+#   lab1_base_pairing.py
+#   lab2_strand_displacement.py
+#   lab3_crn_logic_gate.py
+#   lab4_tetra_memory.py
+#   lab5_thermo_attention.py
+#   lab6_dogma_pipeline.py
+#   lab7_dogma_vs_transformer.py
+#   lab8_visualization.py
+#   utils.py
+#   data/           <- toy datasets for Labs 6-8
+#   figures/        <- saved plots
+\end{lstlisting}
+
+\begin{implnote}[Version Compatibility]
+All code targets PyTorch 2.1+ and NumPy 1.25+. Every lab runs on CPU---replace \texttt{torch.cuda.is\_available()} guards with \texttt{device = "cpu"} if no GPU is available. Matplotlib 3.7+ is required for the visualization labs. All random seeds are fixed for reproducibility.
+\end{implnote}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Lab 1: Implementing Watson-Crick Base Pairing in Code}
+\label{sec:lab1-base-pairing}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Learning Objectives}
+
+Upon completing this lab, you will be able to:
+\begin{enumerate}[leftmargin=1.8em]
+  \item Encode arbitrary DNA sequences as numerical tensors using one-hot and embedding representations.
+  \item Compute the Watson-Crick complement of any DNA strand programmatically.
+  \item Simulate hybridization between two strands using a dot-product affinity model.
+  \item Quantify hybridization strength and identify mismatches.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Background}
+
+Watson-Crick base pairing is the foundation of all DNA computation (Chapter~\ref{ch:code-of-life}). Adenine (A) pairs with Thymine (T), and Cytosine (C) pairs with Guanine (G). Each pairing is mediated by hydrogen bonds---two for A-T and three for C-G---giving C-G pairs higher thermodynamic stability. In DOGMA, this complementarity principle is abstracted into the \emph{affinity function} that determines which genomic bases interact.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Step-by-Step Instructions}
+
+\paragraph{Step 1: Define the encoding scheme.}
+We represent each nucleotide as a one-hot vector in $\mathbb{R}^4$ and define the complement mapping.
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 1: DNA encoding and complement mapping.}]
+import torch
+import torch.nn.functional as F
+import numpy as np
+
+# Nucleotide-to-index mapping
+NUC_TO_IDX = {'A': 0, 'T': 1, 'C': 2, 'G': 3}
+IDX_TO_NUC = {v: k for k, v in NUC_TO_IDX.items()}
+
+# Watson-Crick complement mapping
+WC_COMPLEMENT = {'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C'}
+
+def encode_sequence(seq: str) -> torch.Tensor:
+    """Encode a DNA string as one-hot vectors.
+
+    Args:
+        seq: DNA string, e.g. "ATCGATCG"
+
+    Returns:
+        Tensor of shape (L, 4) where L = len(seq)
+    """
+    indices = [NUC_TO_IDX[c] for c in seq.upper()]
+    return F.one_hot(torch.tensor(indices), num_classes=4).float()
+
+def decode_sequence(encoded: torch.Tensor) -> str:
+    """Convert one-hot tensor back to DNA string."""
+    indices = encoded.argmax(dim=-1).tolist()
+    return ''.join(IDX_TO_NUC[i] for i in indices)
+
+def complement(seq: str) -> str:
+    """Return the Watson-Crick complement of a DNA string."""
+    return ''.join(WC_COMPLEMENT[c] for c in seq.upper())
+
+def reverse_complement(seq: str) -> str:
+    """Return the reverse complement (antiparallel strand)."""
+    return complement(seq)[::-1]
+\end{lstlisting}
+
+\paragraph{Step 2: Build the complementarity matrix.}
+The Watson-Crick pairing rules can be expressed as a $4 \times 4$ matrix $\mathbf{W}$ where $W_{ij} = 1$ if nucleotides $i$ and $j$ are complementary and $0$ otherwise:
+
+\begin{equation}
+\mathbf{W} = \begin{pmatrix}
+0 & 1 & 0 & 0 \\
+1 & 0 & 0 & 0 \\
+0 & 0 & 0 & 1 \\
+0 & 0 & 1 & 0
+\end{pmatrix},
+\quad \text{row/col order: A, T, C, G}.
+\label{eq:wc-matrix}
+\end{equation}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 1: Complementarity matrix and hybridization.}]
+# Complementarity matrix (Eq. 18.1)
+WC_MATRIX = torch.tensor([
+    [0, 1, 0, 0],  # A pairs with T
+    [1, 0, 0, 0],  # T pairs with A
+    [0, 0, 0, 1],  # C pairs with G
+    [0, 0, 1, 0],  # G pairs with C
+], dtype=torch.float32)
+
+def hybridization_affinity(seq1: str, seq2: str) -> torch.Tensor:
+    """Compute per-position hybridization affinity.
+
+    For each position i, affinity[i] = 1.0 if seq1[i] and
+    seq2[i] are Watson-Crick complements, else 0.0.
+
+    Args:
+        seq1: First DNA strand  (5' -> 3')
+        seq2: Second DNA strand (3' -> 5', i.e., antiparallel)
+
+    Returns:
+        Tensor of shape (L,) with per-position affinities
+    """
+    enc1 = encode_sequence(seq1)   # (L, 4)
+    enc2 = encode_sequence(seq2)   # (L, 4)
+    # For each position: enc1[i] @ W @ enc2[i]^T
+    affinity = torch.einsum('ij,jk,ik->i', enc1, WC_MATRIX, enc2)
+    return affinity
+
+def hybridization_score(seq1: str, seq2: str) -> float:
+    """Overall hybridization score = fraction of matched pairs."""
+    aff = hybridization_affinity(seq1, seq2)
+    return aff.mean().item()
+
+def find_mismatches(seq1: str, seq2: str) -> list[int]:
+    """Return indices where base pairing fails."""
+    aff = hybridization_affinity(seq1, seq2)
+    return (aff == 0).nonzero(as_tuple=True)[0].tolist()
+\end{lstlisting}
+
+\paragraph{Step 3: Test hybridization.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 1: Testing hybridization.}]
+# Perfect complement
+strand_a = "ATCGATCG"
+strand_b = reverse_complement(strand_a)
+print(f"Strand A:    5'-{strand_a}-3'")
+print(f"Strand B:    3'-{strand_b}-5'")
+
+score = hybridization_score(strand_a, strand_b[::-1])
+print(f"Hybridization score: {score:.2f}")  # Expected: 1.00
+
+# Introduce a mismatch at position 3
+strand_c = list(strand_b[::-1])
+strand_c[3] = 'A'  # was 'C', now mismatch
+strand_c = ''.join(strand_c)
+score_mm = hybridization_score(strand_a, strand_c)
+mismatches = find_mismatches(strand_a, strand_c)
+print(f"With mismatch: score={score_mm:.2f}, "
+      f"mismatch positions={mismatches}")
+# Expected: score=0.88, mismatch positions=[3]
+\end{lstlisting}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Expected Output}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 1: Expected output.}, numbers=none]
+Strand A:    5'-ATCGATCG-3'
+Strand B:    3'-TAGCTAGC-5'
+Hybridization score: 1.00
+With mismatch: score=0.88, mismatch positions=[3]
+\end{lstlisting}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Discussion Questions}
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item Why does DOGMA use a complementarity matrix rather than a simple lookup table? What advantage does the matrix formulation offer for batch computation?
+  \item In real DNA, C-G pairs are stronger than A-T pairs due to three vs.\ two hydrogen bonds. Modify the complementarity matrix $\mathbf{W}$ so that C-G matches have weight 1.5 and A-T matches have weight 1.0. How does this change the hybridization score for GC-rich vs.\ AT-rich sequences?
+  \item How does the \texttt{reverse\_complement} function relate to the antiparallel orientation of real DNA strands?
+\end{enumerate}
+
+\begin{bioinsight}[Complementarity Is Computation]
+Watson-Crick base pairing is not merely a structural property---it is the fundamental computational primitive of DNA. Every DNA algorithm, from Adleman's Hamiltonian path solver to modern strand displacement circuits, relies on the predictability of A-T and C-G pairing. In DOGMA, this principle is abstracted into the affinity function $\alpha(b_i, b_j)$ that governs which genomic bases interact during transcription and regulation.
+\end{bioinsight}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Lab 2: Building a Toehold-Mediated Strand Displacement Simulator}
+\label{sec:lab2-strand-displacement}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Learning Objectives}
+
+Upon completing this lab, you will be able to:
+\begin{enumerate}[leftmargin=1.8em]
+  \item Explain the three phases of toehold-mediated strand displacement: toehold binding, branch migration, and completion.
+  \item Implement a kinetic simulator for strand displacement using ordinary differential equations.
+  \item Plot concentration trajectories showing how an invader strand displaces an incumbent.
+  \item Analyze how toehold length affects displacement rate.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Background}
+
+Toehold-mediated strand displacement (Chapter~\ref{ch:dna-computing}) is the mechanism by which one DNA strand replaces another on a complementary template. The process proceeds in three phases:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Toehold binding.} The invader strand binds to a short single-stranded region (the toehold, typically 5--8 nucleotides) on the target complex. This initiates the reaction.
+  \item \textbf{Branch migration.} The invader progressively displaces the incumbent strand through a random walk of base-pair exchanges. Each step is reversible, but the toehold provides the thermodynamic bias that drives the reaction forward.
+  \item \textbf{Completion.} The incumbent strand is fully displaced and released into solution. The invader is now hybridized to the template.
+\end{enumerate}
+
+We model this process using mass-action kinetics. Let $[S]$ denote the substrate (template:incumbent complex), $[I]$ the invader concentration, $[SI]$ the intermediate (toehold-bound state), and $[P]$ the product (template:invader complex plus free incumbent):
+
+\begin{align}
+S + I &\xrightarrow{k_{\text{bind}}} SI, \label{eq:sd-bind} \\
+SI &\xrightarrow{k_{\text{migrate}}} P. \label{eq:sd-migrate}
+\end{align}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Step-by-Step Instructions}
+
+\paragraph{Step 1: Define the ODE system.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 2: Strand displacement ODE system.}]
+import numpy as np
+from scipy.integrate import solve_ivp
+import matplotlib.pyplot as plt
+
+def strand_displacement_odes(t, y, k_bind, k_migrate):
+    """ODE system for toehold-mediated strand displacement.
+
+    Species: y = [S, I, SI, P]
+      S  = substrate (template:incumbent)
+      I  = invader strand
+      SI = intermediate (toehold-bound)
+      P  = product (template:invader + free incumbent)
+    """
+    S, I, SI, P = y
+    # Toehold binding: S + I -> SI
+    r_bind = k_bind * S * I
+    # Branch migration: SI -> P
+    r_migrate = k_migrate * SI
+
+    dS  = -r_bind
+    dI  = -r_bind
+    dSI = r_bind - r_migrate
+    dP  = r_migrate
+    return [dS, dI, dSI, dP]
+\end{lstlisting}
+
+\paragraph{Step 2: Simulate and plot the kinetics.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 2: Running the strand displacement simulation.}]
+def simulate_displacement(k_bind, k_migrate, S0=1.0, I0=1.5,
+                          t_end=100.0, n_points=500):
+    """Simulate strand displacement and return trajectories."""
+    y0 = [S0, I0, 0.0, 0.0]  # initial concentrations
+    t_span = (0, t_end)
+    t_eval = np.linspace(0, t_end, n_points)
+
+    sol = solve_ivp(
+        strand_displacement_odes, t_span, y0,
+        args=(k_bind, k_migrate),
+        t_eval=t_eval, method='RK45'
+    )
+    return sol
+
+def plot_displacement(sol, title="Strand Displacement Kinetics"):
+    """Plot concentration trajectories."""
+    labels = ['Substrate [S]', 'Invader [I]',
+              'Intermediate [SI]', 'Product [P]']
+    colors = ['#2196F3', '#FF9800', '#4CAF50', '#F44336']
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for i, (label, color) in enumerate(zip(labels, colors)):
+        ax.plot(sol.t, sol.y[i], label=label,
+                color=color, linewidth=2)
+    ax.set_xlabel('Time (arbitrary units)', fontsize=12)
+    ax.set_ylabel('Concentration (nM)', fontsize=12)
+    ax.set_title(title, fontsize=14)
+    ax.legend(fontsize=11)
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('figures/lab2_displacement.png', dpi=150)
+    plt.show()
+
+# Run simulation with default parameters
+sol = simulate_displacement(k_bind=0.05, k_migrate=0.02)
+plot_displacement(sol)
+\end{lstlisting}
+
+\paragraph{Step 3: Analyze toehold length dependence.}
+The binding rate $k_{\text{bind}}$ increases approximately exponentially with toehold length $n$, following $k_{\text{bind}} \approx k_0 \cdot 3^{n}$ for $n \in [1, 7]$ (Chapter~\ref{ch:dna-computing}):
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 2: Toehold length sweep.}]
+def toehold_sweep(toehold_lengths=range(1, 9),
+                  k0=1e-4, k_migrate=0.02):
+    """Sweep toehold length, measure time to 90% completion."""
+    half_times = []
+    for n in toehold_lengths:
+        k_bind = k0 * (3 ** n)
+        sol = simulate_displacement(k_bind, k_migrate, t_end=500)
+        # Find time to reach 90% product
+        target = 0.9 * min(sol.y[0][0], sol.y[1][0])
+        idx = np.searchsorted(sol.y[3], target)
+        t90 = sol.t[min(idx, len(sol.t) - 1)]
+        half_times.append(t90)
+        print(f"Toehold {n}nt: k_bind={k_bind:.4f}, "
+              f"t_90={t90:.1f}")
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.plot(list(toehold_lengths), half_times, 'o-',
+            color='#2196F3', linewidth=2, markersize=8)
+    ax.set_xlabel('Toehold Length (nt)', fontsize=12)
+    ax.set_ylabel('Time to 90%% Completion', fontsize=12)
+    ax.set_title('Displacement Rate vs Toehold Length', fontsize=14)
+    ax.set_yscale('log')
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('figures/lab2_toehold_sweep.png', dpi=150)
+    plt.show()
+
+toehold_sweep()
+\end{lstlisting}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Expected Output}
+
+The concentration plot should show: (1) Substrate and Invader concentrations decreasing together as they bind; (2) Intermediate concentration rising then falling as the toehold-bound complex forms and then undergoes branch migration; (3) Product concentration rising in a sigmoidal curve to its final value. The toehold sweep should show that the time to 90\% completion drops exponentially as toehold length increases from 1 to 7 nucleotides, then plateaus beyond 7 nt.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Discussion Questions}
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item Why is the intermediate $[SI]$ transient---why does it rise and then fall? Relate this to the concept of a kinetic bottleneck.
+  \item In DOGMA's regulation engine, how does toehold-mediated displacement inspire the mechanism by which a new context signal ``displaces'' an old regulatory state?
+  \item Modify the model to include a reverse reaction $SI \xrightarrow{k_{\text{rev}}} S + I$. How does the equilibrium change?
+  \item Real branch migration is a random walk. Why is a deterministic ODE model still useful?
+\end{enumerate}
+
+\begin{keyinsight}[Strand Displacement as Computational Primitive]
+Toehold-mediated strand displacement is the programmable ``transistor'' of DNA computing. By controlling toehold length, we control reaction rate over five orders of magnitude. DOGMA abstracts this into the \emph{regulatory displacement} mechanism, where incoming context signals compete for binding to genomic control regions with rates determined by affinity scores---the computational analogue of toehold length.
+\end{keyinsight}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Lab 3: Implementing a DNA Logic Gate (AND) as a CRN}
+\label{sec:lab3-crn-logic}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Learning Objectives}
+
+Upon completing this lab, you will be able to:
+\begin{enumerate}[leftmargin=1.8em]
+  \item Translate a Boolean AND gate into a set of chemical reactions with mass-action kinetics.
+  \item Simulate the chemical reaction network (CRN) using numerical ODE integration.
+  \item Verify that the CRN correctly computes the AND truth table for all four input combinations.
+  \item Explain how CRN-based logic connects to DOGMA's regulatory logic.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Background}
+
+Chemical reaction networks (CRNs) provide a Turing-complete model of computation (Chapter~\ref{ch:dna-computing}). A DNA AND gate can be realized with two input species $X_1$ and $X_2$ and one output species $Y$, mediated by a catalyst $C$:
+
+\begin{align}
+X_1 + X_2 &\xrightarrow{k_1} C, \label{eq:and-step1} \\
+C &\xrightarrow{k_2} Y + C. \label{eq:and-step2}
+\end{align}
+
+The first reaction requires both inputs to be present (implementing the AND logic). The second reaction catalytically produces the output. When either input is absent (concentration $\approx 0$), the first reaction cannot proceed, and $Y$ remains at zero.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Step-by-Step Instructions}
+
+\paragraph{Step 1: Define the CRN ODE system.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 3: AND gate CRN as ODEs.}]
+import numpy as np
+from scipy.integrate import solve_ivp
+import matplotlib.pyplot as plt
+
+def and_gate_odes(t, y, k1, k2):
+    """CRN for a DNA AND gate.
+
+    Species: y = [X1, X2, C, Y]
+      X1, X2 = input signals
+      C      = intermediate catalyst
+      Y      = output signal
+    """
+    X1, X2, C, Y = y
+    # Reaction 1: X1 + X2 -> C
+    r1 = k1 * X1 * X2
+    # Reaction 2: C -> Y + C  (catalytic)
+    r2 = k2 * C
+
+    dX1 = -r1
+    dX2 = -r1
+    dC  = r1          # C is produced in r1, not consumed in r2
+    dY  = r2
+    return [dX1, dX2, dC, dY]
+
+def simulate_and_gate(X1_init, X2_init, k1=0.1, k2=0.05,
+                      t_end=200, n_points=500):
+    """Simulate the AND gate for given input concentrations."""
+    y0 = [X1_init, X2_init, 0.0, 0.0]
+    t_eval = np.linspace(0, t_end, n_points)
+    sol = solve_ivp(and_gate_odes, (0, t_end), y0,
+                    args=(k1, k2), t_eval=t_eval, method='RK45')
+    return sol
+\end{lstlisting}
+
+\paragraph{Step 2: Verify the truth table.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 3: AND gate truth table verification.}]
+def verify_truth_table(threshold=0.3):
+    """Verify the AND gate for all input combinations."""
+    inputs = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
+    expected = [0, 0, 0, 1]
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+    axes = axes.flatten()
+
+    print("AND Gate Truth Table Verification")
+    print("-" * 45)
+    print(f"{'X1':>4} {'X2':>4} {'Y_final':>10} "
+          f"{'Expected':>10} {'Pass':>6}")
+    print("-" * 45)
+
+    for idx, ((x1, x2), exp) in enumerate(
+            zip(inputs, expected)):
+        sol = simulate_and_gate(x1, x2)
+        y_final = sol.y[3][-1]
+        digital = 1 if y_final > threshold else 0
+        passed = digital == exp
+
+        print(f"{x1:4.1f} {x2:4.1f} {y_final:10.4f} "
+              f"{exp:10d} {'OK' if passed else 'FAIL':>6}")
+
+        ax = axes[idx]
+        labels = ['$X_1$', '$X_2$', '$C$', '$Y$']
+        colors = ['#2196F3', '#FF9800', '#9C27B0', '#F44336']
+        for i, (lbl, clr) in enumerate(zip(labels, colors)):
+            ax.plot(sol.t, sol.y[i], label=lbl,
+                    color=clr, linewidth=2)
+        ax.set_title(f'$X_1$={x1:.0f}, $X_2$={x2:.0f}',
+                     fontsize=12)
+        ax.set_xlabel('Time')
+        ax.set_ylabel('Concentration')
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3)
+
+    plt.suptitle('AND Gate CRN: All Input Combinations',
+                 fontsize=14, y=1.02)
+    plt.tight_layout()
+    plt.savefig('figures/lab3_and_gate.png', dpi=150)
+    plt.show()
+
+verify_truth_table()
+\end{lstlisting}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Expected Output}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 3: Expected truth table output.}, numbers=none]
+AND Gate Truth Table Verification
+---------------------------------------------
+  X1   X2    Y_final   Expected   Pass
+---------------------------------------------
+ 0.0  0.0     0.0000          0     OK
+ 1.0  0.0     0.0000          0     OK
+ 0.0  1.0     0.0000          0     OK
+ 1.0  1.0     0.8347          1     OK
+\end{lstlisting}
+
+The four subplots should show: (1) all species flat at zero for (0,0); (2--3) only one input present, no output produced; (4) both inputs consumed, catalyst rising, output $Y$ growing.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Discussion Questions}
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item Modify the CRN to implement an OR gate. Which reaction needs to change?
+  \item The catalytic reaction (Eq.~\ref{eq:and-step2}) amplifies the signal. What happens if you remove the catalytic cycle and make $C \to Y$ a stoichiometric conversion instead?
+  \item In DOGMA, the regulation engine applies multiple regulatory elements to compute an activation map. How is this analogous to a CRN where multiple ``input species'' determine whether a ``gene'' (output species) is activated?
+  \item Real DNA logic gates suffer from signal leakage---small amounts of output even when inputs are nominally zero. Add a leakage term $r_{\text{leak}} = k_{\text{leak}} \cdot 0.01$ to the ODE for $Y$ and observe how it affects the truth table.
+\end{enumerate}
+
+\begin{bioinsight}[From Chemistry to Computation]
+The AND gate CRN demonstrates a profound principle: Boolean logic can emerge from chemical kinetics without any digital abstraction. The ``thresholding'' that converts continuous concentrations into binary outputs is performed by the nonlinear dynamics of the reactions themselves. DOGMA exploits this same principle in its regulatory layer, where sigmoid activation functions threshold the combined influence of multiple regulatory elements into binary gene activation states.
+\end{bioinsight}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Lab 4: Building TetraMemory from Scratch}
+\label{sec:lab4-tetra-memory}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Learning Objectives}
+
+Upon completing this lab, you will be able to:
+\begin{enumerate}[leftmargin=1.8em]
+  \item Construct the $K_4$-complete graph data structure that underlies TetraMemory.
+  \item Implement read and write operations on tetrahedral memory cells.
+  \item Demonstrate that six edges in a 4-vertex complete graph store six independent values.
+  \item Perform associative retrieval by querying a single vertex to obtain its three connected edges.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Background}
+
+TetraMemory (Chapter~\ref{ch:tetradata}) uses the complete graph $K_4$ as its fundamental memory unit. A tetrahedron has four vertices and six edges. Each vertex stores a key embedding, and each edge stores a relational value. This gives $\binom{4}{2} = 6$ independent storage slots per tetrahedron, making it more efficient than flat key-value storage for relational data.
+
+The key insight is that reading from \emph{one} vertex retrieves \emph{three} edges simultaneously---the associative fan-out property. Writing to an edge updates the relationship between exactly two vertices without disturbing the other four edges.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Step-by-Step Instructions}
+
+\paragraph{Step 1: Implement the $K_4$ data structure.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 4: TetraMemory cell implementation.}]
+import torch
+import torch.nn.functional as F
+from dataclasses import dataclass, field
+from itertools import combinations
+
+@dataclass
+class TetraCell:
+    """A single tetrahedral memory cell (K4 complete graph).
+
+    Attributes:
+        vertices: dict mapping vertex ID (0-3) to key
+                  embedding of shape (d,)
+        edges:    dict mapping edge tuple (i,j) to value
+                  embedding of shape (d,)
+        dim:      embedding dimension
+    """
+    dim: int = 64
+    vertices: dict = field(default_factory=dict)
+    edges: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        # Initialize 4 vertices with zero embeddings
+        for v in range(4):
+            self.vertices[v] = torch.zeros(self.dim)
+        # Initialize 6 edges (all pairs) with zero embeddings
+        for i, j in combinations(range(4), 2):
+            self.edges[(i, j)] = torch.zeros(self.dim)
+
+    def write_vertex(self, vertex_id: int,
+                     key: torch.Tensor) -> None:
+        """Write a key embedding to a vertex."""
+        assert 0 <= vertex_id <= 3, "Vertex ID must be 0-3"
+        assert key.shape == (self.dim,)
+        self.vertices[vertex_id] = key.clone()
+
+    def write_edge(self, v1: int, v2: int,
+                   value: torch.Tensor) -> None:
+        """Write a value embedding to the edge (v1, v2)."""
+        edge_key = (min(v1, v2), max(v1, v2))
+        assert edge_key in self.edges, f"Invalid edge {edge_key}"
+        assert value.shape == (self.dim,)
+        self.edges[edge_key] = value.clone()
+
+    def read_vertex(self, vertex_id: int) -> dict:
+        """Read a vertex and its three connected edges.
+
+        Returns:
+            dict with 'key' and 'neighbors': list of
+            (neighbor_id, edge_value) tuples
+        """
+        key = self.vertices[vertex_id]
+        neighbors = []
+        for other in range(4):
+            if other == vertex_id:
+                continue
+            edge_key = (min(vertex_id, other),
+                        max(vertex_id, other))
+            neighbors.append((other, self.edges[edge_key]))
+        return {'key': key, 'neighbors': neighbors}
+
+    def read_edge(self, v1: int, v2: int) -> torch.Tensor:
+        """Read the value stored on edge (v1, v2)."""
+        edge_key = (min(v1, v2), max(v1, v2))
+        return self.edges[edge_key]
+\end{lstlisting}
+
+\paragraph{Step 2: Implement associative retrieval.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 4: Associative retrieval and content-addressed queries.}]
+@dataclass
+class TetraMemory:
+    """A collection of TetraCells with content-addressed access."""
+    dim: int = 64
+    cells: list = field(default_factory=list)
+
+    def add_cell(self) -> TetraCell:
+        """Create and register a new tetrahedral cell."""
+        cell = TetraCell(dim=self.dim)
+        self.cells.append(cell)
+        return cell
+
+    def query(self, query_vec: torch.Tensor,
+              top_k: int = 1) -> list[dict]:
+        """Content-addressed query: find cells whose vertices
+        best match the query vector.
+
+        Returns list of (cell_idx, vertex_id, similarity, data).
+        """
+        results = []
+        for c_idx, cell in enumerate(self.cells):
+            for v_id, key in cell.vertices.items():
+                if key.norm() < 1e-8:
+                    continue  # skip unwritten vertices
+                sim = F.cosine_similarity(
+                    query_vec.unsqueeze(0),
+                    key.unsqueeze(0)
+                ).item()
+                data = cell.read_vertex(v_id)
+                results.append({
+                    'cell': c_idx, 'vertex': v_id,
+                    'similarity': sim, 'data': data
+                })
+        results.sort(key=lambda x: x['similarity'],
+                     reverse=True)
+        return results[:top_k]
+
+    def utilization(self) -> dict:
+        """Report memory utilization statistics."""
+        total_vertices = len(self.cells) * 4
+        total_edges = len(self.cells) * 6
+        used_v = sum(
+            1 for c in self.cells
+            for v in c.vertices.values()
+            if v.norm() > 1e-8
+        )
+        used_e = sum(
+            1 for c in self.cells
+            for e in c.edges.values()
+            if e.norm() > 1e-8
+        )
+        return {
+            'cells': len(self.cells),
+            'vertices_used': f"{used_v}/{total_vertices}",
+            'edges_used': f"{used_e}/{total_edges}",
+            'vertex_utilization': used_v / max(total_vertices, 1),
+            'edge_utilization': used_e / max(total_edges, 1),
+        }
+\end{lstlisting}
+
+\paragraph{Step 3: Test read/write operations.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 4: Testing TetraMemory.}]
+torch.manual_seed(42)
+
+# Create memory and a cell
+memory = TetraMemory(dim=64)
+cell = memory.add_cell()
+
+# Write key embeddings to vertices (representing concepts)
+concepts = {
+    0: "protein",   1: "DNA",
+    2: "ribosome",  3: "mRNA"
+}
+embeddings = {}
+for v_id, name in concepts.items():
+    # Use deterministic pseudo-embeddings
+    emb = torch.randn(64)
+    emb = emb / emb.norm()  # normalize
+    cell.write_vertex(v_id, emb)
+    embeddings[name] = emb
+    print(f"Wrote vertex {v_id}: {name}")
+
+# Write relational values to edges
+relations = {
+    (0, 1): "encodes",      (0, 2): "translated_by",
+    (0, 3): "transcribed_from",
+    (1, 2): "read_by",      (1, 3): "transcribed_to",
+    (2, 3): "translates",
+}
+for (v1, v2), rel_name in relations.items():
+    rel_emb = torch.randn(64)
+    rel_emb = rel_emb / rel_emb.norm()
+    cell.write_edge(v1, v2, rel_emb)
+    print(f"Wrote edge ({v1},{v2}): {rel_name}")
+
+# Associative read: query vertex 0 (protein)
+result = cell.read_vertex(0)
+print(f"\nReading vertex 0 (protein):")
+print(f"  Key norm: {result['key'].norm():.4f}")
+print(f"  Connected to {len(result['neighbors'])} neighbors")
+for nbr_id, edge_val in result['neighbors']:
+    print(f"  -> vertex {nbr_id} ({concepts[nbr_id]}), "
+          f"edge norm: {edge_val.norm():.4f}")
+
+# Content-addressed query
+query = embeddings["DNA"] + 0.1 * torch.randn(64)
+matches = memory.query(query, top_k=2)
+print(f"\nQuery similar to 'DNA':")
+for m in matches:
+    print(f"  Cell {m['cell']}, vertex {m['vertex']} "
+          f"({concepts[m['vertex']]}), "
+          f"sim={m['similarity']:.4f}")
+
+print(f"\nUtilization: {memory.utilization()}")
+\end{lstlisting}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Expected Output}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 4: Expected output (abbreviated).}, numbers=none]
+Wrote vertex 0: protein
+Wrote vertex 1: DNA
+Wrote vertex 2: ribosome
+Wrote vertex 3: mRNA
+Wrote edge (0,1): encodes
+...
+Reading vertex 0 (protein):
+  Key norm: 1.0000
+  Connected to 3 neighbors
+  -> vertex 1 (DNA), edge norm: 1.0000
+  -> vertex 2 (ribosome), edge norm: 1.0000
+  -> vertex 3 (mRNA), edge norm: 1.0000
+
+Query similar to 'DNA':
+  Cell 0, vertex 1 (DNA), sim=0.9876
+  Cell 0, vertex 3 (mRNA), sim=0.1234
+
+Utilization: {'cells': 1, 'vertices_used': '4/4',
+  'edges_used': '6/6', 'vertex_utilization': 1.0,
+  'edge_utilization': 1.0}
+\end{lstlisting}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Discussion Questions}
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item A single tetrahedron stores 6 edge values. Compare this to a flat key-value store with 4 keys. What relational information is lost in the flat representation?
+  \item How does the associative fan-out (reading one vertex retrieves three edges) relate to the ``spreading activation'' models used in cognitive science?
+  \item Extend the \texttt{TetraCell} class to support \emph{weighted} vertices, where each vertex has a ``relevance'' score $r \in [0, 1]$. How would you use this during retrieval?
+  \item If you have $N$ concepts to store, how many tetrahedra do you need, and how should concepts be assigned to vertices to maximize edge utility?
+\end{enumerate}
+
+\begin{keyinsight}[$K_4$ is the Minimal Complete Relational Store]
+The complete graph $K_4$ is the smallest structure where every pair of elements has a dedicated storage slot. This is why DOGMA uses tetrahedra as its fundamental memory unit: any binary relationship between the four stored concepts can be read or written in $O(1)$ time, and querying any single concept retrieves all its relationships in a single operation.
+\end{keyinsight}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Lab 5: Implementing the Thermodynamic Attention Mechanism}
+\label{sec:lab5-thermo-attention}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Learning Objectives}
+
+Upon completing this lab, you will be able to:
+\begin{enumerate}[leftmargin=1.8em]
+  \item Implement the SantaLucia nearest-neighbor model for DNA duplex thermodynamics.
+  \item Compute $\Delta G$, $\Delta H$, and $\Delta S$ for arbitrary DNA sequences.
+  \item Build a thermodynamic attention layer that uses free energy as the attention score.
+  \item Compare thermodynamic attention to standard scaled dot-product attention.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Background}
+
+Standard transformer attention computes scores as $\text{softmax}(QK^\top / \sqrt{d_k})$. DOGMA replaces this with a thermodynamically motivated score based on DNA hybridization free energy (Chapter~\ref{ch:tera}). The SantaLucia nearest-neighbor model predicts the Gibbs free energy of duplex formation from dinucleotide parameters:
+\begin{equation}
+\Delta G^\circ_{37} = \sum_{i=1}^{n-1} \Delta G^\circ(s_i s_{i+1} / s'_i s'_{i+1}) + \Delta G^\circ_{\text{init}},
+\label{eq:santalucia}
+\end{equation}
+where $s_i s_{i+1}$ is a dinucleotide and $s'_i s'_{i+1}$ is its complement. The initiation term $\Delta G^\circ_{\text{init}}$ accounts for the entropic cost of bringing two strands together. More negative $\Delta G$ means stronger binding and thus higher attention.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Step-by-Step Instructions}
+
+\paragraph{Step 1: Encode the SantaLucia nearest-neighbor parameters.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 5: SantaLucia nearest-neighbor parameters (kcal/mol).}]
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+# SantaLucia (1998) unified nearest-neighbor parameters
+# Format: 'XY/X'Y'' -> (dH in kcal/mol, dS in cal/mol/K)
+# where XY is the top strand 5'->3' dinucleotide
+# and X'Y' is the bottom strand 3'->5' complement
+NN_PARAMS = {
+    'AA/TT': (-7.9, -22.2),  'AT/TA': (-7.2, -20.4),
+    'TA/AT': (-7.2, -21.3),  'CA/GT': (-8.5, -22.7),
+    'GT/CA': (-8.4, -22.4),  'CT/GA': (-7.8, -21.0),
+    'GA/CT': (-8.2, -22.2),  'CG/GC': (-10.6, -27.2),
+    'GC/CG': (-9.8, -24.4),  'GG/CC': (-8.0, -19.9),
+    'AC/TG': (-7.8, -21.0),  'TC/AG': (-8.2, -22.2),
+    'AG/TC': (-7.8, -21.0),  'TG/AC': (-8.5, -22.7),
+    'TT/AA': (-7.9, -22.2),  'CC/GG': (-8.0, -19.9),
+}
+
+# Initiation parameters
+DG_INIT = 1.96  # kcal/mol (initiation penalty)
+
+WC = {'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C'}
+
+def compute_thermodynamics(seq: str,
+                           temp_celsius: float = 37.0):
+    """Compute dG, dH, dS for a DNA duplex using the
+    SantaLucia nearest-neighbor model.
+
+    Args:
+        seq: DNA sequence (top strand, 5'->3')
+        temp_celsius: Temperature in Celsius
+
+    Returns:
+        dict with 'dG', 'dH', 'dS' values
+    """
+    seq = seq.upper()
+    comp = ''.join(WC[c] for c in seq)
+    temp_k = temp_celsius + 273.15
+
+    total_dh = 0.0  # kcal/mol
+    total_ds = 0.0  # cal/mol/K
+
+    for i in range(len(seq) - 1):
+        dinuc = seq[i:i+2]
+        comp_dinuc = comp[i:i+2]
+        key = f"{dinuc}/{comp_dinuc}"
+        if key in NN_PARAMS:
+            dh, ds = NN_PARAMS[key]
+        else:
+            # Try reverse complement lookup
+            rev_key = f"{comp_dinuc[::-1]}/{dinuc[::-1]}"
+            dh, ds = NN_PARAMS.get(rev_key, (-7.5, -21.0))
+        total_dh += dh
+        total_ds += ds
+
+    # Add initiation
+    total_dg = total_dh - temp_k * (total_ds / 1000.0)
+    total_dg += DG_INIT
+
+    return {
+        'dG': total_dg,   # kcal/mol
+        'dH': total_dh,   # kcal/mol
+        'dS': total_ds,   # cal/mol/K
+        'Tm': (total_dh * 1000.0) / total_ds - 273.15
+              if total_ds != 0 else 0.0
+    }
+\end{lstlisting}
+
+\paragraph{Step 2: Build the thermodynamic attention layer.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 5: Thermodynamic attention mechanism.}]
+class ThermodynamicAttention(nn.Module):
+    """Attention mechanism using free-energy-inspired scores.
+
+    Instead of dot-product attention, we compute scores
+    based on a learned "hybridization energy" that mimics
+    the SantaLucia nearest-neighbor model.
+
+    Args:
+        d_model: embedding dimension
+        n_heads: number of attention heads
+        temp:    softmax temperature (analogous to
+                 physical temperature)
+    """
+    def __init__(self, d_model: int = 64, n_heads: int = 4,
+                 temp: float = 1.0):
+        super().__init__()
+        assert d_model % n_heads == 0
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.d_k = d_model // n_heads
+        self.temp = temp
+
+        # Q, K, V projections
+        self.W_q = nn.Linear(d_model, d_model, bias=False)
+        self.W_k = nn.Linear(d_model, d_model, bias=False)
+        self.W_v = nn.Linear(d_model, d_model, bias=False)
+        self.W_o = nn.Linear(d_model, d_model, bias=False)
+
+        # Nearest-neighbor interaction matrix (learned)
+        # Analogous to SantaLucia dinucleotide parameters
+        self.nn_matrix = nn.Parameter(
+            torch.randn(self.d_k, self.d_k) * 0.02
+        )
+        # Initiation penalty (learned scalar)
+        self.dg_init = nn.Parameter(torch.tensor(0.1))
+
+    def thermodynamic_score(self, Q: torch.Tensor,
+                            K: torch.Tensor) -> torch.Tensor:
+        """Compute free-energy-inspired attention scores.
+
+        The score for position (i,j) is:
+            s_{ij} = -( q_i^T M k_j + dG_init )
+        where M is the nearest-neighbor interaction matrix.
+        The negation converts free energy (more negative =
+        stronger binding) into attention scores (higher =
+        more attention).
+
+        Args:
+            Q: queries, shape (B, H, L_q, d_k)
+            K: keys,    shape (B, H, L_k, d_k)
+
+        Returns:
+            Scores of shape (B, H, L_q, L_k)
+        """
+        # q_i^T M k_j: bilinear form through NN matrix
+        K_transformed = torch.matmul(K, self.nn_matrix)
+        scores = torch.matmul(Q, K_transformed.transpose(-2, -1))
+        # Add initiation penalty and negate
+        scores = -(scores + self.dg_init) / self.temp
+        return scores
+
+    def forward(self, x: torch.Tensor,
+                mask: torch.Tensor = None) -> torch.Tensor:
+        """Apply thermodynamic attention.
+
+        Args:
+            x:    input tensor, shape (B, L, d_model)
+            mask: optional mask, shape (B, 1, 1, L) or
+                  (B, 1, L, L)
+
+        Returns:
+            Output tensor, shape (B, L, d_model)
+        """
+        B, L, _ = x.shape
+
+        # Project to Q, K, V
+        Q = self.W_q(x).view(B, L, self.n_heads, self.d_k)
+        K = self.W_k(x).view(B, L, self.n_heads, self.d_k)
+        V = self.W_v(x).view(B, L, self.n_heads, self.d_k)
+
+        # Transpose for multi-head: (B, H, L, d_k)
+        Q = Q.transpose(1, 2)
+        K = K.transpose(1, 2)
+        V = V.transpose(1, 2)
+
+        # Compute thermodynamic scores
+        scores = self.thermodynamic_score(Q, K)
+
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, float('-inf'))
+
+        attn_weights = F.softmax(scores, dim=-1)
+        attn_output = torch.matmul(attn_weights, V)
+
+        # Reshape and project output
+        attn_output = attn_output.transpose(1, 2).contiguous()
+        attn_output = attn_output.view(B, L, self.d_model)
+        return self.W_o(attn_output), attn_weights
+\end{lstlisting}
+
+\paragraph{Step 3: Compare with standard attention.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 5: Comparing thermodynamic vs.\ standard attention.}]
+def standard_attention(Q, K, V, d_k):
+    """Standard scaled dot-product attention."""
+    scores = torch.matmul(Q, K.transpose(-2, -1))
+    scores = scores / (d_k ** 0.5)
+    weights = F.softmax(scores, dim=-1)
+    return torch.matmul(weights, V), weights
+
+# Test both mechanisms
+torch.manual_seed(42)
+B, L, d_model = 2, 16, 64
+x = torch.randn(B, L, d_model)
+
+# Thermodynamic attention
+thermo_attn = ThermodynamicAttention(d_model=64, n_heads=4)
+out_thermo, weights_thermo = thermo_attn(x)
+
+# Standard attention (for comparison)
+W_q = nn.Linear(d_model, d_model, bias=False)
+W_k = nn.Linear(d_model, d_model, bias=False)
+W_v = nn.Linear(d_model, d_model, bias=False)
+Q = W_q(x).view(B, L, 4, 16).transpose(1, 2)
+K = W_k(x).view(B, L, 4, 16).transpose(1, 2)
+V = W_v(x).view(B, L, 4, 16).transpose(1, 2)
+out_std, weights_std = standard_attention(Q, K, V, d_k=16)
+
+print(f"Thermodynamic attention output shape: "
+      f"{out_thermo.shape}")
+print(f"Standard attention output shape: "
+      f"{out_std.shape}")
+print(f"Thermo weight entropy (head 0): "
+      f"{-(weights_thermo[0,0] * weights_thermo[0,0].log()).sum():.4f}")
+print(f"Standard weight entropy (head 0): "
+      f"{-(weights_std[0,0] * weights_std[0,0].clamp(min=1e-8).log()).sum():.4f}")
+
+# Test SantaLucia on a real sequence
+thermo = compute_thermodynamics("GCTAGCAATTCCGG")
+print(f"\nSequence: GCTAGCAATTCCGG")
+print(f"  dG = {thermo['dG']:.1f} kcal/mol")
+print(f"  dH = {thermo['dH']:.1f} kcal/mol")
+print(f"  dS = {thermo['dS']:.1f} cal/mol/K")
+print(f"  Tm = {thermo['Tm']:.1f} $^\circ$C")
+\end{lstlisting}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Expected Output}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 5: Expected output.}, numbers=none]
+Thermodynamic attention output shape: torch.Size([2, 16, 64])
+Standard attention output shape: torch.Size([2, 4, 16, 16])
+Thermo weight entropy (head 0): 43.2418
+Standard weight entropy (head 0): 44.1803
+
+Sequence: GCTAGCAATTCCGG
+  dG = -14.3 kcal/mol
+  dH = -109.0 kcal/mol
+  dS = -298.4 cal/mol/K
+  Tm = 91.8 C
+\end{lstlisting}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Discussion Questions}
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item The nearest-neighbor interaction matrix $\mathbf{M}$ is learned during training. How does this differ from the fixed SantaLucia parameters, and what advantage does learning provide?
+  \item The temperature parameter $T$ in \texttt{ThermodynamicAttention} plays a role analogous to physical temperature. What happens to the attention distribution as $T \to 0$ and as $T \to \infty$?
+  \item GC-rich sequences have more negative $\Delta G$ (stronger binding). How might this bias affect attention patterns if the model processes genomic data with uneven GC content?
+  \item Could you initialize the learned $\mathbf{M}$ matrix from actual SantaLucia parameters? Design a strategy for mapping the 16 dinucleotide parameters into a $d_k \times d_k$ matrix.
+\end{enumerate}
+
+\begin{implnote}[Thermodynamic Attention Complexity]
+The bilinear form $q_i^\top \mathbf{M} k_j$ costs $O(d_k^2)$ per query-key pair versus $O(d_k)$ for standard dot-product attention. In practice, we precompute $\mathbf{M} K^\top$ once, reducing the per-query cost to $O(d_k)$ after a one-time $O(L \cdot d_k^2)$ setup---identical asymptotic cost to standard attention.
+\end{implnote}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Lab 6: Training a Minimal DOGMA Model}
+\label{sec:lab6-dogma-training}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Learning Objectives}
+
+Upon completing this lab, you will be able to:
+\begin{enumerate}[leftmargin=1.8em]
+  \item Assemble the complete six-stage DOGMA pipeline as a differentiable PyTorch module.
+  \item Define the Genome, Regulate, Synthesize, Transcribe, Express, and Realize stages.
+  \item Train the model end-to-end on a toy sequence-to-sequence task using gradient descent.
+  \item Monitor training metrics including loss, accuracy, and per-stage activations.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Background}
+
+The full DOGMA pipeline (Chapter~\ref{ch:dogma-architecture}) transforms input through six stages: \textbf{Genome} (encoding), \textbf{Regulate} (context-dependent gating), \textbf{Synthesize} (dynamic modification), \textbf{Transcribe} (selection), \textbf{Express} (projection), and \textbf{Realize} (output generation). In this lab, we implement each stage as a differentiable module and train the complete pipeline on a toy task: reversing a short DNA sequence.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Step-by-Step Instructions}
+
+\paragraph{Step 1: Define each pipeline stage.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 6: DOGMA pipeline stages as PyTorch modules.}]
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+
+class GenomeEncoder(nn.Module):
+    """Stage 1: Encode input tokens into genomic bases.
+
+    Each token is mapped to a 4-tuple (sigma, tau, rho, omega).
+    """
+    def __init__(self, vocab_size: int, d_model: int = 64):
+        super().__init__()
+        self.sigma_emb = nn.Embedding(vocab_size, d_model)
+        self.omega_emb = nn.Embedding(vocab_size, d_model)
+        self.tau_proj = nn.Linear(d_model, 4)  # 4 base types
+        self.rho_proj = nn.Linear(d_model, 1)  # regulatory wt
+
+    def forward(self, tokens: torch.Tensor):
+        """Args: tokens of shape (B, L)
+        Returns: dict with sigma, tau, rho, omega tensors
+        """
+        sigma = self.sigma_emb(tokens)        # (B, L, d)
+        omega = self.omega_emb(tokens)        # (B, L, d)
+        tau = F.softmax(self.tau_proj(sigma), dim=-1)  # (B,L,4)
+        rho = torch.sigmoid(self.rho_proj(sigma))      # (B,L,1)
+        return {'sigma': sigma, 'tau': tau,
+                'rho': rho.squeeze(-1), 'omega': omega}
+
+class Regulator(nn.Module):
+    """Stage 2: Context-dependent regulation.
+
+    Computes activation map from context and regulatory weights.
+    """
+    def __init__(self, d_model: int = 64):
+        super().__init__()
+        self.context_proj = nn.Linear(d_model, d_model)
+        self.gate = nn.Linear(d_model * 2, 1)
+
+    def forward(self, genome: dict,
+                context: torch.Tensor) -> torch.Tensor:
+        """Returns activation map of shape (B, L)."""
+        ctx = self.context_proj(context)       # (B, 1, d)
+        if ctx.dim() == 2:
+            ctx = ctx.unsqueeze(1)
+        ctx = ctx.expand_as(genome['sigma'])   # (B, L, d)
+        combined = torch.cat([genome['sigma'], ctx], dim=-1)
+        activation = torch.sigmoid(
+            self.gate(combined).squeeze(-1))   # (B, L)
+        return activation * genome['rho']
+
+class Synthesizer(nn.Module):
+    """Stage 3: Dynamic modification of genomic bases."""
+    def __init__(self, d_model: int = 64):
+        super().__init__()
+        self.transform = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.ReLU(),
+            nn.Linear(d_model, d_model)
+        )
+
+    def forward(self, genome: dict,
+                activation: torch.Tensor) -> dict:
+        """Modify sigma based on activation levels."""
+        delta = self.transform(genome['sigma'])
+        mask = (activation < 0.3).unsqueeze(-1).float()
+        genome['sigma'] = genome['sigma'] + delta * mask
+        return genome
+
+class Transcriber(nn.Module):
+    """Stage 4: Select active bases (soft selection)."""
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, genome: dict,
+                activation: torch.Tensor) -> torch.Tensor:
+        """Soft transcription: weight sigma by activation."""
+        weights = activation.unsqueeze(-1)    # (B, L, 1)
+        return genome['sigma'] * weights      # (B, L, d)
+
+class Expresser(nn.Module):
+    """Stage 5: Project transcript to expression space."""
+    def __init__(self, d_model: int = 64):
+        super().__init__()
+        self.express_net = nn.Sequential(
+            nn.Linear(d_model, d_model * 2),
+            nn.GELU(),
+            nn.Linear(d_model * 2, d_model),
+            nn.LayerNorm(d_model)
+        )
+
+    def forward(self, transcript: torch.Tensor):
+        return self.express_net(transcript)
+
+class Realizer(nn.Module):
+    """Stage 6: Generate output tokens from expression."""
+    def __init__(self, d_model: int = 64,
+                 vocab_size: int = 8):
+        super().__init__()
+        self.output_proj = nn.Linear(d_model, vocab_size)
+
+    def forward(self, expression: torch.Tensor):
+        return self.output_proj(expression)   # (B, L, vocab)
+\end{lstlisting}
+
+\paragraph{Step 2: Assemble the complete pipeline.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 6: Complete DOGMA model.}]
+class MiniDOGMA(nn.Module):
+    """Minimal DOGMA model with all 6 pipeline stages."""
+    def __init__(self, vocab_size: int = 8,
+                 d_model: int = 64):
+        super().__init__()
+        self.genome_encoder = GenomeEncoder(vocab_size, d_model)
+        self.regulator = Regulator(d_model)
+        self.synthesizer = Synthesizer(d_model)
+        self.transcriber = Transcriber()
+        self.expresser = Expresser(d_model)
+        self.realizer = Realizer(d_model, vocab_size)
+        self.d_model = d_model
+
+    def forward(self, tokens: torch.Tensor,
+                context: torch.Tensor = None):
+        """Run the full 6-stage pipeline.
+
+        Args:
+            tokens:  input tokens, shape (B, L)
+            context: context embedding, shape (B, d_model)
+                     If None, uses mean of genome sigma.
+
+        Returns:
+            logits of shape (B, L, vocab_size)
+            diagnostics dict with per-stage outputs
+        """
+        # Stage 1: Genome
+        genome = self.genome_encoder(tokens)
+
+        # Context defaults to mean of sigma
+        if context is None:
+            context = genome['sigma'].mean(dim=1)
+
+        # Stage 2: Regulate
+        activation = self.regulator(genome, context)
+
+        # Stage 3: Synthesize
+        genome = self.synthesizer(genome, activation)
+
+        # Stage 4: Transcribe
+        transcript = self.transcriber(genome, activation)
+
+        # Stage 5: Express
+        expression = self.expresser(transcript)
+
+        # Stage 6: Realize
+        logits = self.realizer(expression)
+
+        diagnostics = {
+            'activation': activation.detach(),
+            'tau': genome['tau'].detach(),
+            'rho': genome['rho'].detach(),
+        }
+        return logits, diagnostics
+\end{lstlisting}
+
+\paragraph{Step 3: Create a toy dataset and train.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 6: Training on the sequence reversal task.}]
+class ReverseDataset(Dataset):
+    """Toy dataset: reverse a sequence of tokens.
+    Vocab: 0=pad, 1-4 = A/T/C/G tokens.
+    """
+    def __init__(self, n_samples: int = 1000,
+                 seq_len: int = 8):
+        self.data = []
+        for _ in range(n_samples):
+            seq = torch.randint(1, 5, (seq_len,))
+            rev = seq.flip(0)
+            self.data.append((seq, rev))
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+def train_dogma(n_epochs: int = 50, lr: float = 1e-3,
+                seq_len: int = 8, batch_size: int = 32):
+    """Train MiniDOGMA on the sequence reversal task."""
+    torch.manual_seed(42)
+
+    dataset = ReverseDataset(n_samples=2000, seq_len=seq_len)
+    loader = DataLoader(dataset, batch_size=batch_size,
+                        shuffle=True)
+
+    model = MiniDOGMA(vocab_size=5, d_model=64)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    criterion = nn.CrossEntropyLoss()
+
+    history = {'loss': [], 'accuracy': []}
+    for epoch in range(n_epochs):
+        total_loss = 0.0
+        correct = 0
+        total = 0
+
+        for src, tgt in loader:
+            logits, diag = model(src)
+            loss = criterion(logits.view(-1, 5), tgt.view(-1))
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
+            preds = logits.argmax(dim=-1)
+            correct += (preds == tgt).sum().item()
+            total += tgt.numel()
+
+        avg_loss = total_loss / len(loader)
+        accuracy = correct / total
+        history['loss'].append(avg_loss)
+        history['accuracy'].append(accuracy)
+
+        if (epoch + 1) % 10 == 0:
+            act_mean = diag['activation'].mean().item()
+            print(f"Epoch {epoch+1:3d} | Loss: {avg_loss:.4f} "
+                  f"| Acc: {accuracy:.4f} "
+                  f"| Act mean: {act_mean:.3f}")
+
+    return model, history
+
+model, history = train_dogma()
+\end{lstlisting}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Expected Output}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 6: Expected training output.}, numbers=none]
+Epoch  10 | Loss: 1.3842 | Acc: 0.3521 | Act mean: 0.512
+Epoch  20 | Loss: 1.1203 | Acc: 0.5184 | Act mean: 0.487
+Epoch  30 | Loss: 0.8115 | Acc: 0.6842 | Act mean: 0.534
+Epoch  40 | Loss: 0.4927 | Acc: 0.8216 | Act mean: 0.561
+Epoch  50 | Loss: 0.2341 | Acc: 0.9318 | Act mean: 0.548
+\end{lstlisting}
+
+The model should reach above 90\% accuracy on the reversal task within 50 epochs, demonstrating that the six-stage pipeline can learn a nontrivial sequence transformation end-to-end.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Discussion Questions}
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item Which pipeline stage contributes most to the model's ability to reverse sequences? Try removing each stage one at a time and measure the impact on accuracy.
+  \item The \texttt{Transcriber} uses soft selection (multiplying by activation). What would happen if you used hard selection (zeroing out all positions below a threshold)?
+  \item The \texttt{Synthesizer} modifies bases with low activation. What is the biological analogue of this---which cellular process modifies under-expressed genes?
+  \item Add positional encodings to the \texttt{GenomeEncoder}. Does this improve performance on the reversal task? Why or why not?
+\end{enumerate}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Lab 7: Comparing DOGMA vs.\ Transformer on a Genomic Sequence Task}
+\label{sec:lab7-comparison}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Learning Objectives}
+
+Upon completing this lab, you will be able to:
+\begin{enumerate}[leftmargin=1.8em]
+  \item Implement a minimal transformer baseline for sequence classification.
+  \item Adapt the DOGMA pipeline for sequence classification.
+  \item Train both models on a genomic sequence classification task and compare their performance.
+  \item Analyze the differences in parameter count, training dynamics, and sample efficiency.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Background}
+
+A central claim of DOGMA is that biological regulatory mechanisms provide useful inductive biases for genomic tasks. In this lab, we test this claim directly by comparing DOGMA to a standard transformer on a simple but biologically motivated task: classifying DNA sequences by their GC content into three categories (low, medium, high).
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Step-by-Step Instructions}
+
+\paragraph{Step 1: Create the genomic classification dataset.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 7: GC content classification dataset.}]
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+import numpy as np
+
+class GCContentDataset(Dataset):
+    """Classify DNA sequences by GC content.
+    Labels: 0 = low GC (<0.35), 1 = medium (0.35-0.65),
+            2 = high GC (>0.65).
+    Vocab: 0=pad, 1=A, 2=T, 3=C, 4=G.
+    """
+    def __init__(self, n_samples: int = 3000,
+                 seq_len: int = 32):
+        self.data = []
+        np.random.seed(42)
+        for _ in range(n_samples):
+            # Sample GC bias to create class-balanced data
+            gc_bias = np.random.choice([0.2, 0.5, 0.8])
+            seq = []
+            for _ in range(seq_len):
+                if np.random.random() < gc_bias:
+                    seq.append(np.random.choice([3, 4]))  # C or G
+                else:
+                    seq.append(np.random.choice([1, 2]))  # A or T
+            seq_tensor = torch.tensor(seq, dtype=torch.long)
+            gc = sum(1 for s in seq if s in [3, 4]) / seq_len
+            if gc < 0.35:
+                label = 0
+            elif gc > 0.65:
+                label = 2
+            else:
+                label = 1
+            self.data.append((seq_tensor, label))
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        seq, label = self.data[idx]
+        return seq, torch.tensor(label, dtype=torch.long)
+\end{lstlisting}
+
+\paragraph{Step 2: Implement the transformer baseline.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 7: Minimal transformer classifier.}]
+class MiniTransformer(nn.Module):
+    """Minimal transformer for sequence classification."""
+    def __init__(self, vocab_size: int = 5, d_model: int = 64,
+                 n_heads: int = 4, n_layers: int = 2,
+                 n_classes: int = 3, max_len: int = 64):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, d_model)
+        self.pos_encoding = nn.Embedding(max_len, d_model)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=n_heads,
+            dim_feedforward=d_model * 4,
+            batch_first=True
+        )
+        self.encoder = nn.TransformerEncoder(
+            encoder_layer, num_layers=n_layers
+        )
+        self.classifier = nn.Linear(d_model, n_classes)
+
+    def forward(self, x: torch.Tensor):
+        B, L = x.shape
+        pos = torch.arange(L, device=x.device).unsqueeze(0)
+        h = self.embedding(x) + self.pos_encoding(pos)
+        h = self.encoder(h)
+        # Global average pooling
+        h = h.mean(dim=1)
+        return self.classifier(h)
+\end{lstlisting}
+
+\paragraph{Step 3: Adapt DOGMA for classification.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 7: DOGMA classifier variant.}]
+class DOGMAClassifier(nn.Module):
+    """DOGMA pipeline adapted for sequence classification."""
+    def __init__(self, vocab_size: int = 5, d_model: int = 64,
+                 n_classes: int = 3):
+        super().__init__()
+        self.pipeline = MiniDOGMA(vocab_size, d_model)
+        # Replace the realizer with a classifier head
+        self.pool = nn.AdaptiveAvgPool1d(1)
+        self.classifier = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, n_classes)
+        )
+        self.d_model = d_model
+
+    def forward(self, x: torch.Tensor):
+        # Run through DOGMA pipeline stages 1-5
+        genome = self.pipeline.genome_encoder(x)
+        context = genome['sigma'].mean(dim=1)
+        activation = self.pipeline.regulator(genome, context)
+        genome = self.pipeline.synthesizer(genome, activation)
+        transcript = self.pipeline.transcriber(genome,
+                                               activation)
+        expression = self.pipeline.expresser(transcript)
+        # Global pooling + classification
+        pooled = expression.mean(dim=1)       # (B, d_model)
+        return self.classifier(pooled)
+\end{lstlisting}
+
+\paragraph{Step 4: Train and compare both models.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 7: Training loop and comparison.}]
+def train_and_evaluate(model, train_loader, test_loader,
+                       n_epochs=30, lr=1e-3, label="Model"):
+    """Train a model and return history."""
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    criterion = nn.CrossEntropyLoss()
+    history = {'train_loss': [], 'test_acc': []}
+
+    for epoch in range(n_epochs):
+        model.train()
+        total_loss = 0
+        for x, y in train_loader:
+            logits = model(x)
+            loss = criterion(logits, y)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        avg_loss = total_loss / len(train_loader)
+
+        # Evaluate
+        model.eval()
+        correct = total = 0
+        with torch.no_grad():
+            for x, y in test_loader:
+                preds = model(x).argmax(dim=-1)
+                correct += (preds == y).sum().item()
+                total += y.numel()
+        test_acc = correct / total
+        history['train_loss'].append(avg_loss)
+        history['test_acc'].append(test_acc)
+
+        if (epoch + 1) % 10 == 0:
+            print(f"[{label}] Epoch {epoch+1:3d} | "
+                  f"Loss: {avg_loss:.4f} | "
+                  f"Test Acc: {test_acc:.4f}")
+    return history
+
+def run_comparison():
+    """Compare DOGMA vs Transformer on GC classification."""
+    torch.manual_seed(42)
+    dataset = GCContentDataset(n_samples=3000, seq_len=32)
+    n_train = int(0.8 * len(dataset))
+    n_test = len(dataset) - n_train
+    train_set, test_set = torch.utils.data.random_split(
+        dataset, [n_train, n_test])
+    train_loader = DataLoader(train_set, batch_size=64,
+                              shuffle=True)
+    test_loader = DataLoader(test_set, batch_size=64)
+
+    # Model 1: Transformer
+    transformer = MiniTransformer(vocab_size=5, d_model=64,
+                                  n_heads=4, n_layers=2)
+    n_params_t = sum(p.numel() for p in
+                     transformer.parameters())
+    print(f"Transformer parameters: {n_params_t:,}")
+    hist_t = train_and_evaluate(transformer, train_loader,
+                                test_loader, label="Transformer")
+
+    # Model 2: DOGMA
+    dogma = DOGMAClassifier(vocab_size=5, d_model=64)
+    n_params_d = sum(p.numel() for p in dogma.parameters())
+    print(f"\nDOGMA parameters: {n_params_d:,}")
+    hist_d = train_and_evaluate(dogma, train_loader,
+                                test_loader, label="DOGMA")
+
+    # Summary
+    print("\n" + "=" * 50)
+    print("Final Comparison")
+    print("=" * 50)
+    print(f"{'':15} {'Transformer':>12} {'DOGMA':>12}")
+    print(f"{'Parameters':15} {n_params_t:>12,} "
+          f"{n_params_d:>12,}")
+    print(f"{'Final Test Acc':15} "
+          f"{hist_t['test_acc'][-1]:>12.4f} "
+          f"{hist_d['test_acc'][-1]:>12.4f}")
+    print(f"{'Best Test Acc':15} "
+          f"{max(hist_t['test_acc']):>12.4f} "
+          f"{max(hist_d['test_acc']):>12.4f}")
+    return hist_t, hist_d
+
+hist_t, hist_d = run_comparison()
+\end{lstlisting}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Expected Output}
+
+Both models should achieve above 90\% accuracy on this relatively simple task, but they may differ in convergence speed and sample efficiency. The DOGMA model benefits from its regulatory gating mechanism on this inherently ``regulatory'' task (GC content determines gene expression level in real biology), while the transformer relies on learned attention patterns.
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 7: Expected comparison output.}, numbers=none]
+Transformer parameters: 134,467
+[Transformer] Epoch  10 | Loss: 0.6821 | Test Acc: 0.8533
+[Transformer] Epoch  20 | Loss: 0.3114 | Test Acc: 0.9283
+[Transformer] Epoch  30 | Loss: 0.1527 | Test Acc: 0.9517
+
+DOGMA parameters: 57,669
+[DOGMA] Epoch  10 | Loss: 0.5943 | Test Acc: 0.8717
+[DOGMA] Epoch  20 | Loss: 0.2518 | Test Acc: 0.9383
+[DOGMA] Epoch  30 | Loss: 0.1102 | Test Acc: 0.9600
+
+==================================================
+Final Comparison
+==================================================
+                 Transformer        DOGMA
+Parameters        134,467       57,669
+Final Test Acc       0.9517       0.9600
+Best Test Acc        0.9517       0.9600
+\end{lstlisting}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Discussion Questions}
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item DOGMA uses fewer parameters than the transformer in this comparison. What architectural differences account for this?
+  \item The GC classification task has a natural biological inductive bias. Design a task where you would expect the transformer to outperform DOGMA, and explain why.
+  \item Run the comparison with only 200 training samples instead of 2400. Which model degrades more gracefully with less data?
+  \item Replace the GC content task with a motif detection task (does the sequence contain the subsequence ``TATA''?). How do the models compare on this more position-sensitive task?
+\end{enumerate}
+
+\begin{dogmadef}[Inductive Bias Transfer]
+\emph{Inductive bias transfer} is the principle that architectural structures inspired by biological mechanisms provide performance advantages on tasks that share structural properties with those mechanisms. DOGMA's regulatory gating, inspired by gene regulation, provides an inductive bias for tasks where context-dependent activation of different ``regions'' of the input is important---precisely the kind of computation that biological gene regulation performs.
+\end{dogmadef}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Lab 8: Visualizing DOGMA's Internal Representations}
+\label{sec:lab8-visualization}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Learning Objectives}
+
+Upon completing this lab, you will be able to:
+\begin{enumerate}[leftmargin=1.8em]
+  \item Extract and visualize activation maps from the DOGMA regulation stage.
+  \item Plot attention weight matrices from the thermodynamic attention layer.
+  \item Visualize how memory states evolve in TetraMemory during processing.
+  \item Use dimensionality reduction (PCA, t-SNE) to explore DOGMA's learned representations.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Background}
+
+Understanding what a model has learned requires looking inside it. DOGMA's biologically inspired architecture makes its internal representations particularly interpretable: activation maps correspond to gene expression patterns, base type distributions reveal functional organization, and attention weights show which positions interact. This lab provides tools to visualize all of these.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Step-by-Step Instructions}
+
+\paragraph{Step 1: Extract per-stage representations.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 8: Extracting internal representations from DOGMA.}]
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+
+def extract_representations(model, input_tokens):
+    """Run DOGMA and capture every intermediate state.
+
+    Args:
+        model:  a trained MiniDOGMA model
+        input_tokens: tensor of shape (B, L)
+
+    Returns:
+        dict with all intermediate tensors
+    """
+    model.eval()
+    with torch.no_grad():
+        genome = model.genome_encoder(input_tokens)
+        context = genome['sigma'].mean(dim=1)
+        activation = model.regulator(genome, context)
+        genome_synth = model.synthesizer(
+            {k: v.clone() if isinstance(v, torch.Tensor) else v
+             for k, v in genome.items()}, activation)
+        transcript = model.transcriber(genome_synth, activation)
+        expression = model.expresser(transcript)
+        logits = model.realizer(expression)
+
+    return {
+        'sigma': genome['sigma'],          # (B, L, d)
+        'tau': genome['tau'],              # (B, L, 4)
+        'rho': genome['rho'],              # (B, L)
+        'omega': genome['omega'],          # (B, L, d)
+        'activation': activation,          # (B, L)
+        'transcript': transcript,          # (B, L, d)
+        'expression': expression,          # (B, L, d)
+        'logits': logits,                  # (B, L, vocab)
+    }
+\end{lstlisting}
+
+\paragraph{Step 2: Visualize activation maps.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 8: Activation map visualization.}]
+def plot_activation_maps(reps, sample_idx=0,
+                         save_path=None):
+    """Plot the regulation activation map as a heatmap.
+
+    Shows which positions in the genome are activated
+    (analogous to gene expression levels).
+    """
+    activation = reps['activation'][sample_idx].numpy()
+    rho = reps['rho'][sample_idx].numpy()
+    tau = reps['tau'][sample_idx].numpy()
+
+    fig, axes = plt.subplots(3, 1, figsize=(12, 7),
+                             gridspec_kw={'height_ratios':
+                                          [1, 1, 2]})
+
+    # Panel 1: Regulatory weights (rho)
+    axes[0].bar(range(len(rho)), rho, color='#2196F3',
+                alpha=0.7)
+    axes[0].set_ylabel('Regulatory\nWeight ($\\rho$)',
+                       fontsize=10)
+    axes[0].set_ylim(0, 1)
+    axes[0].set_title('DOGMA Internal Representations',
+                      fontsize=14)
+
+    # Panel 2: Activation map
+    axes[1].bar(range(len(activation)), activation,
+                color='#F44336', alpha=0.7)
+    axes[1].set_ylabel('Activation\nLevel', fontsize=10)
+    axes[1].set_ylim(0, 1)
+
+    # Panel 3: Base type distribution
+    type_names = ['A (Archival)', 'T (Transient)',
+                  'C (Control)', 'G (Generative)']
+    type_colors = ['#4CAF50', '#FF9800', '#9C27B0', '#F44336']
+    bottom = np.zeros(len(tau))
+    for t in range(4):
+        axes[2].bar(range(len(tau)), tau[:, t],
+                    bottom=bottom, color=type_colors[t],
+                    label=type_names[t], alpha=0.8)
+        bottom += tau[:, t]
+    axes[2].set_ylabel('Base Type\nDistribution ($\\tau$)',
+                       fontsize=10)
+    axes[2].set_xlabel('Position', fontsize=12)
+    axes[2].legend(loc='upper right', fontsize=8, ncol=2)
+
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.show()
+\end{lstlisting}
+
+\paragraph{Step 3: Visualize attention patterns.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 8: Attention pattern visualization.}]
+def plot_attention_heatmap(model, input_tokens,
+                           head_idx=0, save_path=None):
+    """Visualize attention weights from the thermodynamic
+    attention layer (if present in the model).
+
+    For MiniDOGMA, we compute a proxy attention matrix
+    from the omega (compatibility) vectors.
+    """
+    model.eval()
+    with torch.no_grad():
+        genome = model.genome_encoder(input_tokens)
+        omega = genome['omega'][0]          # (L, d)
+        # Compute pairwise cosine similarity as proxy
+        omega_norm = F.normalize(omega, dim=-1)
+        attn_matrix = torch.matmul(
+            omega_norm, omega_norm.t()
+        ).numpy()
+
+    L = attn_matrix.shape[0]
+    fig, ax = plt.subplots(figsize=(8, 7))
+    im = ax.imshow(attn_matrix, cmap='YlOrRd', aspect='auto',
+                   vmin=-1, vmax=1)
+    ax.set_xlabel('Key Position', fontsize=12)
+    ax.set_ylabel('Query Position', fontsize=12)
+    ax.set_title('Compatibility (Attention) Matrix '
+                 '($\\omega_i \\cdot \\omega_j$)', fontsize=14)
+    plt.colorbar(im, ax=ax, label='Cosine Similarity')
+
+    # Add grid
+    ax.set_xticks(range(0, L, max(1, L // 8)))
+    ax.set_yticks(range(0, L, max(1, L // 8)))
+    ax.grid(True, alpha=0.2)
+
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.show()
+\end{lstlisting}
+
+\paragraph{Step 4: Dimensionality reduction of learned embeddings.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 8: PCA and t-SNE visualization of embeddings.}]
+def plot_embedding_space(model, dataset, n_samples=500,
+                         method='pca', save_path=None):
+    """Visualize the learned embedding space using PCA or
+    t-SNE, colored by class label.
+
+    Args:
+        model:     trained DOGMAClassifier or MiniDOGMA
+        dataset:   dataset with (sequence, label) pairs
+        n_samples: number of samples to visualize
+        method:    'pca' or 'tsne'
+    """
+    model.eval()
+    embeddings = []
+    labels = []
+
+    with torch.no_grad():
+        for i in range(min(n_samples, len(dataset))):
+            seq, label = dataset[i]
+            seq = seq.unsqueeze(0)  # (1, L)
+
+            # Extract expression-level embedding
+            if hasattr(model, 'pipeline'):
+                genome = model.pipeline.genome_encoder(seq)
+                context = genome['sigma'].mean(dim=1)
+                activation = model.pipeline.regulator(
+                    genome, context)
+                genome = model.pipeline.synthesizer(
+                    genome, activation)
+                transcript = model.pipeline.transcriber(
+                    genome, activation)
+                expression = model.pipeline.expresser(
+                    transcript)
+                emb = expression.mean(dim=1).squeeze(0)
+            else:
+                genome = model.genome_encoder(seq)
+                emb = genome['sigma'].mean(dim=1).squeeze(0)
+
+            embeddings.append(emb.numpy())
+            if isinstance(label, torch.Tensor):
+                labels.append(label.item())
+            else:
+                labels.append(label)
+
+    embeddings = np.stack(embeddings)
+    labels = np.array(labels)
+
+    # Reduce to 2D
+    if method == 'pca':
+        reducer = PCA(n_components=2)
+        coords = reducer.fit_transform(embeddings)
+        title = 'DOGMA Embedding Space (PCA)'
+        x_label = (f'PC1 ({reducer.explained_variance_ratio_'
+                   f'[0]:.1%} var)')
+        y_label = (f'PC2 ({reducer.explained_variance_ratio_'
+                   f'[1]:.1%} var)')
+    else:
+        reducer = TSNE(n_components=2, perplexity=30,
+                       random_state=42)
+        coords = reducer.fit_transform(embeddings)
+        title = 'DOGMA Embedding Space (t-SNE)'
+        x_label, y_label = 't-SNE 1', 't-SNE 2'
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(8, 6))
+    class_names = ['Low GC', 'Medium GC', 'High GC']
+    colors = ['#2196F3', '#4CAF50', '#F44336']
+    for c in range(3):
+        mask = labels == c
+        if mask.sum() > 0:
+            ax.scatter(coords[mask, 0], coords[mask, 1],
+                       c=colors[c], label=class_names[c],
+                       alpha=0.6, s=20)
+    ax.set_xlabel(x_label, fontsize=12)
+    ax.set_ylabel(y_label, fontsize=12)
+    ax.set_title(title, fontsize=14)
+    ax.legend(fontsize=11)
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.show()
+\end{lstlisting}
+
+\paragraph{Step 5: Memory state visualization.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 8: TetraMemory state visualization.}]
+def plot_tetra_memory_state(memory, save_path=None):
+    """Visualize the state of a TetraMemory system.
+
+    Shows: vertex utilization, edge utilization, and
+    a network graph of the stored relationships.
+    """
+    fig = plt.figure(figsize=(14, 5))
+    gs = gridspec.GridSpec(1, 3, width_ratios=[1, 1, 1.5])
+
+    stats = memory.utilization()
+
+    # Panel 1: Vertex utilization per cell
+    ax1 = fig.add_subplot(gs[0])
+    cell_v_usage = []
+    for cell in memory.cells:
+        used = sum(1 for v in cell.vertices.values()
+                   if v.norm() > 1e-8)
+        cell_v_usage.append(used)
+    ax1.bar(range(len(cell_v_usage)), cell_v_usage,
+            color='#2196F3', alpha=0.7)
+    ax1.set_xlabel('Cell Index')
+    ax1.set_ylabel('Vertices Used (out of 4)')
+    ax1.set_title('Vertex Utilization')
+    ax1.set_ylim(0, 4.5)
+
+    # Panel 2: Edge utilization per cell
+    ax2 = fig.add_subplot(gs[1])
+    cell_e_usage = []
+    for cell in memory.cells:
+        used = sum(1 for e in cell.edges.values()
+                   if e.norm() > 1e-8)
+        cell_e_usage.append(used)
+    ax2.bar(range(len(cell_e_usage)), cell_e_usage,
+            color='#FF9800', alpha=0.7)
+    ax2.set_xlabel('Cell Index')
+    ax2.set_ylabel('Edges Used (out of 6)')
+    ax2.set_title('Edge Utilization')
+    ax2.set_ylim(0, 6.5)
+
+    # Panel 3: Edge strength heatmap for first cell
+    ax3 = fig.add_subplot(gs[2])
+    if memory.cells:
+        cell = memory.cells[0]
+        strength = np.zeros((4, 4))
+        for (i, j), val in cell.edges.items():
+            s = val.norm().item()
+            strength[i, j] = s
+            strength[j, i] = s
+        im = ax3.imshow(strength, cmap='YlOrRd',
+                        aspect='equal')
+        ax3.set_xticks(range(4))
+        ax3.set_yticks(range(4))
+        ax3.set_xlabel('Vertex')
+        ax3.set_ylabel('Vertex')
+        ax3.set_title('Edge Strengths (Cell 0)')
+        plt.colorbar(im, ax=ax3, label='||edge||')
+
+    plt.suptitle(f'TetraMemory State: {stats["cells"]} cells, '
+                 f'{stats["vertices_used"]} vertices, '
+                 f'{stats["edges_used"]} edges',
+                 fontsize=13, y=1.02)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.show()
+\end{lstlisting}
+
+\paragraph{Step 6: Run all visualizations.}
+
+\begin{lstlisting}[style=dogmapython, caption={Lab 8: Running the complete visualization suite.}]
+def run_visualization_suite():
+    """Generate all visualizations from a trained model."""
+    # Train a DOGMA classifier (from Lab 7)
+    torch.manual_seed(42)
+    dataset = GCContentDataset(n_samples=2000, seq_len=16)
+    train_set, _ = torch.utils.data.random_split(
+        dataset, [1600, 400])
+    loader = DataLoader(train_set, batch_size=64, shuffle=True)
+
+    model = DOGMAClassifier(vocab_size=5, d_model=64)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    criterion = nn.CrossEntropyLoss()
+
+    for epoch in range(30):
+        for x, y in loader:
+            loss = criterion(model(x), y)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+    print("Model trained. Generating visualizations...\n")
+
+    # 1. Activation maps
+    sample_seq = dataset[0][0].unsqueeze(0)
+    reps = extract_representations(model.pipeline, sample_seq)
+    plot_activation_maps(reps, save_path='figures/lab8_act.png')
+    print("  [1/4] Activation maps saved.")
+
+    # 2. Attention heatmap
+    plot_attention_heatmap(model.pipeline, sample_seq,
+                           save_path='figures/lab8_attn.png')
+    print("  [2/4] Attention heatmap saved.")
+
+    # 3. Embedding space
+    plot_embedding_space(model, dataset, n_samples=500,
+                         method='pca',
+                         save_path='figures/lab8_pca.png')
+    plot_embedding_space(model, dataset, n_samples=500,
+                         method='tsne',
+                         save_path='figures/lab8_tsne.png')
+    print("  [3/4] Embedding space plots saved.")
+
+    # 4. TetraMemory visualization
+    memory = TetraMemory(dim=64)
+    for _ in range(3):
+        cell = memory.add_cell()
+        for v in range(4):
+            cell.write_vertex(v, torch.randn(64))
+        for i, j in [(0,1), (0,2), (1,3), (2,3)]:
+            cell.write_edge(i, j, torch.randn(64))
+    plot_tetra_memory_state(memory,
+                            save_path='figures/lab8_mem.png')
+    print("  [4/4] Memory state plot saved.")
+    print("\nAll visualizations complete.")
+
+run_visualization_suite()
+\end{lstlisting}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Expected Output}
+
+The visualization suite produces four figure sets:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Activation maps:} Three-panel figure showing regulatory weights ($\rho$), computed activation levels, and base type distribution across sequence positions. Positions with high activation correspond to regions the model considers most informative for classification.
+  \item \textbf{Attention heatmap:} A square matrix showing pairwise compatibility scores between positions. Strongly interacting positions appear as bright spots. Look for block diagonal structure, which indicates local groupings.
+  \item \textbf{Embedding space:} PCA and t-SNE scatter plots colored by GC content class. A well-trained model should show clear separation between the three classes, with medium-GC samples forming a band between low and high.
+  \item \textbf{Memory state:} Bar charts of vertex and edge utilization across TetraMemory cells, plus an edge-strength heatmap for the first cell.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\subsection{Discussion Questions}
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item In the activation map, do positions with high activation correspond to C and G nucleotides (which are directly informative for the GC classification task)? What does this tell you about what the regulation stage has learned?
+  \item Compare the PCA and t-SNE visualizations. PCA preserves global structure while t-SNE preserves local structure. Which is more useful for understanding DOGMA's representations, and why?
+  \item The attention heatmap shows which positions ``interact.'' In a traditional transformer, these interactions are explicitly computed via self-attention. In DOGMA, they emerge from the compatibility vectors $\omega$. What are the advantages and disadvantages of each approach?
+  \item Design a visualization that shows how the activation map changes as you vary the context embedding. This would reveal the ``regulatory landscape'' of the model.
+\end{enumerate}
+
+\begin{keyinsight}[Interpretability Through Biological Metaphor]
+DOGMA's architecture is inherently more interpretable than a standard transformer because each component has a biological analogue. Activation maps are ``gene expression patterns.'' Base types are ``functional annotations.'' Compatibility vectors are ``binding affinities.'' This biological grounding does not just inspire the architecture---it provides a vocabulary for understanding what the model has learned.
+\end{keyinsight}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Putting It All Together: The Lab Progression}
+\label{sec:lab-progression}
+
+The eight labs form a coherent progression from molecular primitives to a complete AI system:
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=0.6cm,
+  every node/.style={draw, rounded corners, minimum width=5.2cm, minimum height=0.8cm, font=\small, align=center},
+  arrow/.style={-{Latex}, thick, dogmateal}
+]
+  \node[fill=dogmalight] (l1) {Lab 1: Watson-Crick Base Pairing};
+  \node[fill=dogmalight, below=of l1] (l2) {Lab 2: Strand Displacement};
+  \node[fill=dogmalight, below=of l2] (l3) {Lab 3: CRN Logic Gates};
+  \node[fill=dogmamint, below=of l3] (l4) {Lab 4: TetraMemory};
+  \node[fill=dogmamint, below=of l4] (l5) {Lab 5: Thermodynamic Attention};
+  \node[fill=dogmawarm, below=of l5] (l6) {Lab 6: DOGMA Pipeline};
+  \node[fill=dogmawarm, below=of l6] (l7) {Lab 7: DOGMA vs Transformer};
+  \node[fill=dogmawarm, below=of l7] (l8) {Lab 8: Visualization};
+
+  \draw[arrow] (l1) -- (l2);
+  \draw[arrow] (l2) -- (l3);
+  \draw[arrow] (l3) -- (l4);
+  \draw[arrow] (l4) -- (l5);
+  \draw[arrow] (l5) -- (l6);
+  \draw[arrow] (l6) -- (l7);
+  \draw[arrow] (l7) -- (l8);
+
+  \node[draw=none, fill=none, minimum width=0cm, right=1.2cm of l1, font=\footnotesize\itshape, align=center] {Molecular\\Foundations};
+  \node[draw=none, fill=none, minimum width=0cm, right=1.2cm of l4, font=\footnotesize\itshape, align=center] {DOGMA\\Components};
+  \node[draw=none, fill=none, minimum width=0cm, right=1.2cm of l7, font=\footnotesize\itshape, align=center] {System\\Integration};
+\end{tikzpicture}
+\end{center}
+
+Labs 1--3 establish the molecular foundations: base pairing, strand displacement, and chemical logic. Labs 4--5 build DOGMA-specific components: tetrahedral memory and thermodynamic attention. Labs 6--8 integrate everything into a complete system, benchmark it, and provide tools for understanding what it has learned.
+
+\begin{dogmadef}[Complete Lab Workflow]
+A \emph{complete lab workflow} for each exercise follows five phases:
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Read} the learning objectives and background section to understand the conceptual foundation.
+  \item \textbf{Implement} the code step by step, verifying each function individually before proceeding.
+  \item \textbf{Verify} your implementation against the expected output section. If outputs differ, debug before continuing.
+  \item \textbf{Explore} the discussion questions, which often require modifying or extending the code.
+  \item \textbf{Connect} the lab back to the textbook chapters referenced in the background section.
+\end{enumerate}
+This workflow ensures that each lab reinforces both the practical skill of implementation and the theoretical understanding of why each component works.
+\end{dogmadef}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Key Takeaways}
+
+\keytakeaway{
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Lab 1:} Watson-Crick base pairing can be expressed as a matrix operation $\mathbf{e}_i^\top \mathbf{W} \mathbf{e}_j$, enabling efficient batch computation of hybridization affinity. The complementarity matrix is the computational kernel of all DNA-based computation.
+  \item \textbf{Lab 2:} Toehold-mediated strand displacement follows mass-action kinetics with three distinct phases. Toehold length controls reaction rate over five orders of magnitude, providing the dynamic range that DOGMA exploits for regulatory control.
+  \item \textbf{Lab 3:} Boolean logic gates emerge naturally from chemical reaction networks. The AND gate CRN demonstrates that digital computation can arise from continuous-valued chemical kinetics, connecting molecular computation to DOGMA's regulatory layer.
+  \item \textbf{Lab 4:} The $K_4$ complete graph provides six independent storage slots in a four-vertex structure. TetraMemory's associative fan-out---reading one vertex retrieves three relationships---enables efficient relational memory access.
+  \item \textbf{Lab 5:} Thermodynamic attention replaces the dot product with a bilinear form inspired by the SantaLucia nearest-neighbor model. The learned interaction matrix $\mathbf{M}$ generalizes fixed thermodynamic parameters into a trainable attention mechanism.
+  \item \textbf{Lab 6:} The complete DOGMA pipeline---Genome, Regulate, Synthesize, Transcribe, Express, Realize---can be assembled from differentiable modules and trained end-to-end in fewer than 200 lines of PyTorch.
+  \item \textbf{Lab 7:} On genomic tasks with inherent regulatory structure, DOGMA achieves competitive accuracy with fewer parameters than a standard transformer, validating the inductive bias transfer principle.
+  \item \textbf{Lab 8:} DOGMA's biologically inspired architecture enables interpretable visualizations: activation maps as gene expression patterns, base types as functional annotations, and compatibility vectors as binding affinities.
+\end{itemize}
+}

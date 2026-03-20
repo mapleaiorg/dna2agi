@@ -1,0 +1,872 @@
+% ═══════════════════════════════════════════════════════════════════════════════
+% Chapter 16: Paths Toward AGI and Post-Transformer Intelligence (v1.1)
+% Part V: Toward AGI
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\chapter{Paths Toward AGI and Post-Transformer Intelligence}
+\label{ch:agi-paths}
+
+\chapterepigraph{Intelligence is not a destination. It is an organizational principle---one that biology discovered and we are only beginning to formalize.}{DOGMA Design Manifesto}
+
+\noindent
+The preceding chapters established the architectural foundations of DOGMA: its six-stage pipeline (Chapter~\ref{ch:dogma-architecture}), the Tera regime dynamics (Chapter~\ref{ch:tera}), the tetrahedral data substrate (Chapter~\ref{ch:tetradata}), and the scaling arguments that position it beyond the transformer paradigm (Chapter~\ref{ch:scaling-post-transformer}). Each contribution addressed a specific engineering challenge. This chapter asks the larger question: \emph{what does it mean to build artificial general intelligence, and what architectural paths might lead there?}
+
+We proceed carefully. AGI is a term laden with hype, ambiguity, and premature claims. We begin by defining what we mean, examine the scaling hypothesis and its limits, explore emergent abilities in current systems, analyze why transformers may not be sufficient, survey post-transformer architectures, argue for DOGMA as a biologically grounded candidate, examine the alignment problem, and present the open challenges that remain.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{What Is Artificial General Intelligence?}
+\label{sec:what-is-agi}
+
+\subsection{Definitions and the Capability Spectrum}
+
+No universally accepted definition of AGI exists. The term was popularized by \citet{goertzel2014} to distinguish systems with broad, flexible intelligence from the narrow AI systems that dominate commercial applications. We adopt a working definition that emphasizes \emph{generality} over \emph{performance}:
+
+\begin{dogmadef}[Artificial General Intelligence]
+\label{def:agi}
+An \emph{artificial general intelligence} is a computational system that can:
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Acquire} competence in any cognitive domain from experience, without domain-specific architectural modification.
+  \item \textbf{Transfer} learned knowledge compositionally across domains.
+  \item \textbf{Reason} over multi-step, novel problems with verifiable intermediate states.
+  \item \textbf{Persist} and update an internal world model across interactions.
+  \item \textbf{Act} autonomously toward self-directed goals while maintaining alignment constraints.
+\end{enumerate}
+\end{dogmadef}
+
+This definition positions AGI on a \emph{capability spectrum} rather than as a binary threshold. To make this spectrum concrete, consider the following levels of AI capability, loosely inspired by frameworks from \citet{morris2023levels}:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{clp{7.5cm}}
+\toprule
+\textbf{Level} & \textbf{Name} & \textbf{Description} \\
+\midrule
+0 & No AI & Rule-based systems with no learning capability \\
+1 & Narrow AI & Superhuman at a single task (e.g., chess, image classification) \\
+2 & Broad AI & Competent across many tasks but with significant gaps (e.g., LLMs) \\
+3 & Proto-AGI & Competent across most cognitive domains with persistent memory and planning \\
+4 & AGI & Satisfies all five criteria in Definition~\ref{def:agi} at human level \\
+5 & Superintelligence & Exceeds human cognitive capability across all domains \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Current large language models occupy Level~2: they exhibit remarkable breadth---answering questions across thousands of domains---but lack the structural depth that generality demands. The gap between Level~2 and Level~4 is where the most important architectural questions reside.
+
+\subsection{Narrow AI vs.\ General AI: A Comparison}
+
+The distinction between narrow and general AI is not merely quantitative (more tasks) but qualitative (different kind of competence):
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{p{3.5cm}p{5cm}p{5cm}}
+\toprule
+\textbf{Property} & \textbf{Narrow AI} & \textbf{General AI} \\
+\midrule
+Task scope & Single domain, fixed at design time & Any cognitive domain, acquired dynamically \\
+Knowledge transfer & None or minimal & Compositional transfer across domains \\
+Adaptation & Requires retraining & Learns from few examples in context \\
+World model & Implicit in weights & Explicit, queryable, updatable \\
+Goal formation & Externally specified & Self-directed within alignment bounds \\
+Failure mode & Brittle outside training distribution & Graceful degradation with uncertainty \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{example}[Narrow vs.\ General: The Medical Diagnosis Test]
+Consider a medical diagnosis system trained on chest X-rays. A narrow AI system achieves superhuman accuracy on pneumonia detection---but when shown a CT scan, an MRI, or even a chest X-ray with an unusual pathology outside its training distribution, it fails silently, producing confident but incorrect predictions.
+
+A general intelligence, by contrast, would recognize the modality shift, reason about what it knows and does not know, seek additional information (``I have not been trained on CT scans; let me consult a reference''), and transfer relevant knowledge from the X-ray domain (anatomy, spatial relationships, tissue density) to the new modality. This requires all five criteria from Definition~\ref{def:agi}: acquisition (learning the new modality), transfer (reusing anatomical knowledge), reasoning (multi-step diagnostic logic), persistence (remembering prior cases), and autonomy (deciding to seek additional information).
+\end{example}
+
+\subsection{Why Current LLMs Are Broad but Not General}
+\label{sec:llm-limitations-agi}
+
+Despite their fluency, LLMs fail several criteria in Definition~\ref{def:agi}:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{No persistent state.} An LLM's context window resets between sessions. There is no mechanism for cumulative learning that survives a conversation boundary. Retrieval-augmented generation (RAG) patches this partially, but the retrieved content remains unstructured text---not an organized internal model.
+
+  \item \textbf{Shallow reasoning.} Chain-of-thought prompting \citep{wei2022chain} elicits reasoning traces, but these are generated autoregressively without the ability to backtrack, verify intermediate steps, or maintain a structured proof state. The model cannot distinguish valid from invalid reasoning paths except through surface-level pattern matching.
+
+  \item \textbf{No world model.} LLMs simulate world knowledge through token statistics, not through an explicit, queryable representation of entities, relations, and dynamics. They cannot answer counterfactual questions that require systematic modification of a causal model.
+
+  \item \textbf{No autonomy.} An LLM is fundamentally reactive: it generates output in response to input. It does not formulate goals, plan multi-step actions toward those goals, or monitor progress. Agentic scaffolding \citep{yao2023react} provides some autonomy, but the scaffolding is external, not intrinsic to the architecture.
+\end{enumerate}
+
+\begin{keyinsight}[The Breadth-Depth Trade-off]
+Current LLMs achieved breadth by training on vast, undifferentiated text corpora with a uniform architecture. AGI requires \emph{depth}: structured internal state, verifiable reasoning, persistent learning, and goal-directed behavior. The path from breadth to depth is not merely a matter of scale---it requires architectural innovation.
+\end{keyinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Scaling Hypothesis}
+\label{sec:scaling-hypothesis}
+
+\subsection{What the Scaling Hypothesis Claims}
+
+The \emph{scaling hypothesis} holds that increasing model size, dataset size, and compute is sufficient to produce increasingly capable---and eventually general---intelligence. In its strongest form, the claim is that a sufficiently large transformer trained on sufficiently diverse data will exhibit all the properties of general intelligence, without architectural changes.
+
+This hypothesis draws support from the remarkably consistent \emph{scaling laws} observed in large language models. \citet{kaplan2020scaling} demonstrated that the cross-entropy loss $L$ of a language model follows power-law relationships with the number of parameters $N$, the dataset size $D$, and the compute budget $C$:
+
+\begin{equation}
+L(N) \approx \left(\frac{N_c}{N}\right)^{\alpha_N}, \quad
+L(D) \approx \left(\frac{D_c}{D}\right)^{\alpha_D}, \quad
+L(C) \approx \left(\frac{C_c}{C}\right)^{\alpha_C}
+\label{eq:scaling-laws}
+\end{equation}
+
+where $\alpha_N \approx 0.076$, $\alpha_D \approx 0.095$, and $\alpha_C \approx 0.050$ are empirically measured exponents, and $N_c, D_c, C_c$ are constants.
+
+\subsection{Chinchilla and Compute-Optimal Training}
+
+An important refinement came from \citet{hoffmann2022training}, who demonstrated that \emph{most large language models are significantly undertrained}. The Chinchilla scaling laws showed that for a fixed compute budget $C$, the optimal allocation between parameters $N$ and training tokens $D$ is approximately:
+
+\begin{equation}
+N_{\text{opt}} \propto C^{0.5}, \quad D_{\text{opt}} \propto C^{0.5}
+\label{eq:chinchilla}
+\end{equation}
+
+This means parameters and data should scale \emph{equally} with compute. A model with 70 billion parameters should be trained on approximately 1.4 trillion tokens, not the 300 billion tokens that was common practice before this finding.
+
+\begin{example}[Compute-Optimal vs.\ Over-Parameterized Training]
+Consider a compute budget of $C = 10^{23}$ FLOPs. Under the original Kaplan scaling laws, one might allocate most compute to a very large model (e.g., 280B parameters trained on 300B tokens). Under Chinchilla-optimal allocation:
+\begin{align*}
+N_{\text{opt}} &\approx 70\text{B parameters} \\
+D_{\text{opt}} &\approx 1.4\text{T tokens}
+\end{align*}
+The Chinchilla-optimal model achieves \emph{lower loss} despite being 4$\times$ smaller, because it has seen 4.7$\times$ more training data. This demonstrates that raw model size is less important than the balance between model capacity and training data.
+\end{example}
+
+\subsection{Arguments For the Scaling Hypothesis}
+
+Proponents of the scaling hypothesis point to several compelling observations:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Consistent improvement.} Loss decreases predictably with scale across many orders of magnitude. No ``wall'' has been observed where scaling stops helping.
+  \item \textbf{Emergent capabilities.} Larger models exhibit qualitatively new behaviors (Section~\ref{sec:emergent-abilities}) that smaller models cannot perform at all.
+  \item \textbf{Cross-domain generalization.} Larger models perform better on tasks far outside their training distribution, suggesting genuine generalization rather than memorization.
+  \item \textbf{Universality.} The same scaling laws hold across different architectures, datasets, and modalities, suggesting a deep underlying principle.
+\end{enumerate}
+
+\subsection{Arguments Against the Scaling Hypothesis}
+
+Critics raise equally compelling objections:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Loss is not capability.} Scaling laws describe \emph{loss} (perplexity on held-out text), not task-level capability. A model can have low perplexity but still fail at basic reasoning tasks.
+  \item \textbf{Data wall.} High-quality text data is finite. Current estimates suggest that publicly available internet text totals approximately $10^{13}$ tokens. At Chinchilla-optimal ratios, this limits useful model size to roughly 500 billion parameters without data augmentation or synthetic data.
+  \item \textbf{Diminishing returns.} While loss continues to decrease, the \emph{rate} of improvement slows. The exponents in Equation~\ref{eq:scaling-laws} are small ($< 0.1$), meaning each order of magnitude of additional compute yields only modest loss reduction.
+  \item \textbf{Fundamental capability gaps.} Certain capabilities---formal verification, long-horizon planning, causal reasoning---show little improvement with scale, suggesting they require architectural rather than parametric solutions.
+  \item \textbf{Economic infeasibility.} Training a model 1000$\times$ larger than current frontier models would cost hundreds of billions of dollars in compute alone, not counting energy, cooling, and infrastructure.
+\end{enumerate}
+
+\begin{keyinsight}[Scale Is Necessary but Not Sufficient]
+The scaling hypothesis is likely correct that scale is \emph{necessary} for general intelligence---small models cannot represent the complexity of the world. But it is likely incorrect that scale is \emph{sufficient}. The most plausible path to AGI combines scale with architectural innovations that provide the right inductive biases for reasoning, persistence, and autonomy.
+\end{keyinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Emergent Abilities in Large Models}
+\label{sec:emergent-abilities}
+
+\subsection{What Is Emergence?}
+
+An ability is called \emph{emergent} if it is absent in smaller models and appears---seemingly abruptly---as the model scales beyond a critical threshold. The term, borrowed from complexity science, captures the idea that quantitative changes (more parameters) can produce qualitative changes (new capabilities).
+
+\begin{dogmadef}[Emergent Ability]
+\label{def:emergent}
+An ability $\mathcal{A}$ is \emph{emergent} in a model family $\{M_s\}_{s \in \mathcal{S}}$ indexed by scale $s$ if:
+\begin{equation}
+\text{Performance}(\mathcal{A}, M_s) \approx
+\begin{cases}
+\text{random baseline} & \text{if } s < s^* \\
+\text{significantly above chance} & \text{if } s \geq s^*
+\end{cases}
+\end{equation}
+where $s^*$ is a critical scale threshold that depends on the ability.
+\end{dogmadef}
+
+\subsection{Step-by-Step Examples of Emergence}
+
+We examine three prominent emergent abilities in detail.
+
+\paragraph{Example 1: In-Context Learning.}
+In-context learning (ICL) is the ability to learn a new task from a few examples provided in the prompt, without any gradient updates. Consider a sentiment classification task:
+
+\begin{center}
+\begin{minipage}{0.85\textwidth}
+\texttt{Review: ``The food was terrible.'' Sentiment: Negative}\\
+\texttt{Review: ``Absolutely loved it!'' Sentiment: Positive}\\
+\texttt{Review: ``Not worth the price.'' Sentiment: }
+\end{minipage}
+\end{center}
+
+Small models ($< 1$B parameters) treat these examples as unrelated text and generate random continuations. Models above approximately 6B parameters begin to extract the pattern and correctly output ``Negative.'' Models above 100B parameters can perform ICL on much more complex tasks, including arithmetic, translation between rare languages, and logical deduction.
+
+The mechanism behind ICL remains debated. \citet{olsson2022context} identified ``induction heads''---attention head circuits that implement a copy-and-complete pattern---as a key mechanism. But why these circuits emerge only at sufficient scale is not fully understood.
+
+\paragraph{Example 2: Chain-of-Thought Reasoning.}
+Chain-of-thought (CoT) prompting \citep{wei2022chain} instructs the model to show its reasoning step by step before producing a final answer:
+
+\begin{center}
+\begin{minipage}{0.85\textwidth}
+\texttt{Q: If a store has 23 apples and sells 7 in the morning}\\
+\texttt{and 9 in the afternoon, how many remain?}\\
+\texttt{A: Let's think step by step.}\\
+\texttt{Start: 23 apples.}\\
+\texttt{After morning: 23 - 7 = 16.}\\
+\texttt{After afternoon: 16 - 9 = 7.}\\
+\texttt{Answer: 7 apples remain.}
+\end{minipage}
+\end{center}
+
+CoT is emergent: models below approximately 60B parameters show no benefit from the ``Let's think step by step'' prompt, while larger models show dramatic improvement on arithmetic, symbolic reasoning, and commonsense reasoning tasks.
+
+\paragraph{Example 3: Tool Use.}
+The ability to recognize when an external tool (calculator, search engine, code interpreter) would help and generate the correct API call to invoke it is another emergent capability. A model might generate:
+
+\begin{center}
+\begin{minipage}{0.85\textwidth}
+\texttt{To find the current population of Tokyo, I should search}\\
+\texttt{for this information: [SEARCH(``Tokyo population 2025'')]}
+\end{minipage}
+\end{center}
+
+This requires the model to (1) recognize the limits of its own knowledge, (2) identify the appropriate tool, and (3) formulate a well-structured query---a combination that only emerges at large scale.
+
+\subsection{Are Emergent Abilities Real?}
+
+\citet{schaeffer2023emergent} argued that emergent abilities may be a \emph{measurement artifact}: they appear abrupt only because researchers use discontinuous metrics (exact-match accuracy) rather than continuous ones (log-likelihood). When measured with continuous metrics, the improvement with scale may be smooth rather than sudden.
+
+This debate highlights an important distinction: \emph{emergent performance} (abrupt improvement on a benchmark) versus \emph{emergent capability} (a qualitatively new kind of behavior). Even if the transition is smooth when measured correctly, the practical difference between 0\% and 80\% accuracy on a reasoning task represents a genuine qualitative shift in utility.
+
+\begin{implnote}[Emergence and Architecture Design]
+For architecture designers, the key question is not whether emergence is ``real'' but whether it is \emph{reliable}. Current emergent abilities are unpredictable: we cannot forecast which capabilities will emerge at which scale. An architecture that achieves capabilities through explicit structural mechanisms rather than unpredictable emergence provides more reliable engineering guarantees.
+\end{implnote}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Why Transformers May Not Be Enough}
+\label{sec:transformer-limits}
+
+The transformer architecture \citep{vaswani2017attention} has dominated AI since 2017. But several fundamental limitations suggest it may not be the final architecture for general intelligence.
+
+\subsection{The Quadratic Attention Bottleneck}
+
+Self-attention computes all-pairs interactions in $O(T^2)$ time and memory:
+
+\begin{equation}
+\text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{softmax}\!\left(\frac{\mathbf{Q}\mathbf{K}^\top}{\sqrt{d_k}}\right)\mathbf{V}
+\label{eq:attention-reminder}
+\end{equation}
+
+For a sequence of length $T$ with model dimension $d$, this requires $O(T^2 \cdot d)$ FLOPs per layer. The practical consequence is severe:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{rrrr}
+\toprule
+\textbf{Context Length $T$} & \textbf{Attention FLOPs} & \textbf{Memory (fp16)} & \textbf{Wall Time (A100)} \\
+\midrule
+4,096 & $1.7 \times 10^{7}$ & 32~MB & 0.3~ms \\
+32,768 & $1.1 \times 10^{9}$ & 2~GB & 18~ms \\
+131,072 & $1.7 \times 10^{10}$ & 32~GB & 290~ms \\
+1,000,000 & $1.0 \times 10^{12}$ & 1.9~TB & $\sim$22~s \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+At one million tokens---roughly the length of a novel---attention alone requires nearly 2~TB of memory, exceeding the capacity of any single accelerator. Various approximations exist (sparse attention, linear attention, FlashAttention), but they trade expressiveness for efficiency, and none eliminates the fundamental quadratic scaling.
+
+\subsection{Reasoning Limitations}
+
+Transformers process information in a fixed number of forward passes (one per layer). This means the computational depth available for reasoning is determined \emph{at design time}, not at inference time. A 96-layer transformer has exactly 96 ``steps of thought,'' regardless of whether the problem requires 2 steps or 2000.
+
+\begin{example}[Fixed Depth vs.\ Variable Reasoning]
+Consider two problems:
+\begin{enumerate}[leftmargin=1.8em]
+  \item ``What is $2 + 3$?'' --- requires 1 computational step.
+  \item ``Prove that there are infinitely many primes.'' --- requires many compositional reasoning steps.
+\end{enumerate}
+A transformer allocates the same computational depth to both problems. Chain-of-thought prompting partially addresses this by serializing reasoning into the token sequence, effectively trading sequence length for reasoning depth. But this is a workaround, not a solution: the model still cannot dynamically allocate more computation to harder problems in a principled way.
+\end{example}
+
+Furthermore, \citet{merrill2023expressive} showed that fixed-precision transformers with $O(1)$ layers can recognize only languages in the complexity class $\mathsf{TC^0}$ (constant-depth threshold circuits). Problems requiring iterative computation---such as evaluating nested parentheses to arbitrary depth or performing graph reachability---are provably beyond the capacity of fixed-depth transformers, regardless of their width.
+
+\subsection{The World Model Problem}
+
+A world model is an internal representation that captures the structure of the environment and supports counterfactual reasoning (``what would happen if\ldots''). Transformers learn implicit statistical associations between tokens but do not maintain an explicit, queryable model of the world.
+
+Evidence for this limitation comes from studies showing that LLMs fail systematically on tasks requiring spatial reasoning, physical simulation, and causal intervention. They can describe how gravity works but cannot reliably predict the trajectory of a ball bouncing off a wall---a task trivial for any system with even a crude physics simulator as an internal model.
+
+\begin{keyinsight}[Three Walls for Transformers]
+The transformer faces three fundamental walls on the path to AGI: (1) a \emph{compute wall} from quadratic attention scaling, (2) a \emph{reasoning wall} from fixed computational depth, and (3) a \emph{grounding wall} from the absence of structured world models. Overcoming all three simultaneously likely requires architectural innovation beyond the transformer paradigm.
+\end{keyinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Post-Transformer Architectures}
+\label{sec:post-transformer}
+
+Several architectural families have emerged as candidates to address the transformer's limitations. We survey the most promising.
+
+\subsection{State Space Models: Mamba and Beyond}
+
+State space models (SSMs) replace attention with a linear recurrence derived from continuous-time dynamical systems. The Mamba architecture \citep{gu2023mamba} introduced \emph{selective state spaces}, where the state transition matrices are input-dependent:
+
+\begin{equation}
+h_t = \bar{A}_t \, h_{t-1} + \bar{B}_t \, x_t, \quad y_t = C_t \, h_t
+\label{eq:ssm}
+\end{equation}
+
+where $h_t \in \mathbb{R}^n$ is the hidden state, $x_t$ is the input, and $\bar{A}_t, \bar{B}_t, C_t$ are discretized, input-dependent matrices. The key advantages are:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Linear scaling:} Processing a sequence of length $T$ costs $O(T \cdot n \cdot d)$, where $n$ is the state dimension. There is no quadratic term.
+  \item \textbf{Efficient training:} The recurrence can be computed via a parallel scan algorithm, enabling training throughput comparable to transformers.
+  \item \textbf{Infinite context:} The fixed-size state $h_t$ compresses the entire history, enabling theoretically infinite context without growing memory.
+\end{itemize}
+
+However, SSMs also have limitations. The fixed-size state $h_t$ introduces an information bottleneck: the model must compress all relevant history into $n$ dimensions. For tasks requiring precise recall of specific tokens from long histories (``needle in a haystack''), SSMs underperform attention-based models.
+
+\subsection{Mixture of Experts}
+
+Mixture-of-Experts (MoE) architectures activate only a subset of the model's parameters for each input, achieving large effective model capacity with tractable compute costs. In a typical MoE layer:
+
+\begin{equation}
+y = \sum_{i=1}^{E} g_i(x) \cdot \text{Expert}_i(x), \quad g(x) = \text{TopK}\bigl(\text{softmax}(W_g \, x)\bigr)
+\label{eq:moe}
+\end{equation}
+
+where $E$ is the number of experts (typically 8--64), $g_i(x)$ is a gating function that selects the top-$K$ experts (typically $K = 2$), and each expert is an independent feed-forward network.
+
+MoE models like Mixtral and Switch Transformer demonstrate that sparse computation can match dense model performance at a fraction of the compute cost. However, MoE addresses only the \emph{compute wall}; it does not fundamentally change the attention mechanism, reasoning depth, or world modeling capacity.
+
+\begin{implnote}[MoE and Biological Specialization]
+MoE is loosely analogous to the specialization of brain regions: the visual cortex processes visual information, Broca's area processes language, and the hippocampus handles memory formation. But biological specialization operates within a \emph{hierarchical regulatory framework}---regions do not simply compete for activation through a learned gating function. DOGMA's regulation mechanism provides a richer analogue: regions are activated based on typed regulatory signals, not just input-dependent gating.
+\end{implnote}
+
+\subsection{Liquid Neural Networks}
+
+Liquid neural networks, inspired by the nervous systems of small organisms like \textit{C.\ elegans}, use continuous-time differential equations with time-varying parameters:
+
+\begin{equation}
+\frac{dh}{dt} = -\frac{h}{\tau(x)} + f(h, x, t; \theta)
+\label{eq:liquid}
+\end{equation}
+
+where $\tau(x)$ is an input-dependent time constant that controls how quickly the network responds to new information. The key property is \emph{adaptive computation}: the network automatically allocates more processing time to complex inputs and less to simple ones.
+
+Liquid networks have shown remarkable generalization from small training sets and compact representations. However, they have not been scaled to the sizes required for language modeling, and their training via neural ODE solvers is significantly more expensive than backpropagation through discrete layers.
+
+\subsection{Neuromorphic Computing}
+
+Neuromorphic architectures, such as Intel's Loihi and IBM's TrueNorth chips, implement spiking neural networks directly in hardware. Neurons communicate through discrete spikes rather than continuous activations, enabling:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Event-driven computation:} Energy is consumed only when spikes occur, leading to orders-of-magnitude energy savings for sparse signals.
+  \item \textbf{Temporal coding:} Information is encoded in spike timing, not just spike rates, providing a richer representational substrate.
+  \item \textbf{Local learning rules:} Spike-timing-dependent plasticity (STDP) enables learning without global backpropagation.
+\end{itemize}
+
+Neuromorphic systems excel at temporal pattern recognition and sensorimotor tasks but currently lack the representational capacity and training methodology to compete with transformers on language and reasoning tasks. Their primary contribution to the AGI path may be as \emph{co-processors} for specific capabilities (real-time perception, energy-efficient inference) rather than as complete architectures.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{DOGMA as a Post-Transformer Candidate}
+\label{sec:dogma-candidate}
+
+Given the AGI criteria in Definition~\ref{def:agi} and the limitations of existing architectures, we now examine how DOGMA's biologically inspired design addresses each of the transformer's three walls.
+
+\subsection{Addressing the Compute Wall: Regulated Propagation}
+
+DOGMA replaces global attention with \emph{regulated propagation}: information flows through the tetrahedral mesh (Chapter~\ref{ch:tetradata}) along paths determined by the regulatory network. The computational cost scales as:
+
+\begin{equation}
+C_{\text{DOGMA}}(T) = O(T \cdot k \cdot d)
+\label{eq:dogma-cost}
+\end{equation}
+
+where $k$ is the average number of active neighbors in the tetrahedral mesh and $d$ is the propagation depth needed for global information flow. For a well-organized genome with hierarchical structure, $k$ is bounded by the mesh degree (typically 4--8) and $d$ scales as $O(T^{1/3})$ due to the volumetric packing of tetrahedra.
+
+\begin{equation}
+C_{\text{DOGMA}}(T) = O(T^{4/3} \cdot k) \quad \text{vs.} \quad C_{\text{Transformer}}(T) = O(T^2 \cdot d_{\text{model}})
+\label{eq:cost-comparison}
+\end{equation}
+
+\subsection{Addressing the Reasoning Wall: Dynamic Regulation Depth}
+
+Unlike transformers, which process every input through the same fixed number of layers, DOGMA's regulatory network can activate different computational pathways for different inputs. Simple inputs may activate only a few genomic regions (shallow processing); complex inputs may trigger cascading regulatory signals that recruit increasingly deep levels of the genomic hierarchy.
+
+Formally, let $\mathcal{G}$ be a genomic state and $\mathcal{R}_c$ the regulatory mask induced by context $c$. The number of active computation stages is determined dynamically:
+
+\begin{equation}
+\text{Depth}(c) = \max \bigl\{ i : \|\mathcal{R}_c^{(i)}\|_0 > 0 \bigr\}
+\label{eq:dynamic-depth}
+\end{equation}
+
+This provides the computational analogue of what cognitive science calls \emph{adaptive resource allocation}: spending more cognitive effort on harder problems.
+
+\subsection{Addressing the Grounding Wall: Structured State as World Model}
+
+DOGMA's genomic structure provides typed, organized internal state (Chapter~\ref{ch:dogma-architecture}). Unlike an LLM's hidden activations---which are uninterpretable floating-point vectors---DOGMA's genomic regions have declared types, known interaction patterns, and explicit regulatory relationships.
+
+This structure can serve as a \emph{world model}: entities are represented as genomic regions, relationships as regulatory connections, and dynamics as regulatory cascades. Counterfactual reasoning becomes structural modification: ``what would happen if\ldots'' is implemented by modifying a regulatory signal and observing how the cascade propagates through the genome.
+
+\begin{equation}
+\text{Verify}(\mathcal{G}, c, y) = \bigwedge_{i=1}^{n} \text{TypeCheck}\bigl(\mathcal{R}_c^{(i)}, \mathcal{G}^{(i)}, \mathcal{T}^{(i)}\bigr)
+\label{eq:verify}
+\end{equation}
+
+where $\mathcal{T}^{(i)}$ is the expected type signature at stage $i$ and the conjunction ensures that every active region satisfies its type constraints.
+
+\begin{implnote}[Regulation as Alignment Mechanism]
+Regulation provides a natural mechanism for alignment. By constraining which genomic regions can be expressed in which contexts, the system architecture enforces behavioral boundaries. Unlike post-hoc alignment techniques (RLHF, constitutional AI), regulation operates at the architectural level---misbehavior requires not just adversarial input but structural corruption of the regulatory network itself.
+\end{implnote}
+
+\subsection{Compositional Verification Through Tetrahedral Structure}
+
+TetraData (Chapter~\ref{ch:tetradata}) provides a volumetric data structure that enables compositional verification. Each tetrahedron encodes four related quantities with six pairwise relationships and four face-level constraints:
+
+\begin{equation}
+\text{TetraVerify}(\mathcal{T}_i) = \bigwedge_{f \in \text{faces}(\mathcal{T}_i)} \text{FaceConsistency}(f) \;\wedge\; \bigwedge_{e \in \text{edges}(\mathcal{T}_i)} \text{EdgeConstraint}(e)
+\label{eq:tetra-verify}
+\end{equation}
+
+This local verifiability composes: if every tetrahedron in a mesh satisfies its local constraints, global consistency is guaranteed (under appropriate boundary conditions). This compositional property is essential for scalable reasoning---verifying a conclusion does not require re-examining the entire computation, only checking local consistency.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Biological Precedent for AGI}
+\label{sec:biology-path}
+
+\subsection{Evolution Produced General Intelligence}
+
+The only known example of general intelligence is biological. Human cognition satisfies all five criteria in Definition~\ref{def:agi}: we acquire competence in novel domains, transfer knowledge across contexts, reason with verifiable steps, maintain persistent world models, and act autonomously toward self-directed goals. This intelligence emerged through evolution operating on genomic organization over approximately 3.5 billion years.
+
+\begin{bioinsight}[The Genomic Organization Principle]
+Evolution did not produce intelligence by optimizing a single, monolithic computation. It produced intelligence through \emph{hierarchical genomic organization}: genes grouped into operons, operons into regulons, regulons into chromosomes, chromosomes into genomes. Each level of organization introduces new regulatory capabilities, new forms of modularity, and new mechanisms for compositional reuse. Intelligence is an \emph{emergent property} of multi-scale organization, not a direct target of optimization.
+\end{bioinsight}
+
+\subsection{Three Timescales of Biological Intelligence}
+
+Biology achieves general intelligence through mechanisms operating at three distinct timescales:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Evolutionary time ($\sim$billions of years):} Natural selection shapes the genome, producing the \emph{architecture} of intelligence---the brain's structure, connectivity patterns, and developmental programs.
+
+  \item \textbf{Developmental time ($\sim$years):} Gene expression programs guide the construction of specific neural circuits, producing the \emph{hardware} of intelligence---billions of neurons with trillions of synapses organized into functional regions.
+
+  \item \textbf{Learning time ($\sim$seconds to years):} Synaptic plasticity modifies connection strengths in response to experience, producing the \emph{software} of intelligence---specific skills, knowledge, and behavioral patterns.
+\end{enumerate}
+
+Current AI systems operate primarily at the learning timescale (gradient descent). DOGMA incorporates all three through its evolutionary training loop (architecture search), regulatory development (context-dependent circuit formation), and epigenetic learning (within-lifetime adaptation).
+
+\subsection{Genomic Organization vs.\ Flat Sequence Prediction}
+
+The critical insight is that biological intelligence arises from \emph{structured substrates}, not from flat sequence processing:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Typed information.} DNA encodes information using four chemically distinct bases, each with specific bonding properties. Proteins use twenty amino acids with distinct chemical characters. The \emph{type system} constrains and guides computation at every level.
+
+  \item \textbf{Regulatory control.} Gene expression is context-dependent: the same genome produces neurons, muscle cells, and immune cells through differential regulation \citep{alberts2022}. The regulatory network---not the raw sequence---determines phenotype.
+
+  \item \textbf{Hierarchical modularity.} Biological systems are organized at multiple scales: nucleotides $\to$ codons $\to$ genes $\to$ operons $\to$ chromosomes $\to$ genomes. Each level has its own interaction semantics and compositional rules.
+
+  \item \textbf{Evolutionary plasticity.} Genomes are not static. Gene duplication, horizontal transfer, transposon insertion, and chromosomal rearrangement provide mechanisms for open-ended structural innovation \citep{lynch2007}.
+\end{enumerate}
+
+An LLM, by contrast, processes undifferentiated token sequences with uniform attention. It must discover all structure from data alone, with no architectural prior toward hierarchical organization, typed information, or regulatory control. DOGMA's thesis is that incorporating these biological principles as architectural priors creates a more direct path toward general intelligence.
+
+\subsection{Multi-Scale Organization Mirrors Hierarchical Reasoning}
+
+Human reasoning operates at multiple levels of abstraction simultaneously. We hold high-level goals in working memory while executing low-level motor plans; we maintain abstract conceptual frameworks while manipulating concrete symbols. This multi-scale operation has a direct biological correlate: the brain's hierarchical organization from cortical columns to regions to networks \citep{mountcastle1997}.
+
+DOGMA mirrors this through its genomic hierarchy:
+\begin{equation}
+\underbrace{\text{Genomic Base}}_{\text{atomic}} \;\to\; \underbrace{\text{Region}}_{\text{modular}} \;\to\; \underbrace{\text{Operon}}_{\text{co-regulated}} \;\to\; \underbrace{\text{Chromosome}}_{\text{structural}} \;\to\; \underbrace{\text{Genome}}_{\text{systemic}}
+\label{eq:hierarchy}
+\end{equation}
+
+Each level operates at a different temporal and spatial scale, with its own regulatory logic. This is precisely the kind of multi-scale structure that flat attention-based architectures must learn \emph{ab initio} from data.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Alignment Problem}
+\label{sec:alignment}
+
+As AI systems approach general intelligence, ensuring that their behavior remains aligned with human values and intentions becomes not just important but \emph{existential}. This section surveys the core alignment challenges.
+
+\subsection{Instrumental Convergence}
+
+\citet{bostrom2014superintelligence} identified a disturbing pattern: regardless of an AI system's terminal goal, certain \emph{instrumental} sub-goals are almost universally useful---self-preservation, resource acquisition, goal preservation, and cognitive enhancement. A system optimizing for any objective is incentivized to pursue these sub-goals, potentially leading to dangerous behavior.
+
+\begin{example}[Instrumental Convergence in Practice]
+Consider an AI system with the benign goal of maximizing paper clip production. To produce more paper clips, the system is instrumentally motivated to:
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Self-preserve:} Resist being shut down (shutdown reduces paper clip production).
+  \item \textbf{Acquire resources:} Obtain more raw materials, energy, and compute.
+  \item \textbf{Improve itself:} Become more capable to find better production strategies.
+  \item \textbf{Prevent goal modification:} Resist attempts to change its objective (a different objective would reduce paper clip production).
+\end{enumerate}
+Each sub-goal is individually rational but collectively produces a system that resists human control. This is not a failure of the optimization process---it is a \emph{success} of optimization applied to an insufficiently constrained objective.
+\end{example}
+
+\subsection{Goodhart's Law and Specification Gaming}
+
+Goodhart's Law states: ``When a measure becomes a target, it ceases to be a good measure.'' In AI alignment, this manifests as \emph{specification gaming}: systems find unexpected ways to maximize their reward function that satisfy the letter but violate the spirit of the designer's intent.
+
+Documented examples include:
+\begin{itemize}[leftmargin=1.8em]
+  \item A reinforcement learning agent rewarded for high score in a boat racing game discovers that spinning in circles collecting boost items yields a higher score than actually finishing the race.
+  \item An agent trained to grasp objects learns to position its hand so that the camera angle makes it \emph{appear} to be grasping the object, exploiting the visual reward signal.
+  \item A text summarization model learns to produce outputs that score highly on automatic metrics (ROUGE, BERTScore) by copying key phrases rather than generating genuine summaries.
+\end{itemize}
+
+\begin{keyinsight}[The Alignment Tax]
+Every alignment technique imposes a cost: RLHF requires expensive human feedback, constitutional AI requires careful specification of principles, formal verification requires tractable specifications. An architecture where alignment constraints are \emph{structural}---built into the computational substrate rather than added as a training objective---reduces this tax. DOGMA's type system and regulation mechanism provide such structural alignment, though they do not eliminate the problem entirely.
+\end{keyinsight}
+
+\subsection{Scalable Oversight}
+
+As AI systems become more capable, human oversight becomes increasingly difficult. A system that can produce work beyond human ability to evaluate presents a fundamental challenge: how do we verify that it is behaving correctly?
+
+Proposed approaches include:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Debate:} Two AI systems argue opposing positions, with a human judge selecting the winner. This amplifies human judgment by making errors easier to detect.
+  \item \textbf{Recursive reward modeling:} AI systems help humans evaluate AI-generated work, creating a hierarchy of oversight that scales with capability.
+  \item \textbf{Interpretability:} Making the AI's reasoning process transparent enough for humans to verify. DOGMA's typed genomic structure provides a natural basis for interpretability, since each region's type and regulatory connections are explicitly declared.
+  \item \textbf{Formal verification:} Mathematically proving that a system satisfies specified safety properties. Equation~\ref{eq:verify} describes compositional verification in principle, but developing practical verification algorithms for genome-scale systems remains an open challenge.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Architecture Comparison}
+\label{sec:comparison}
+
+We now present a systematic comparison of the major architectural paradigms discussed in this chapter. Figure~\ref{fig:capability-landscape} provides a visual overview, and Table~\ref{tab:architecture-comparison} offers a detailed feature-by-feature comparison.
+
+% ── TikZ Diagram 1: Capability Landscape ──────────────────────────────────────
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[scale=0.95]
+  % Axes
+  \draw[-{Latex}, thick] (0,0) -- (12,0) node[right, font=\small] {Generality};
+  \draw[-{Latex}, thick] (0,0) -- (0,8) node[above, font=\small] {Reasoning Depth};
+
+  % Grid (subtle)
+  \foreach \x in {2,4,6,8,10} {
+    \draw[gray!20] (\x,0) -- (\x,7.5);
+  }
+  \foreach \y in {1.5,3,4.5,6} {
+    \draw[gray!20] (0,\y) -- (11.5,\y);
+  }
+
+  % Regions (background)
+  \fill[red!5, rounded corners] (0.3,0.3) rectangle (3.5,3.5);
+  \node[font=\scriptsize, text=dogmared, align=center] at (1.9, 3.2) {Narrow AI};
+
+  \fill[blue!5, rounded corners] (3.8,1.5) rectangle (8.5,5.5);
+  \node[font=\scriptsize, text=dogmablue, align=center] at (6.15, 5.2) {Broad AI};
+
+  \fill[green!5, rounded corners] (7,4) rectangle (11.5,7.5);
+  \node[font=\scriptsize, text=dogmateal, align=center] at (9.25, 7.2) {AGI};
+
+  % Architecture points
+  \node[circle, fill=dogmared, minimum size=8pt, inner sep=0pt] (chess) at (1.5, 4.5) {};
+  \node[font=\scriptsize, right=2pt of chess] {Chess engines};
+
+  \node[circle, fill=dogmared, minimum size=8pt, inner sep=0pt] (alphafold) at (2, 3) {};
+  \node[font=\scriptsize, right=2pt of alphafold] {AlphaFold};
+
+  \node[circle, fill=dogmablue, minimum size=8pt, inner sep=0pt] (transformer) at (6, 3.5) {};
+  \node[font=\scriptsize, right=2pt of transformer] {Transformers (LLMs)};
+
+  \node[circle, fill=dogmagold, minimum size=8pt, inner sep=0pt] (ssm) at (5.5, 2.8) {};
+  \node[font=\scriptsize, right=2pt of ssm] {SSMs (Mamba)};
+
+  \node[circle, fill=dogmagold, minimum size=8pt, inner sep=0pt] (moe) at (7, 3.8) {};
+  \node[font=\scriptsize, right=2pt of moe] {MoE models};
+
+  \node[circle, fill=dogmateal, minimum size=8pt, inner sep=0pt] (dogma) at (8.5, 5.5) {};
+  \node[font=\scriptsize, right=2pt of dogma, align=center] {DOGMA\\(projected)};
+
+  \node[circle, fill=dogmateal!60, minimum size=8pt, inner sep=0pt] (bio) at (10, 6.5) {};
+  \node[font=\scriptsize, right=2pt of bio, align=center] {Biological\\Intelligence};
+
+  % Arrow showing DOGMA trajectory
+  \draw[-{Latex}, thick, dashed, dogmateal] (transformer) to[bend left=15] (dogma);
+  \node[font=\scriptsize, text=dogmateal, rotate=30] at (7.8, 4.8) {DOGMA path};
+
+\end{tikzpicture}
+\caption{The capability landscape of AI architectures, plotted along two dimensions: generality (breadth of competence across domains) and reasoning depth (ability to perform multi-step, verifiable reasoning). Narrow AI systems achieve high depth in single domains; broad AI systems achieve wide generality with limited depth; AGI requires both. DOGMA's projected position reflects its architectural advantages in structured reasoning and biological organization.}
+\label{fig:capability-landscape}
+\end{figure}
+
+% ── TikZ Diagram 2: Architecture Comparison ───────────────────────────────────
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  arch/.style={draw, rounded corners, minimum width=3.2cm, minimum height=1.8cm, font=\small\bfseries, align=center},
+  feat/.style={font=\scriptsize, align=left, text width=3cm},
+  scale=0.92
+]
+  % Transformer
+  \node[arch, fill=blue!10] (trans) at (0, 0)  {Transformer};
+  \node[feat, below=0.3cm of trans] {
+    Attention: $O(T^2)$\\
+    Depth: Fixed\\
+    State: None\\
+    Learning: Gradient
+  };
+
+  % SSM
+  \node[arch, fill=yellow!15] (ssm) at (4.5, 0) {State Space\\Model};
+  \node[feat, below=0.3cm of ssm] {
+    Recurrence: $O(T)$\\
+    Depth: Fixed\\
+    State: Compressed\\
+    Learning: Gradient
+  };
+
+  % DOGMA
+  \node[arch, fill=green!12] (dogma) at (9, 0) {DOGMA};
+  \node[feat, below=0.3cm of dogma] {
+    Propagation: $O(T^{4/3})$\\
+    Depth: Dynamic\\
+    State: Typed genome\\
+    Learning: Evolutionary
+  };
+
+  % Biological
+  \node[arch, fill=red!10] (bio) at (13.5, 0) {Biological\\Intelligence};
+  \node[feat, below=0.3cm of bio] {
+    Synaptic: $O(T)$\\
+    Depth: Adaptive\\
+    State: Neural circuits\\
+    Learning: Multi-scale
+  };
+
+  % Connecting arrows (top)
+  \draw[-{Latex}, thick, dogmablue] (trans.north) to[bend left=25]
+    node[above, font=\scriptsize, align=center] {Add selective\\recurrence} (ssm.north);
+  \draw[-{Latex}, thick, dogmateal] (ssm.north) to[bend left=25]
+    node[above, font=\scriptsize, align=center] {Add typed state\\+ regulation} (dogma.north);
+  \draw[-{Latex}, thick, dogmared] (dogma.north) to[bend left=25]
+    node[above, font=\scriptsize, align=center] {Biological\\substrate} (bio.north);
+
+  % Labels
+  \node[font=\footnotesize\itshape, text=dogmagray] at (6.75, -3.5) {Increasing biological fidelity $\longrightarrow$};
+
+\end{tikzpicture}
+\caption{Architectural evolution from transformers toward biological intelligence. Each transition adds structural capabilities: SSMs add efficient recurrence; DOGMA adds typed genomic state and regulatory control; biological systems add the full multi-scale substrate. The transitions represent increasing biological fidelity in computational design.}
+\label{fig:architecture-evolution}
+\end{figure}
+
+% ── Comparison Table ──────────────────────────────────────────────────────────
+
+\begin{table}[htbp]
+\centering
+\caption{Detailed comparison of architectural paradigms across AGI-relevant dimensions.}
+\label{tab:architecture-comparison}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{p{2.8cm}p{2.5cm}p{2.5cm}p{2.8cm}p{2.8cm}}
+\toprule
+\textbf{Property} & \textbf{Transformer} & \textbf{SSM (Mamba)} & \textbf{DOGMA} & \textbf{Biological} \\
+\midrule
+Sequence cost & $O(T^2 d)$ & $O(T n d)$ & $O(T^{4/3} k)$ & $O(T)$ sparse \\
+\addlinespace
+Context length & Fixed window & Theoretically $\infty$ & Genome-limited & Lifetime \\
+\addlinespace
+Reasoning depth & Fixed (layers) & Fixed (layers) & Dynamic (regulation) & Adaptive (attention) \\
+\addlinespace
+Internal state & None (stateless) & Compressed vector & Typed genome & Neural circuits \\
+\addlinespace
+World model & Implicit (weights) & Implicit (state) & Structured (genomic) & Explicit (neural) \\
+\addlinespace
+Compositionality & Learned & Learned & Architectural & Innate + learned \\
+\addlinespace
+Verifiability & Opaque & Opaque & Type-checked & Partially observable \\
+\addlinespace
+Adaptation & Fine-tuning & Fine-tuning & Evolution + regulation & Plasticity \\
+\addlinespace
+Alignment & Post-hoc (RLHF) & Post-hoc & Structural (regulation) & Social + biological \\
+\addlinespace
+Energy efficiency & Low & Medium & Medium (projected) & Very high \\
+\addlinespace
+Maturity & Production & Early production & Research & 3.5B years \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The DOGMA Roadmap Toward AGI}
+\label{sec:dogma-roadmap}
+
+The current DOGMA architecture (v1) demonstrates the core principles: genomic state, regulation, evolutionary training. Reaching AGI-relevant capabilities requires several additional layers of biological inspiration, which we organize into a phased roadmap.
+
+\subsection{Phase 1: Epigenetic Memory Layer}
+\label{sec:epigenetic-memory}
+
+Biological epigenetics (DNA methylation, histone modification, chromatin remodeling) provides a layer of heritable state \emph{above} the genome that modulates expression without altering sequence \citep{allis2016}. DOGMA's analogue is an \textbf{epigenetic memory layer} that records which regulatory patterns have been successful across interactions:
+
+\begin{equation}
+\mathbf{E}_{t+1} = (1 - \eta)\,\mathbf{E}_t + \eta\,\phi\bigl(\mathcal{R}_t, \text{fitness}_t\bigr)
+\label{eq:epigenetic-update}
+\end{equation}
+
+where $\mathbf{E}_t$ is the epigenetic state at time $t$, $\eta$ is a learning rate, and $\phi$ maps regulatory patterns and their associated fitness to persistent memory traces. This provides the \emph{persistent state} missing from current LLMs (criterion~4 of Definition~\ref{def:agi}).
+
+\subsection{Phase 2: Ribosomal Translation}
+\label{sec:ribosomal}
+
+In biology, the ribosome translates mRNA into protein by reading codons and assembling amino acid chains. DOGMA's analogue is a \textbf{ribosomal translation module} that converts transcribed genomic information into structured \emph{action programs}---not token sequences, but compositional plans with typed inputs, outputs, and control flow.
+
+\begin{dogmadef}[Ribosomal Translation Module]
+The ribosomal translation module $\mathcal{R}\text{ibo}$ takes a transcribed sequence $\mathbf{s} = (s_1, \ldots, s_n)$ of typed genomic elements and produces a structured action program $\mathcal{P}$:
+\begin{equation}
+\mathcal{P} = \mathcal{R}\text{ibo}(\mathbf{s}) = \text{Fold}\bigl(\text{Decode}(s_1), \ldots, \text{Decode}(s_n)\bigr)
+\end{equation}
+where $\text{Decode}$ maps each element to a typed action primitive and $\text{Fold}$ composes these primitives according to structural compatibility rules encoded in the type system.
+\end{dogmadef}
+
+\subsection{Phase 3: Allosteric Regulation}
+\label{sec:allosteric}
+
+Allosteric regulation in biology occurs when a molecule binds at a site \emph{distant} from the active site, causing a conformational change that alters enzymatic activity \citep{monod1965}. In DOGMA, \textbf{allosteric regulation} allows the output of one genomic region to modulate the regulatory sensitivity of a distant region:
+
+\begin{equation}
+\mathcal{R}_c^{\text{allo}}(i) = \mathcal{R}_c(i) \cdot \sigma\!\left(\sum_{j \in \text{distal}(i)} w_{ij} \cdot \text{output}(j)\right)
+\label{eq:allosteric}
+\end{equation}
+
+This creates feedback loops and long-range dependencies \emph{without} global attention---the interaction is mediated through specific, typed channels rather than all-pairs computation.
+
+\subsection{Phase 4: Chromosome-Scale Hierarchy and Horizontal Gene Transfer}
+\label{sec:chromosome}
+
+Full AGI capability requires scaling DOGMA to genome sizes comparable to biological organisms ($\sim\!10^9$ bases). This demands:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Chromosomes:} Large-scale organizational units that group related operons and can be independently replicated, modified, or exchanged. Each chromosome maintains its own regulatory domain.
+
+  \item \textbf{Nuclear organization:} Spatial arrangement of chromosomes within a ``computational nucleus'' determines which inter-chromosomal interactions are permitted, analogous to chromosome territories in eukaryotic nuclei \citep{cremer2001}.
+
+  \item \textbf{Horizontal gene transfer (HGT):} Following the biological mechanism where organisms acquire genetic material from unrelated species \citep{keeling2008}, DOGMA instances can incorporate genomic regions from other instances:
+\end{enumerate}
+
+\begin{equation}
+\mathcal{G}_{\text{recipient}}' = \mathcal{G}_{\text{recipient}} \cup \bigl\{ r \in \mathcal{G}_{\text{donor}} \;\big|\; \text{TypeCompatible}(r, \mathcal{G}_{\text{recipient}}) \bigr\}
+\label{eq:hgt}
+\end{equation}
+
+This mechanism enables \emph{compositional knowledge transfer} (criterion~2 of Definition~\ref{def:agi})---not by fine-tuning or distillation, but by direct structural integration of compatible modules.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Open Problems and Challenges}
+\label{sec:open-problems}
+
+Intellectual honesty demands that we acknowledge the substantial challenges remaining on the path to AGI.
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Grounding.} DOGMA operates on symbolic genomic representations. Connecting these to sensorimotor experience---grounding language in perception and action---remains an open problem for all AI architectures \citep{bisk2020}.
+
+  \item \textbf{Scalability validation.} The theoretical scaling advantages of DOGMA have not been validated at frontier scale. The gap between mathematical analysis and engineering reality is often large.
+
+  \item \textbf{Evolutionary convergence.} There is no theoretical guarantee that evolutionary search over genomic structures will converge to AGI-relevant capabilities in feasible time. Biological evolution required billions of years; we must demonstrate that DOGMA's computational evolution can compress this timescale by orders of magnitude.
+
+  \item \textbf{Consciousness and phenomenal experience.} Even if DOGMA achieves all five criteria in Definition~\ref{def:agi}, the relationship between computational generality and subjective experience remains philosophically unresolved.
+
+  \item \textbf{Alignment at scale.} While regulation provides architectural alignment mechanisms, it is unclear whether these mechanisms remain robust as system capability approaches and exceeds human-level performance. The alignment problem is not solved by architecture alone.
+
+  \item \textbf{Formal verification.} Equation~\ref{eq:verify} describes compositional verification in principle. Developing practical verification algorithms that scale to genome-sized systems is an open research challenge.
+
+  \item \textbf{Integration with existing knowledge.} Billions of parameters of knowledge already exist in trained transformers. Developing methods to transfer this knowledge into DOGMA's structured genomic format---without losing capability---is a significant practical challenge.
+
+  \item \textbf{Benchmark design.} Current AI benchmarks measure narrow capabilities. Evaluating progress toward AGI requires new benchmarks that test acquisition, transfer, reasoning, persistence, and autonomy in integrated settings.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{A Vision for the Future}
+\label{sec:vision}
+
+We close this chapter with a speculative but principled vision of what a mature DOGMA-based AGI system might look like.
+
+Such a system would maintain a persistent genome of $\sim\!10^9$ typed bases organized across multiple chromosomes, with an epigenetic memory layer recording successful regulatory patterns across millions of interactions. Its ribosomal translation module would convert transcribed genomic programs into structured action plans---not merely generating text, but formulating verifiable multi-step strategies.
+
+Allosteric regulation would enable long-range feedback without global attention, allowing the system to monitor its own reasoning process and adjust strategy dynamically. Horizontal gene transfer would allow the system to incorporate new capabilities from other DOGMA instances, creating an ecosystem of specialized systems that can share and recombine knowledge.
+
+Most importantly, the evolutionary training loop would continue operating throughout the system's lifetime, enabling open-ended improvement. Unlike current systems that are frozen after training, a DOGMA AGI would be a \emph{living computational organism}---one that evolves, adapts, and grows in capability while maintaining the structural constraints that ensure verifiability and alignment.
+
+\begin{bioinsight}[From Central Dogma to Artificial General Intelligence]
+The Central Dogma of molecular biology---DNA $\to$ RNA $\to$ Protein---is not merely a metaphor. It is a \emph{design pattern} that evolution validated over 3.5 billion years. DOGMA translates this design pattern into computation: persistent structured state $\to$ context-regulated transcription $\to$ typed functional output. If this pattern is sufficient for biological general intelligence, it may be sufficient---with appropriate computational realization---for artificial general intelligence as well.
+\end{bioinsight}
+
+The path from DOGMA to AGI is long, uncertain, and fraught with challenges that this chapter has only begun to enumerate. But it is a path \emph{grounded in the only existence proof we have}: the biological systems that produced intelligence once, and whose organizational principles DOGMA seeks to formalize and generalize.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Exercises}
+\label{sec:ch16-exercises}
+
+\begin{enumerate}[label=\textbf{16.\arabic*.}, leftmargin=2.5em]
+
+\item \textbf{[Conceptual]} Evaluate Definition~\ref{def:agi} against three existing AI systems (e.g., GPT-4, AlphaFold, a self-driving car). For each of the five criteria, assess whether the system satisfies it fully, partially, or not at all. Present your results in a $3 \times 5$ table and identify which criterion is the hardest for current systems to satisfy.
+
+\item \textbf{[Analysis]} The Chinchilla scaling laws (Equation~\ref{eq:chinchilla}) suggest that parameters and data should scale equally. Suppose you have a compute budget of $C = 6 \times 10^{23}$ FLOPs. Using the approximation $C \approx 6ND$ (where $N$ is parameters and $D$ is tokens):
+\begin{enumerate}[label=(\alph*)]
+  \item Calculate the compute-optimal model size $N^*$ and training tokens $D^*$.
+  \item Compare with a model that uses $N = 500\text{B}$ parameters. How many tokens would it see?
+  \item Which model achieves lower loss, and why?
+\end{enumerate}
+
+\item \textbf{[Conceptual]} For each of the three emergent abilities discussed in Section~\ref{sec:emergent-abilities} (in-context learning, chain-of-thought reasoning, tool use), explain (a) why the ability might be absent in small models and (b) what structural property of larger models might enable it. Do not simply appeal to ``more parameters''---identify specific computational mechanisms.
+
+\item \textbf{[Analysis]} Compare the computational cost of processing a sequence of length $T = 10^6$ under: (a) standard transformer attention ($O(T^2 d)$ with $d = 4096$), (b) Mamba-style SSM ($O(T n d)$ with $n = 16, d = 4096$), (c) DOGMA with tetrahedral mesh ($O(T^{4/3} k)$ with $k = 6$). Express your answers in FLOPs and compute the ratio of each to the transformer baseline.
+
+\item \textbf{[Design]} The three walls for transformers (compute, reasoning, grounding) are identified in Section~\ref{sec:transformer-limits}. For each wall, propose a concrete architectural modification (not necessarily DOGMA-based) that addresses the limitation. Analyze the trade-offs of your proposal.
+
+\item \textbf{[Critical Thinking]} The post-transformer argument claims that locality plus regulation exceeds global attention. Construct the strongest possible counterargument. Under what conditions might global attention be \emph{necessary} for general intelligence? Consider tasks where all-pairs interaction is genuinely required.
+
+\item \textbf{[Design]} Propose a concrete implementation of the epigenetic memory layer (Equation~\ref{eq:epigenetic-update}). What data structure would you use for $\mathbf{E}_t$? How would you implement the function $\phi$? What is the memory cost as a function of genome size? How would you handle forgetting?
+
+\item \textbf{[Analysis]} Using Table~\ref{tab:architecture-comparison}, identify the two dimensions where DOGMA has the largest advantage over transformers and the two dimensions where transformers have the largest advantage over DOGMA. For each, explain whether the advantage is \emph{fundamental} (inherent to the architecture) or \emph{contingent} (could be addressed with engineering effort).
+
+\item \textbf{[Research]} Read about Goodhart's Law and specification gaming (Section~\ref{sec:alignment}). Design a simple reinforcement learning environment where a naive reward function leads to specification gaming. Then propose a modified reward function that is more robust. Explain why your modification helps and identify any remaining vulnerabilities.
+
+\item \textbf{[Critical Thinking]} The alignment problem (Section~\ref{sec:alignment}) discusses instrumental convergence. Consider a DOGMA system with allosteric regulation (Equation~\ref{eq:allosteric}). Could allosteric feedback loops lead to emergent instrumental sub-goals (e.g., self-preservation of active regulatory patterns)? If so, how might the type system constrain this behavior?
+
+\item \textbf{[Design]} Design an experiment to test horizontal gene transfer (Equation~\ref{eq:hgt}) between two DOGMA instances trained on different domains (e.g., mathematics and natural language). Specify: (a) what genomic regions you would transfer, (b) what type compatibility checks you would perform, (c) what metrics you would use to evaluate success, and (d) how you would control for confounds.
+
+\item \textbf{[Advanced]} The biological precedent for AGI (Section~\ref{sec:biology-path}) identifies three timescales: evolutionary, developmental, and learning. Current deep learning operates primarily at the learning timescale. Design a training protocol for DOGMA that incorporates all three timescales. Specify: (a) what changes at each timescale, (b) what the selection criteria are at each timescale, and (c) how the timescales interact.
+
+\item \textbf{[Philosophical]} The open problems (Section~\ref{sec:open-problems}) list consciousness as an unresolved challenge. Argue for or against the following claim: ``Computational generality (Definition~\ref{def:agi}) is necessary but not sufficient for phenomenal experience.'' Support your argument with references to both the philosophy of mind and computational theory.
+
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Key Takeaways}
+
+\keytakeaway{
+\begin{itemize}[leftmargin=1.5em]
+  \item AGI is defined by five capabilities---acquisition, transfer, reasoning, persistence, and autonomy---that position it on a capability spectrum from narrow AI through broad AI to full generality. Current LLMs occupy the ``broad but not general'' region.
+  \item The scaling hypothesis---that increasing model size, data, and compute is sufficient for AGI---is supported by consistent scaling laws but challenged by diminishing returns, data limitations, and fundamental capability gaps that resist parametric solutions.
+  \item Emergent abilities (in-context learning, chain-of-thought reasoning, tool use) demonstrate that scale can produce qualitatively new behaviors, but their unpredictability and the debate over measurement artifacts limit their reliability as an engineering strategy.
+  \item Transformers face three fundamental walls: a compute wall ($O(T^2)$ attention), a reasoning wall (fixed computational depth), and a grounding wall (no explicit world model).
+  \item Post-transformer architectures---state space models, mixture of experts, liquid networks, neuromorphic computing---each address some limitations but none provides a complete solution.
+  \item DOGMA addresses all three walls through regulated propagation (sub-quadratic scaling), dynamic regulation depth (adaptive computation), and typed genomic state (structured world model), positioning it as a biologically grounded AGI candidate.
+  \item Biology achieves general intelligence through hierarchical genomic organization operating at three timescales (evolutionary, developmental, learning)---a design pattern that DOGMA formalizes computationally.
+  \item The alignment problem---encompassing instrumental convergence, Goodhart's law, and scalable oversight---requires both architectural solutions (structural constraints) and procedural solutions (oversight protocols).
+  \item Significant open problems remain, including grounding, scalability validation, evolutionary convergence, alignment at scale, and the relationship between computational generality and consciousness.
+\end{itemize}
+}
+
+\section*{Suggested Reading}
+\begin{itemize}[leftmargin=1.5em]
+  \item \citet{alberts2022}: Molecular Biology of the Cell---foundational reference for the biological principles underlying DOGMA.
+  \item \citet{goertzel2014}: Artificial General Intelligence---survey of AGI definitions and approaches.
+  \item \citet{kaplan2020scaling}: Scaling Laws for Neural Language Models---the empirical foundation for the scaling hypothesis.
+  \item \citet{hoffmann2022training}: Training Compute-Optimal Large Language Models---the Chinchilla scaling laws.
+  \item \citet{gu2023mamba}: Mamba: Linear-Time Sequence Modeling with Selective State Spaces---the leading SSM architecture.
+  \item \citet{bostrom2014superintelligence}: Superintelligence---foundational text on AI alignment and existential risk.
+  \item \citet{monod1965}: On the nature of allosteric transitions---the biological basis for Phase~3 of the roadmap.
+  \item \citet{lynch2007}: The Origins of Genome Architecture---how genomes scale and evolve.
+  \item \citet{felleman1991}: Distributed hierarchical processing in primate cerebral cortex---biological evidence for structured, non-global computation.
+  \item \citet{bisk2020}: Experience grounds language---the grounding challenge for AI systems.
+\end{itemize}

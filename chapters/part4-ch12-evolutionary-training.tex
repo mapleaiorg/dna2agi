@@ -1,0 +1,846 @@
+% ═══════════════════════════════════════════════════════════════════════════════
+% Chapter 12: The Evolutionary Training Loop
+% Part IV: Building the Evolutor
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\part{Building the Evolutor}
+
+\chapter{The Evolutionary Training Loop}
+\label{ch:evolutionary-training}
+
+\chapterepigraph{You do not design a genome. You \emph{evolve} one---by proposing variants, measuring fitness, and letting selection do the rest.}{DOGMA Design Manifesto}
+
+\noindent
+In Part~III we defined what a DOGMA system \emph{is}: a six-stage pipeline with a persistent genome, context-dependent regulation, and modality-agnostic realization (Chapter~\ref{ch:dogma-architecture}). We introduced HelixHash for structural representation (Chapter~\ref{ch:helixhash}) and Tera for multi-objective regime dynamics (Chapter~\ref{ch:tera}). But we have not yet answered the most practical question: \emph{how do you train a DOGMA system?}
+
+This chapter answers that question by presenting the \textbf{Evolutionary Training Loop}---the gradient-free optimization engine implemented in the \textsc{evo-trainer} codebase. The loop treats prompt bundles as genomes, applies biologically inspired mutation operators, evaluates fitness across multiple objectives, and selects improving variants through Pareto-optimal competition. No backpropagation is required. No differentiable loss surface is assumed. The system evolves its own instructions.
+
+We begin with a careful comparison between evolutionary optimization and the gradient descent methods familiar from deep learning, then walk through each stage of the loop in fine detail with worked examples. We formalize the concept of ``prompt genomes,'' catalog the full set of mutation operators, explore the geometry of fitness landscapes, and describe how the best evolved solutions are distilled into deployable models.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Evolution vs.\ Gradient Descent}
+\label{sec:evo-vs-gd}
+
+Before diving into the evolutionary loop, it helps to understand how evolutionary optimization relates to the gradient descent methods used throughout deep learning. Both are optimization algorithms---both search for configurations that minimize a loss (or maximize a fitness). But they differ fundamentally in \emph{what} they optimize, \emph{how} they search, and \emph{what assumptions} they require.
+
+\subsection{A Side-by-Side Comparison}
+
+Table~\ref{tab:evo-vs-gd} lays out the key differences.
+
+\begin{table}[H]
+\centering
+\caption{Comparing gradient descent and evolutionary optimization.}
+\label{tab:evo-vs-gd}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{L{3.5cm} Y Y}
+\toprule
+\textbf{Property} & \textbf{Gradient Descent} & \textbf{Evolutionary Optimization} \\
+\midrule
+\textbf{Unit of optimization} & A single parameter vector $\theta \in \mathbb{R}^n$ & A \emph{population} of candidate solutions $\{\mathcal{B}_1, \ldots, \mathcal{B}_P\}$ \\
+\textbf{Search space} & Continuous, differentiable & Discrete, combinatorial, or mixed \\
+\textbf{Update rule} & $\theta \leftarrow \theta - \eta \nabla_\theta \mathcal{L}$ & Mutation, crossover, selection \\
+\textbf{Gradient required?} & Yes---the entire method depends on $\nabla \mathcal{L}$ & No---only fitness evaluations are needed \\
+\textbf{Black-box compatible?} & No---requires access to internal model gradients & Yes---works with API-only models \\
+\textbf{Parallelism} & Mini-batch parallelism (data) & Population parallelism (candidates) \\
+\textbf{Exploration} & Local (follows the gradient direction) & Global (mutations can jump anywhere) \\
+\textbf{Multi-objective} & Typically scalarized into one loss & Naturally multi-objective via Pareto selection \\
+\textbf{Noise handling} & Stochastic gradients average out & Repeated fitness evaluations smooth noise \\
+\textbf{Convergence} & Guaranteed for convex $\mathcal{L}$ & No guarantee, but robust on rugged landscapes \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{remark}
+The comparison is not ``which is better?'' but ``which is appropriate.'' Gradient descent excels when the search space is continuous, the loss is differentiable, and internal model access is available. Evolutionary optimization excels when the search space is discrete (natural language prompts), the objective is non-differentiable (exact match accuracy), and the model is a black box (API access only). DOGMA's evolutionary training loop operates in precisely this second regime.
+\end{remark}
+
+\subsection{Why Evolution for Prompt Optimization?}
+
+Four properties of the prompt optimization problem make gradient descent inapplicable and evolutionary methods natural:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Discrete search space.} Prompts are natural language strings. There is no continuous parameterization of English sentences that admits meaningful gradients. You cannot compute $\partial (\text{accuracy}) / \partial (\text{word}_7)$.
+
+  \item \textbf{Black-box evaluation.} The language model is accessed through an API. We observe outputs but not internal activations, logits, or gradients. The mapping from prompt to behavior is opaque.
+
+  \item \textbf{Non-differentiable objectives.} Schema compliance (binary), exact match accuracy (binary per case), and latency (system-dependent) are step functions of prompt content---they have zero gradient almost everywhere.
+
+  \item \textbf{Stochastic evaluation.} The same prompt can produce different outputs on different runs due to sampling temperature, yielding a noisy fitness landscape where pointwise gradient estimates are unreliable.
+\end{enumerate}
+
+\begin{bioinsight}[Darwin Before Backprop]
+Biological evolution optimized organisms for billions of years without computing a single gradient. Natural selection operates through exactly the same loop we implement here: generate variation (mutation), evaluate fitness (survival and reproduction), and select the fittest (differential reproduction). The key insight is that \emph{you do not need to know why a solution is good in order to select it}. You only need to measure that it is better than the alternatives.
+\end{bioinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Prompt Bundles as Genomes}
+\label{sec:prompt-genomes}
+
+The central conceptual move of evolutionary training is to treat \emph{prompts as genomes}---not as inert text strings, but as structured, mutable, heritable units of computational specification.
+
+\begin{dogmadef}[Prompt Bundle]
+A \emph{Prompt Bundle} $\mathcal{B}$ is a structured collection of prompt files that together specify the complete behavior of a DOGMA agent:
+\begin{equation}
+\mathcal{B} = \bigl(\, \texttt{system.md},\; \texttt{task.md},\; \texttt{mutation.md},\; \texttt{evaluator.md} \,\bigr).
+\end{equation}
+Each file constitutes a \emph{gene}---a functional unit within the genome---with a designated role:
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.92\textwidth}{l l Y}
+\toprule
+\textbf{File} & \textbf{Gene Class} & \textbf{Role} \\
+\midrule
+\texttt{system.md} & \textsc{Gene} & System-level behavior specification; defines persona, constraints, and capabilities \\
+\texttt{task.md} & \textsc{Gene} & Per-case instruction template; parameterized by evaluation context \\
+\texttt{mutation.md} & \textsc{Gene} & Self-referential mutation strategy; describes how to propose edits \\
+\texttt{evaluator.md} & \textsc{Regulatory} & Scoring rubric; determines fitness criteria and thresholds \\
+\bottomrule
+\end{tabularx}
+\end{center}
+\end{dogmadef}
+
+\subsection{Why Prompts Are Genes, Not Just Text}
+
+A string of English text becomes a \emph{gene} when it satisfies three properties:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Heritability.} The prompt is copied from parent to offspring during reproduction. When a prompt bundle is checkpointed, its contents are preserved exactly, forming a lineage that can be traced backward through evolutionary history.
+
+  \item \textbf{Mutability.} The prompt can be altered by well-defined mutation operators. Point mutations change individual sentences; insertion mutations add new clauses; deletion mutations remove fragments. These edits are the evolutionary analogue of nucleotide substitutions, insertions, and deletions in DNA.
+
+  \item \textbf{Phenotypic effect.} Changes to the prompt measurably alter the system's behavior. A single-word edit in \texttt{system.md} can shift accuracy by several percentage points, just as a single nucleotide polymorphism can dramatically alter protein function.
+\end{enumerate}
+
+\begin{bioinsight}[The Operon Model of Prompt Organization]
+The four-file bundle structure mirrors the operon model of gene regulation in prokaryotes. The \texttt{evaluator.md} file functions as a regulatory element (analogous to the operator and promoter), controlling how fitness is measured and which selective pressures are applied. The remaining three files are structural genes that encode different aspects of the system's phenotype. Just as an operon groups functionally related genes under common regulatory control, a prompt bundle groups behaviorally related instructions under a shared evaluation regime.
+\end{bioinsight}
+
+\subsection{Fragment-Level Mutation}
+
+Mutation does not operate on entire files as atomic units. Instead, each gene is decomposed into \emph{fragments}---sentence-level or paragraph-level units that can be independently targeted for modification.
+
+\begin{dogmadef}[Prompt Fragment]
+A \emph{prompt fragment} $f_i$ is a contiguous, semantically meaningful unit within a gene file. Formally, a gene $g$ is a sequence of fragments:
+\begin{equation}
+g = (f_1, f_2, \ldots, f_m), \quad \text{where each } f_i \text{ is a sentence, paragraph, or structured block.}
+\end{equation}
+Fragment boundaries are determined by markdown structure (headings, list items, paragraphs) and preserved across mutations.
+\end{dogmadef}
+
+Fragment-level mutation provides finer granularity than file-level replacement while maintaining semantic coherence. A mutation operator might replace fragment $f_3$ in \texttt{system.md} while leaving all other fragments unchanged---the prompt-space analogue of a point mutation at a specific locus.
+
+\subsection{Encoding Hyperparameters in the Genome}
+
+Beyond natural language instructions, a prompt genome can encode \emph{numerical hyperparameters} and \emph{architectural choices}. These are stored as structured metadata within the gene files:
+
+\begin{example}[Genome Encoding]
+A fragment in \texttt{system.md} might read:
+\begin{verbatim}
+## Generation Parameters
+- temperature: 0.7
+- top_p: 0.95
+- max_tokens: 2048
+- response_format: json_object
+\end{verbatim}
+Each numerical value is a \emph{continuous gene locus} subject to Gaussian perturbation mutations, while each categorical value (like \texttt{response\_format}) is a \emph{discrete gene locus} subject to substitution mutations from a fixed vocabulary.
+\end{example}
+
+This encoding means that the evolutionary loop simultaneously optimizes the natural language instructions \emph{and} the numerical hyperparameters, treating both as components of a single genome. The mutation operators for numerical loci differ from those for text loci, as detailed in Section~\ref{sec:mutation-strategies}.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Evolutionary Loop Step by Step}
+\label{sec:five-stages}
+
+The evolutionary training loop consists of five stages executed iteratively until a convergence criterion is met or a computational budget is exhausted. Algorithm~\ref{alg:evo-loop} provides the formal specification; the subsections that follow walk through each stage with concrete examples.
+
+\begin{algorithm}[H]
+\caption{The Evolutionary Training Loop (\textsc{evo-trainer})}
+\label{alg:evo-loop}
+\begin{algorithmic}[1]
+\Require Configuration $\mathcal{C}$, prompt bundle $\mathcal{B}_0$, evaluation dataset $\mathcal{D}$, generation budget $G$
+\Ensure Evolved prompt bundle $\mathcal{B}^*$, lineage history $\mathcal{L}$
+\State $\mathcal{L} \gets [\,]$ \Comment{Initialize lineage}
+
+\medskip
+\Statex \textbf{Stage 1: LOAD}
+\State $\mathcal{B}_0, \mathcal{D}, \mathcal{W} \gets \textsc{Load}(\mathcal{C})$ \Comment{Config $\to$ bundle $\to$ genome $\to$ cases}
+
+\medskip
+\Statex \textbf{Stage 2: DISTILL (optional)}
+\If{teacher model $\mathcal{T}$ is specified}
+  \State $\mathcal{R} \gets \textsc{Distill}(\mathcal{T}, \mathcal{D})$ \Comment{Generate teacher references}
+\EndIf
+
+\medskip
+\For{generation $g = 1, 2, \ldots, G$}
+  \Statex \quad\textbf{Stage 3: EVALUATE}
+  \State $\mathbf{s}_g \gets \textsc{Evaluate}(\mathcal{B}_g, \mathcal{D}, \mathcal{R}, \mathcal{W})$ \Comment{Multi-objective score vector}
+
+  \medskip
+  \Statex \quad\textbf{Stage 4: MUTATE}
+  \State $\mathcal{B}_g' \gets \textsc{Mutate}(\mathcal{B}_g, \mathbf{s}_g, H_g)$ \Comment{Propose prompt edits via Tera regime}
+
+  \medskip
+  \Statex \quad\textbf{Stage 5: SELECT}
+  \State $\mathbf{s}_g' \gets \textsc{Evaluate}(\mathcal{B}_g', \mathcal{D}, \mathcal{R}, \mathcal{W})$ \Comment{Score the mutant}
+  \If{$\mathbf{s}_g' \succ_{\text{Pareto}} \mathbf{s}_g$} \Comment{Pareto dominance check}
+    \State $\mathcal{B}_{g+1} \gets \mathcal{B}_g'$ \Comment{Accept improving candidate}
+  \Else
+    \State $\mathcal{B}_{g+1} \gets \mathcal{B}_g$ \Comment{Retain parent}
+  \EndIf
+  \State $\mathcal{L}.\textsc{Append}\bigl((\mathcal{B}_{g+1}, \mathbf{s}_{g+1}, g)\bigr)$ \Comment{Checkpoint lineage}
+\EndFor
+
+\medskip
+\State $\mathcal{B}^* \gets \arg\max_{\mathcal{B} \in \mathcal{L}} J(\mathbf{s})$ \Comment{Return best from lineage}
+\State \Return $\mathcal{B}^*, \mathcal{L}$
+\end{algorithmic}
+\end{algorithm}
+
+\noindent
+Figure~\ref{fig:evo-loop-cycle} visualizes the loop as a cycle diagram.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=2.8cm,
+  stage/.style={
+    draw, rounded corners=8pt, fill=dogmalight,
+    minimum width=3.2cm, minimum height=1.2cm,
+    font=\sffamily\bfseries, align=center, text=black
+  },
+  arrow/.style={-{Stealth[length=3mm]}, thick, dogmablue},
+  label/.style={font=\small\sffamily, text=black, align=center}
+]
+% Nodes arranged in a circle
+\node[stage, fill=dogmamint] (load) {LOAD};
+\node[stage, fill=dogmagold!50, right=of load] (distill) {DISTILL\\[-2pt]{\scriptsize (optional)}};
+\node[stage, fill=dogmalight, below right=1.8cm and 1.4cm of distill] (evaluate) {EVALUATE};
+\node[stage, fill=dogmawarm!60, below left=1.8cm and 1.4cm of distill] (mutate) {MUTATE};
+\node[stage, fill=dogmared!30, left=of mutate] (select) {SELECT};
+
+% Arrows
+\draw[arrow] (load) -- (distill) node[midway, above, label] {config \& data};
+\draw[arrow] (distill) -- (evaluate) node[midway, right, label, xshift=2mm] {teacher refs};
+\draw[arrow] (evaluate) -- (mutate) node[midway, below, label] {scores $\mathbf{s}_g$};
+\draw[arrow] (mutate) -- (select) node[midway, above, label] {mutant $\mathcal{B}'_g$};
+\draw[arrow, dogmared] (select) to[bend left=30] node[midway, left, label, xshift=-2mm] {next\\generation} (evaluate);
+
+% Central label
+\node[font=\Large\sffamily\bfseries, text=dogmablue] at ($(evaluate)!0.5!(mutate) + (0, 1.2)$) {Evolutionary Loop};
+
+% Generation counter
+\node[draw, dashed, rounded corners, inner sep=6pt, fit=(evaluate)(mutate)(select), label={[font=\small\sffamily]below:Repeat for $g = 1, 2, \ldots, G$}] {};
+\end{tikzpicture}
+\caption{The five-stage evolutionary training loop. Stages 3--5 repeat for each generation. The DISTILL stage runs once before the loop begins (if a teacher model is provided).}
+\label{fig:evo-loop-cycle}
+\end{figure}
+
+We now describe each stage in detail with concrete examples.
+
+\subsection{Stage 1: LOAD --- Configuration to Genome}
+
+The LOAD stage transforms a declarative configuration file into a fully instantiated evolutionary experiment. The configuration specifies:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Bundle path:} Location of the four gene files on disk.
+  \item \textbf{Dataset type and path:} Which evaluation dataset to use (Section~\ref{sec:datasets}).
+  \item \textbf{Provider configuration:} Which language model provider to use for mutation and evaluation.
+  \item \textbf{Objective weights:} Initial values for the multi-objective scoring function.
+  \item \textbf{Evolution parameters:} Generation budget, mutation rate, convergence thresholds.
+\end{itemize}
+
+The loader validates all gene files, parses the evaluation dataset into individual cases, and constructs the initial genome representation. Each evaluation case becomes a \emph{fitness test}---a specific input for which the system must produce output that meets quality criteria.
+
+\begin{example}[Loading a Configuration]
+A minimal configuration file might look like this:
+\begin{verbatim}
+bundle_path: ./prompts/medical-qa/
+dataset:
+  type: jsonl
+  path: ./data/medical-questions.jsonl
+provider:
+  model: gpt-4
+  temperature: 0.3
+objectives:
+  accuracy: 0.5
+  schema: 0.2
+  cost: 0.15
+  latency: 0.15
+evolution:
+  generations: 50
+  convergence_threshold: 0.01
+  plateau_patience: 10
+\end{verbatim}
+The LOAD stage reads this file, validates that all four gene files exist in \texttt{./prompts/medical-qa/}, parses the JSONL dataset into individual test cases, and initializes the objective weight vector $\mathbf{w}_0 = (0.5, 0.2, 0.0, 0.15, 0.15)$.
+\end{example}
+
+\subsection{Stage 2: DISTILL --- Teacher-Student Knowledge Transfer}
+\label{sec:distill-stage}
+
+When a teacher model is available, the DISTILL stage generates reference responses for all evaluation cases. This stage is optional but provides a powerful signal for guiding evolution.
+
+\begin{dogmadef}[Teacher Reference]
+A \emph{teacher reference} for evaluation case $x_i$ is a structured response:
+\begin{equation}
+r_i = \bigl(\, \texttt{answer}_i,\; \texttt{rationale}_i,\; \texttt{confidence}_i \,\bigr),
+\end{equation}
+where \texttt{answer} is the teacher's response, \texttt{rationale} explains the reasoning, and $\texttt{confidence} \in [0, 1]$ quantifies the teacher's certainty.
+\end{dogmadef}
+
+The teacher model is typically a larger, more capable system (e.g., a frontier LLM) that serves as a source of high-quality behavior. Distillation does not copy the teacher's weights; it captures the teacher's \emph{behavioral specification} as reference outputs that guide the student's prompt evolution. Section~\ref{sec:distillation} provides the full distillation pipeline.
+
+\begin{example}[Distillation in Practice]
+Suppose the teacher is GPT-4 and an evaluation case asks: ``What is the function of the p53 gene?'' The teacher reference might be:
+\begin{itemize}[leftmargin=1.5em]
+  \item \texttt{answer}: ``The p53 gene encodes a tumor suppressor protein that regulates cell cycle arrest, apoptosis, and DNA repair in response to cellular stress.''
+  \item \texttt{rationale}: ``p53 acts as a transcription factor activated by DNA damage signals. It upregulates p21 for cell cycle arrest and BAX for apoptosis.''
+  \item \texttt{confidence}: 0.95
+\end{itemize}
+The student's prompts will evolve to produce responses that match this reference---not by memorizing the words, but by developing instructions that elicit the same level of biological accuracy and reasoning depth.
+\end{example}
+
+\subsection{Stage 3: EVALUATE --- Multi-Objective Scoring}
+
+The EVALUATE stage runs the current prompt bundle against all evaluation cases and computes a multi-objective score vector. Each case produces a response from the language model, which is scored along multiple dimensions (Section~\ref{sec:scoring}).
+
+The evaluation runs cases in parallel where possible, with configurable concurrency limits. Each case evaluation produces per-case scores, which are aggregated into the composite score vector $\mathbf{s}_g$ used for selection.
+
+\begin{example}[Evaluating a Bundle]
+Given a medical QA bundle evaluated on 20 test cases, the stage might produce:
+\begin{align*}
+s_{\text{acc}} &= 0.75 \quad \text{(15/20 correct answers)} \\
+s_{\text{schema}} &= 0.90 \quad \text{(18/20 valid JSON responses)} \\
+s_{\text{dist}} &= 0.68 \quad \text{(agreement with teacher on 13.6/20 cases)} \\
+s_{\text{cost}} &= 0.82 \quad \text{(average 450 tokens/response, budget 600)} \\
+s_{\text{lat}} &= 0.91 \quad \text{(average 1.2s/response, target 2.0s)}
+\end{align*}
+These five numbers form the score vector $\mathbf{s}_g = (0.75, 0.90, 0.68, 0.82, 0.91)$.
+\end{example}
+
+\subsection{Stage 4: MUTATE --- Proposing Prompt Edits}
+
+The MUTATE stage proposes modifications to the current prompt bundle using the provider interface. The mutation process is itself driven by a language model---the \texttt{mutation.md} gene instructs the model how to generate edits.
+
+\begin{keyinsight}[Self-Referential Mutation]
+The mutation gene \texttt{mutation.md} is a prompt that tells the language model how to modify prompts. This creates a fascinating self-referential loop: the genome contains instructions for its own modification. In biology, the DNA replication and repair machinery is itself encoded in DNA. Similarly, the mutation strategy is part of the genome being evolved---meaning the mutation strategy can itself be mutated, enabling meta-evolution of the search process.
+\end{keyinsight}
+
+The mutation stage receives the current fitness scores and the Tera regime state $H_g$, which together determine \emph{which mutation family} to apply (Section~\ref{sec:mutation-strategies}). Tera's regime dynamics ensure that mutation pressure shifts adaptively: when accuracy is low, accuracy-focused mutations are favored; when schema compliance degrades, structural mutations take priority.
+
+\subsection{Stage 5: SELECT --- Accepting Improvements}
+
+The SELECT stage determines whether the mutant bundle replaces the parent. The evolutionary loop supports three selection strategies, each suited to different optimization scenarios.
+
+\subsubsection{Tournament Selection}
+
+In tournament selection, $k$ individuals (typically $k = 2$ or $k = 3$) are drawn from the population, and the one with the highest composite fitness $J(\mathbf{s})$ survives. This is the simplest strategy and provides moderate selection pressure.
+
+\begin{definition}[Tournament Selection]
+Given a population $\mathcal{P}$ and tournament size $k$, the winner is:
+\begin{equation}
+\mathcal{B}_{\text{winner}} = \arg\max_{\mathcal{B} \in \text{Sample}(\mathcal{P}, k)} J(\mathbf{s}_{\mathcal{B}}).
+\end{equation}
+\end{definition}
+
+\subsubsection{Rank-Based Selection}
+
+Rank-based selection assigns selection probabilities based on the rank ordering of individuals rather than raw fitness values. This avoids domination by a single high-fitness individual and maintains population diversity.
+
+\begin{definition}[Rank-Based Selection]
+Given a population of size $P$ ranked by fitness, individual at rank $r$ (where $r = 1$ is best) is selected with probability:
+\begin{equation}
+P(\text{select rank } r) = \frac{2(P - r + 1)}{P(P + 1)}.
+\end{equation}
+\end{definition}
+
+\subsubsection{Pareto Selection}
+
+The default strategy in the evolutionary training loop uses Pareto dominance: a mutant is accepted if and only if it is not worse on any objective and strictly better on at least one.
+
+When the mutant is accepted, the parent-child pair is recorded in the lineage history, creating a complete evolutionary trace from the initial genome to the current best. This lineage serves multiple purposes: debugging (identifying which mutations helped), reproducibility (replaying the evolutionary path), and analysis (studying the dynamics of prompt evolution).
+
+\begin{implnote}[Checkpoint Strategy]
+The lineage history stores the complete prompt bundle at each accepted generation, not just the diff. This enables any point in the evolutionary history to be restored independently, at the cost of increased storage. For long-running evolutions with many generations, a compressed lineage mode stores only the initial bundle and the sequence of accepted diffs, with periodic full snapshots every $k$ generations.
+\end{implnote}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Crossover Operator: Combining Good Solutions}
+\label{sec:crossover}
+
+Mutation generates variation by modifying a single genome. \emph{Crossover} (also called recombination) generates variation by combining fragments from two or more parent genomes. In sexual reproduction, crossover mixes maternal and paternal chromosomes; in evolutionary prompt optimization, crossover mixes fragments from high-fitness bundles.
+
+\begin{dogmadef}[Prompt Crossover]
+Given two parent bundles $\mathcal{B}_a$ and $\mathcal{B}_b$, crossover produces a child bundle $\mathcal{B}_c$ by selecting, for each gene, fragments from either parent:
+\begin{equation}
+g_c = (f_1^{p(1)}, f_2^{p(2)}, \ldots, f_m^{p(m)}), \quad \text{where } p(i) \in \{a, b\} \text{ for each fragment } i.
+\end{equation}
+The crossover mask $p(\cdot)$ can be uniform random (each fragment independently drawn from either parent), single-point (all fragments before position $j$ from parent $a$, all after from parent $b$), or fitness-weighted (fragments are drawn from the parent with higher per-fragment fitness attribution).
+\end{dogmadef}
+
+Crossover is most effective when the population contains diverse, high-fitness individuals whose strengths are complementary. If parent $\mathcal{B}_a$ excels at accuracy but has poor schema compliance, while parent $\mathcal{B}_b$ has excellent schema compliance but lower accuracy, crossover can produce a child that inherits accuracy-critical fragments from $\mathcal{B}_a$ and schema-critical fragments from $\mathcal{B}_b$.
+
+\begin{bioinsight}[Why Sex Evolved]
+In biology, sexual reproduction exists precisely because crossover is a powerful source of beneficial variation. Asexual organisms (which rely on mutation alone) adapt more slowly in changing environments because they cannot combine advantageous alleles from different lineages. The same principle applies in prompt evolution: mutation alone explores the fitness landscape through local steps, while crossover enables large leaps by combining independently evolved solutions.
+\end{bioinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Multi-Objective Scoring}
+\label{sec:scoring}
+
+A prompt bundle's fitness is not a single number but a \emph{score vector} spanning multiple objectives. The composite fitness function $J$ is a weighted combination:
+
+\begin{equation}
+\boxed{
+J(\mathbf{s}) = w_{\text{acc}} \cdot s_{\text{acc}} + w_{\text{schema}} \cdot s_{\text{schema}} + w_{\text{dist}} \cdot s_{\text{dist}} + w_{\text{cost}} \cdot s_{\text{cost}} + w_{\text{lat}} \cdot s_{\text{lat}}
+}
+\label{eq:fitness}
+\end{equation}
+
+\noindent
+where the five objectives are:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item $s_{\text{acc}}$ (\textbf{Accuracy}): Correctness of the model's responses against ground truth or teacher references. Measured as exact match, semantic similarity, or task-specific metrics.
+
+  \item $s_{\text{schema}}$ (\textbf{Schema compliance}): Whether the output conforms to required structural formats (JSON schemas, XML templates, typed interfaces). Binary per-case, averaged across the dataset.
+
+  \item $s_{\text{dist}}$ (\textbf{Distillation agreement}): Alignment between the student's responses and the teacher's references. Computed only when teacher references are available (Section~\ref{sec:distillation}).
+
+  \item $s_{\text{cost}}$ (\textbf{Cost efficiency}): Inverse of token usage, normalized by task complexity. Captures the economic cost of running the evolved prompts in production.
+
+  \item $s_{\text{lat}}$ (\textbf{Latency}): Inverse of response time, reflecting the operational speed of the evolved system.
+\end{enumerate}
+
+\subsection{Pareto-Optimal Selection}
+
+Rather than collapsing the score vector to a scalar via fixed weights, the evolutionary loop uses Pareto dominance as its primary selection criterion:
+
+\begin{definition}[Pareto Dominance]
+Score vector $\mathbf{s}'$ \emph{dominates} $\mathbf{s}$ (written $\mathbf{s}' \succ_{\text{Pareto}} \mathbf{s}$) if and only if:
+\begin{equation}
+\forall\, j:\; s'_j \geq s_j \quad \text{and} \quad \exists\, j:\; s'_j > s_j.
+\end{equation}
+\end{definition}
+
+When neither vector dominates the other (they are Pareto-incomparable), the weighted sum $J(\mathbf{s})$ serves as a tiebreaker. This two-level selection ensures that mutations which improve one objective without degrading others are always accepted, while mutations that trade off between objectives are evaluated against the current weight configuration.
+
+\begin{example}[Pareto Selection in Action]
+Consider a parent with scores $\mathbf{s} = (0.75, 0.90, 0.68, 0.82, 0.91)$ and two mutants:
+\begin{itemize}[leftmargin=1.5em]
+  \item Mutant A: $\mathbf{s}_A = (0.80, 0.90, 0.70, 0.82, 0.91)$. This \emph{dominates} the parent (better on accuracy and distillation, equal on the rest). Mutant A is accepted unconditionally.
+  \item Mutant B: $\mathbf{s}_B = (0.85, 0.85, 0.72, 0.80, 0.93)$. This is \emph{Pareto-incomparable} with the parent (better on accuracy, distillation, latency; worse on schema, cost). The weighted sum $J$ decides: if $J(\mathbf{s}_B) > J(\mathbf{s})$, Mutant B is accepted; otherwise, the parent is retained.
+\end{itemize}
+\end{example}
+
+\subsection{Dynamic Weight Adjustment via Tera}
+
+The objective weights $\mathbf{w} = (w_{\text{acc}}, w_{\text{schema}}, w_{\text{dist}}, w_{\text{cost}}, w_{\text{lat}})$ are not fixed hyperparameters. They are dynamically adjusted by the Tera regime state (Chapter~\ref{ch:tera}):
+
+\begin{equation}
+\mathbf{w}_{g+1} = \text{Tera}.\text{UpdateWeights}(\mathbf{w}_g, \mathbf{s}_g, H_g).
+\label{eq:tera-weights}
+\end{equation}
+
+When the system enters a regime where accuracy plateaus but schema compliance is declining, Tera increases $w_{\text{schema}}$ and decreases $w_{\text{acc}}$, redirecting evolutionary pressure toward structural correctness. This dynamic rebalancing mirrors how biological organisms shift metabolic priorities under changing environmental conditions.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Selection Pressure and Fitness Landscapes}
+\label{sec:fitness-landscapes}
+
+To build intuition for how the evolutionary loop navigates the prompt optimization problem, it helps to visualize the \emph{fitness landscape}---the mapping from genome space to fitness.
+
+\subsection{What Is a Fitness Landscape?}
+
+\begin{dogmadef}[Fitness Landscape]
+A \emph{fitness landscape} is a function $F: \mathcal{G} \to \mathbb{R}$ that assigns a fitness value to each possible genome $\mathcal{B} \in \mathcal{G}$. The landscape is defined by the evaluation dataset $\mathcal{D}$ and the fitness function $J$. Peaks correspond to high-fitness genomes; valleys correspond to low-fitness genomes; ridges connect peaks through sequences of small mutations.
+\end{dogmadef}
+
+Figure~\ref{fig:fitness-landscape} illustrates a schematic fitness landscape for prompt optimization.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.85]
+% Axes
+\draw[-{Stealth}] (0,0) -- (12,0) node[right] {\small Genome space (prompt variants)};
+\draw[-{Stealth}] (0,0) -- (0,6.5) node[above] {\small Fitness $J(\mathbf{s})$};
+
+% Fitness landscape curve
+\draw[thick, dogmablue, smooth] plot coordinates {
+  (0.5, 1.5) (1, 2.0) (1.5, 2.8) (2, 3.8) (2.5, 4.2) (3, 3.5)
+  (3.5, 2.8) (4, 2.2) (4.5, 2.5) (5, 3.2) (5.5, 4.5)
+  (6, 5.5) (6.5, 5.8) (7, 5.2) (7.5, 4.0) (8, 3.5)
+  (8.5, 3.8) (9, 4.2) (9.5, 3.6) (10, 2.8) (10.5, 2.0)
+  (11, 1.8) (11.5, 1.5)
+};
+
+% Fill under curve
+\fill[dogmalight, opacity=0.3, smooth] plot coordinates {
+  (0.5, 1.5) (1, 2.0) (1.5, 2.8) (2, 3.8) (2.5, 4.2) (3, 3.5)
+  (3.5, 2.8) (4, 2.2) (4.5, 2.5) (5, 3.2) (5.5, 4.5)
+  (6, 5.5) (6.5, 5.8) (7, 5.2) (7.5, 4.0) (8, 3.5)
+  (8.5, 3.8) (9, 4.2) (9.5, 3.6) (10, 2.8) (10.5, 2.0)
+  (11, 1.8) (11.5, 1.5)
+} -- (11.5, 0) -- (0.5, 0) -- cycle;
+
+% Labels for peaks and valleys
+\node[above, font=\small\sffamily, text=dogmared] at (2.5, 4.2) {Local peak};
+\node[above, font=\small\sffamily, text=dogmared] at (6.5, 5.8) {\textbf{Global peak}};
+\node[above, font=\small\sffamily, text=dogmared] at (9, 4.2) {Local peak};
+\node[below, font=\small\sffamily, text=dogmateal] at (4, 2.2) {Valley};
+\node[below, font=\small\sffamily, text=dogmateal] at (8, 3.5) {Saddle};
+
+% Initial genome point
+\fill[dogmagold] (1.5, 2.8) circle (3pt);
+\node[below left, font=\small\sffamily, text=dogmagold] at (1.5, 2.8) {Start};
+
+% Arrow showing evolutionary trajectory
+\draw[-{Stealth}, thick, dogmagold, dashed] (1.5, 2.8) to[bend left=15] (2.5, 4.2);
+\draw[-{Stealth}, thick, dogmagold, dashed] (2.5, 4.2) to[bend right=20] (5.5, 4.5);
+\node[font=\scriptsize\sffamily, text=dogmagold, rotate=10] at (4, 4.8) {crossover jump};
+\draw[-{Stealth}, thick, dogmagold, dashed] (5.5, 4.5) to[bend left=10] (6.5, 5.8);
+
+% Cliff annotation
+\draw[{Stealth}-, thin, dogmared] (7, 5.2) -- (7.5, 6.2) node[above, font=\scriptsize\sffamily] {Cliff: one word change};
+\end{tikzpicture}
+\caption{A schematic fitness landscape for prompt optimization. The landscape is rugged with multiple local peaks, valleys, and cliffs where a single-word change causes large fitness swings. The dashed arrows show an evolutionary trajectory that climbs the first local peak, then jumps via crossover to reach the global peak.}
+\label{fig:fitness-landscape}
+\end{figure}
+
+\subsection{Ruggedness and Neutral Networks}
+
+The fitness landscape of prompt optimization is notably \emph{rugged}: nearby genomes (differing by one sentence) can have vastly different fitness values. This ruggedness arises because language models are highly sensitive to prompt wording---rephrasing an instruction can change accuracy from 60\% to 95\% or vice versa.
+
+However, the landscape also contains \emph{neutral networks}: connected regions where many different prompt wordings yield identical fitness. These neutral networks are important for evolutionary search because they allow the population to \emph{drift} through the space of equivalent genomes, potentially reaching positions from which beneficial mutations become accessible.
+
+\begin{keyinsight}[The Optimization Landscape of Prompts]
+Gradient-based methods assume a smooth loss landscape where nearby parameter configurations have similar loss values. The prompt fitness landscape is more like a rugged terrain with plateaus, cliffs, and narrow valleys. A single word change can shift accuracy from 60\% to 95\% or from 95\% to 30\%. This ruggedness makes local gradient information unreliable but makes evolutionary search---with its ability to make large jumps and maintain diversity---well-suited to the problem.
+\end{keyinsight}
+
+\subsection{Selection Pressure}
+
+\emph{Selection pressure} quantifies how strongly the evolutionary loop favors high-fitness individuals. Too much pressure causes premature convergence to local optima; too little allows the population to drift randomly.
+
+\begin{definition}[Selection Intensity]
+The \emph{selection intensity} $I$ measures the expected fitness improvement per generation, normalized by the population's fitness standard deviation:
+\begin{equation}
+I = \frac{\mathbb{E}[J(\mathbf{s}_{g+1})] - \mathbb{E}[J(\mathbf{s}_g)]}{\sigma[J(\mathbf{s}_g)]}.
+\end{equation}
+\end{definition}
+
+The evolutionary loop controls selection pressure through three mechanisms: (1) tournament size (larger tournaments = more pressure), (2) Tera regime dynamics (exploitation regimes increase pressure, exploration regimes decrease it), and (3) the acceptance threshold for Pareto-incomparable mutants.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Distillation Pipeline}
+\label{sec:distillation}
+
+Distillation in the evolutionary training loop is not the standard model distillation of \citet{hinton2015}---it does not transfer weights or logits. Instead, it transfers \emph{behavioral knowledge}: the teacher demonstrates how to respond, and the student's prompts evolve to replicate that behavior.
+
+\subsection{Teacher Response Generation}
+
+For each evaluation case $x_i$, the teacher model $\mathcal{T}$ produces a structured reference:
+
+\begin{equation}
+r_i = \mathcal{T}(x_i) = \bigl(\texttt{answer}_i, \texttt{rationale}_i, \texttt{confidence}_i\bigr).
+\end{equation}
+
+The rationale field is critical: it provides not just the correct answer but the \emph{reasoning} behind it. When the student's prompts evolve, mutations that incorporate reasoning patterns similar to the teacher's rationale tend to generalize better than those that merely memorize answers.
+
+\subsection{Distillation Metrics}
+
+Two metrics quantify how well the student tracks the teacher:
+
+\begin{dogmadef}[Distillation Agreement]
+The \emph{distillation agreement} $\delta_{\text{agree}}$ measures per-case match between student and teacher answers:
+\begin{equation}
+\delta_{\text{agree}} = \frac{1}{|\mathcal{D}|} \sum_{i=1}^{|\mathcal{D}|} \mathbf{1}\bigl[\texttt{answer}_i^{\text{student}} \approx \texttt{answer}_i^{\text{teacher}}\bigr],
+\end{equation}
+where $\approx$ denotes semantic equivalence (exact match for factual tasks, embedding similarity for open-ended tasks).
+\end{dogmadef}
+
+\begin{dogmadef}[Distillation Coverage]
+The \emph{distillation coverage} $\delta_{\text{cov}}$ measures what fraction of teacher reasoning elements appear in the student's output:
+\begin{equation}
+\delta_{\text{cov}} = \frac{1}{|\mathcal{D}|} \sum_{i=1}^{|\mathcal{D}|} \frac{|\text{KeyConcepts}(r_i^{\text{teacher}}) \cap \text{KeyConcepts}(r_i^{\text{student}})|}{|\text{KeyConcepts}(r_i^{\text{teacher}})|}.
+\end{equation}
+\end{dogmadef}
+
+The distillation score $s_{\text{dist}}$ used in Equation~\ref{eq:fitness} combines these metrics:
+\begin{equation}
+s_{\text{dist}} = \alpha \cdot \delta_{\text{agree}} + (1 - \alpha) \cdot \delta_{\text{cov}}, \quad \alpha \in [0, 1].
+\end{equation}
+
+\subsection{Distilling the Best Evolved Model}
+
+After the evolutionary loop terminates, the best evolved bundle $\mathcal{B}^*$ may contain complex, verbose prompts that evolved through many rounds of mutation. The final \emph{distillation step} compresses this bundle into a streamlined deployment version:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Response collection.} Run $\mathcal{B}^*$ on a large dataset (10$\times$ the evolution dataset) and collect all responses with their fitness scores.
+  \item \textbf{Prompt compression.} Use a language model to summarize the evolved bundle into a shorter version that preserves the behavioral patterns.
+  \item \textbf{Verification.} Evaluate the compressed bundle against the original to ensure fitness degradation is within tolerance (typically $\leq$2\%).
+  \item \textbf{Deployment packaging.} The compressed bundle is packaged with its lineage metadata, fitness certificate, and deployment configuration.
+\end{enumerate}
+
+\begin{keyinsight}[Distillation as Epigenetic Inheritance]
+Biological distillation has a parallel in epigenetic inheritance: the parent organism does not transmit its learned adaptations through DNA sequence changes, but through regulatory marks that bias the offspring's gene expression toward successful patterns. Similarly, teacher references do not change the student's architecture---they bias the \emph{evolutionary search} toward regions of prompt space that produce teacher-like behavior. The student genome that emerges may achieve similar performance through entirely different prompt structures.
+\end{keyinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Mutation Operators in Detail}
+\label{sec:mutation-strategies}
+
+Mutation is the engine of variation in evolutionary training. The \textsc{evo-trainer} implements a structured taxonomy of mutation operators organized into six families, each targeting a different aspect of prompt fitness.
+
+\subsection{Primitive Mutation Operators}
+
+At the lowest level, three primitive operations modify prompt fragments:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Point mutation.} A single fragment is replaced with a modified version. The mutation model receives the fragment, the current fitness scores, and the improvement objective, then proposes a revised fragment.
+
+  \item \textbf{Insertion mutation.} A new fragment is added at a specified position within a gene. Insertions typically add clarifying instructions, edge-case handling, or format specifications.
+
+  \item \textbf{Deletion mutation.} An existing fragment is removed from a gene. Deletions are used when fragments are redundant, contradictory, or contributing to excessive token usage.
+\end{enumerate}
+
+Additionally, \textbf{recombination} combines fragments from multiple genes or from the mutation history to produce novel configurations, analogous to genetic crossover in sexual reproduction (see Section~\ref{sec:crossover}).
+
+\subsection{The Complete Mutation Operator Table}
+
+Table~\ref{tab:mutation-operators} provides a comprehensive catalog of all mutation operators, organized by target and type, with concrete examples of each.
+
+\begin{table}[H]
+\centering
+\caption{Complete catalog of mutation operators in the evolutionary training loop.}
+\label{tab:mutation-operators}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\textwidth}{l l l Y}
+\toprule
+\textbf{Operator} & \textbf{Type} & \textbf{Target} & \textbf{Example} \\
+\midrule
+\textsc{word\_swap} & Point & Text fragment & ``Provide a \emph{brief}'' $\to$ ``Provide a \emph{concise}'' \\
+\textsc{sentence\_rewrite} & Point & Text fragment & Rephrase an instruction for clarity \\
+\textsc{example\_insert} & Insertion & Task gene & Add a worked example to the task prompt \\
+\textsc{constraint\_insert} & Insertion & System gene & Add ``Always respond in valid JSON'' \\
+\textsc{redundancy\_delete} & Deletion & Any gene & Remove a repeated instruction \\
+\textsc{temp\_perturb} & Gaussian & Hyperparameter & temperature: $0.7 \to 0.65$ \\
+\textsc{top\_p\_perturb} & Gaussian & Hyperparameter & top\_p: $0.95 \to 0.92$ \\
+\textsc{format\_swap} & Categorical & Hyperparameter & response\_format: text $\to$ json \\
+\textsc{section\_reorder} & Structural & Gene layout & Move ``Output Format'' before ``Instructions'' \\
+\textsc{gene\_crossover} & Recombination & Multi-gene & Combine system genes from two parents \\
+\textsc{fragment\_splice} & Recombination & Fragment & Insert a high-fitness fragment from another lineage \\
+\textsc{meta\_mutation} & Self-referential & Mutation gene & Modify mutation.md itself \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{The Six Mutation Families}
+
+The primitive operators are organized into six higher-level mutation families, each representing a coherent evolutionary strategy:
+
+\begin{table}[H]
+\centering
+\caption{The six mutation families in the evolutionary training loop.}
+\label{tab:evo-mutation-families}
+\begin{tabularx}{\textwidth}{l l Y}
+\toprule
+\textbf{Family} & \textbf{Target Objective} & \textbf{Description} \\
+\midrule
+\textsc{context\_grounding} & Accuracy & Adds domain context, examples, or background knowledge to improve factual correctness \\
+\textsc{exact\_answer} & Accuracy & Refines answer extraction instructions to produce more precise, targeted responses \\
+\textsc{strict\_json} & Schema & Tightens output format constraints, adds schema templates, enforces structural compliance \\
+\textsc{brevity} & Cost / Latency & Removes verbose instructions, compresses prompts, reduces token overhead \\
+\textsc{structural\_explore} & All (exploration) & Makes larger structural changes---reorders sections, restructures hierarchy, introduces novel framings \\
+\textsc{bond\_repair} & Coherence & Fixes contradictions between fragments, resolves conflicts between genes, restores internal consistency \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{bioinsight}[Mutation Families as Repair Pathways]
+The six mutation families parallel the specialized DNA repair pathways in biological cells. Base excision repair targets single damaged bases (cf.\ \textsc{exact\_answer}); nucleotide excision repair removes bulky lesions (cf.\ \textsc{structural\_explore}); mismatch repair corrects replication errors (cf.\ \textsc{bond\_repair}). Just as cells deploy different repair pathways depending on the type of damage detected, the evolutionary loop selects mutation families based on which fitness objectives are underperforming.
+\end{bioinsight}
+
+\subsection{Mutation Rate and Adaptive Control}
+
+The mutation rate $\mu$ controls how many fragments are modified per generation. A fixed mutation rate is suboptimal because the ideal rate changes as the population evolves:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Early evolution (low fitness):} High mutation rate ($\mu \approx 0.3$) for broad exploration.
+  \item \textbf{Mid evolution (improving):} Moderate rate ($\mu \approx 0.1$) balancing exploration and exploitation.
+  \item \textbf{Late evolution (near convergence):} Low rate ($\mu \approx 0.03$) for fine-tuning.
+\end{itemize}
+
+The Tera regime state provides adaptive mutation rate control:
+\begin{equation}
+\mu_{g+1} = \mu_{\min} + (\mu_{\max} - \mu_{\min}) \cdot \sigma\bigl(-\beta \cdot \Delta J_g\bigr),
+\end{equation}
+where $\Delta J_g$ is the recent fitness improvement trend and $\beta$ controls sensitivity. When fitness is improving rapidly ($\Delta J_g > 0$), the mutation rate decreases to exploit the current trajectory; when fitness stagnates ($\Delta J_g \approx 0$), the rate increases to escape local optima.
+
+\subsection{Mutation Verification}
+
+Not every proposed mutation improves the genome. Before a mutation is accepted into the candidate bundle, it undergoes \emph{mutation verification}:
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Syntactic check.} The mutated gene file must parse correctly (valid Markdown, well-formed templates).
+  \item \textbf{Consistency check.} The mutation must not introduce contradictions with other genes in the bundle.
+  \item \textbf{Length bounds.} The mutated gene must fall within configured length limits (preventing runaway insertion).
+  \item \textbf{Semantic coherence.} The mutation model verifies that the edit preserves the gene's core purpose.
+\end{enumerate}
+
+Mutations that fail verification are discarded without evaluation, saving computational resources that would be wasted on obviously deleterious variants.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Evolution Without Gradients}
+\label{sec:gradient-free}
+
+The evolutionary training loop is a \emph{gradient-free} optimization method. This is not a limitation but a deliberate design choice motivated by the structure of the search space.
+
+\subsection{Comparison to Neural Architecture Search}
+
+Evolutionary prompt optimization shares structural similarities with Neural Architecture Search (NAS), another gradient-free optimization paradigm:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.92\textwidth}{L{3cm} L{4cm} Y}
+\toprule
+\textbf{Property} & \textbf{NAS} & \textbf{Evolutionary Prompt Opt.} \\
+\midrule
+Search space & Architecture configurations & Natural language prompts \\
+Genotype & Architecture encoding & Prompt bundle (4 gene files) \\
+Phenotype & Trained network & LLM behavior under the prompt \\
+Fitness & Validation accuracy & Multi-objective score vector \\
+Mutation & Add/remove layers, change ops & Edit/insert/delete fragments \\
+Evaluation cost & Full training run ($\sim$hours) & Inference on test cases ($\sim$minutes) \\
+Gradient signal & None (architecture is discrete) & None (prompts are discrete) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The key advantage of evolutionary prompt optimization over NAS is evaluation cost: testing a prompt candidate requires only inference (minutes), not full training (hours to days). This enables far more generations within a given compute budget.
+
+\subsection{The Exploration-Exploitation Tradeoff}
+
+Every evolutionary system must balance \emph{exploration} (searching broadly for novel solutions) and \emph{exploitation} (refining known good solutions). The evolutionary training loop manages this tradeoff through three mechanisms:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Tera regime dynamics.} The Tera hidden state (Chapter~\ref{ch:tera}) tracks whether the system is in an exploration regime (stagnant fitness, high uncertainty) or an exploitation regime (steady improvement, low variance). In exploration regimes, \textsc{structural\_explore} mutations are upweighted; in exploitation regimes, focused families like \textsc{exact\_answer} and \textsc{strict\_json} dominate.
+
+  \item \textbf{Mutation family selection.} The probability of selecting each mutation family is conditioned on the current fitness profile. Families that target underperforming objectives are selected with higher probability.
+
+  \item \textbf{HelixHash novelty detection.} The HelixHash archive (Chapter~\ref{ch:helixhash}) maintains structural signatures of all previously evaluated prompt bundles. When a proposed mutation produces a bundle whose HelixHash signature is too similar to an already-tested configuration, it is deprioritized in favor of more novel alternatives.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Dataset Ecosystem}
+\label{sec:datasets}
+
+The evolutionary training loop evaluates fitness against structured datasets. The \textsc{evo-trainer} supports four dataset types, each designed for a different evaluation domain:
+
+\begin{dogmadef}[Dataset Types]
+The four dataset types in the \textsc{evo-trainer} ecosystem are:
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{\texttt{synthetic\_needle}} --- Controlled retrieval evaluation. A target ``needle'' (fact, passage, or datum) is embedded within a larger ``haystack'' of distracting context. The system must locate and extract the needle accurately. This dataset type enables precise measurement of retrieval fidelity and context window utilization.
+
+  \item \textbf{\texttt{jsonl}} --- Custom evaluation using JSON Lines format. Each line contains an input-output pair with optional metadata (expected schema, difficulty level, domain tags). This is the general-purpose dataset type for arbitrary evaluation tasks.
+
+  \item \textbf{\texttt{repo\_snapshot}} --- Code understanding evaluation. A snapshot of a software repository is provided as context, and the system must answer questions about code structure, function behavior, dependency relationships, or implementation details. Tests the system's ability to reason over large, structured codebases.
+
+  \item \textbf{\texttt{fasta}} --- Genomic comprehension evaluation. Input sequences in FASTA format are presented with biological queries (motif identification, functional annotation, structural prediction). Tests the system's ability to process and reason about biological sequence data---a core capability for DOGMA systems operating at the biology-AI interface.
+\end{enumerate}
+\end{dogmadef}
+
+\begin{implnote}[Dataset Selection Strategy]
+The choice of dataset type determines the shape of the fitness landscape. \texttt{synthetic\_needle} produces a smooth landscape (retrieval accuracy varies continuously with prompt quality), making it ideal for initial evolution. \texttt{repo\_snapshot} and \texttt{fasta} produce rugged landscapes (small prompt changes can cause large performance swings on complex reasoning tasks), requiring more generations and broader exploration. A staged training approach---evolving first on \texttt{synthetic\_needle}, then transferring the evolved bundle to harder datasets---often converges faster than direct evolution on difficult tasks.
+\end{implnote}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Convergence and Termination}
+\label{sec:convergence}
+
+The evolutionary loop terminates under one of three conditions:
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Generation budget exhausted.} The maximum number of generations $G$ has been reached.
+  \item \textbf{Fitness plateau.} The composite fitness $J$ has not improved by more than $\epsilon$ for $p$ consecutive generations.
+  \item \textbf{Objective saturation.} All individual objectives exceed their target thresholds.
+\end{enumerate}
+
+Upon termination, the lineage history $\mathcal{L}$ is analyzed to identify the overall best bundle $\mathcal{B}^*$, which may not be the final generation's bundle if late-stage mutations degraded performance on some objectives.
+
+\begin{keyinsight}[Evolution Has No Global Optimum Guarantee]
+Unlike convex optimization, evolutionary search provides no guarantee of finding the global optimum. What it provides is a \emph{population-level guarantee}: given sufficient generations and appropriate mutation diversity, the evolved bundle will be at least as good as the initial bundle on all objectives and strictly better on at least one. The lineage history enables post-hoc analysis of the evolutionary trajectory, revealing whether the search explored broadly or converged prematurely.
+\end{keyinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Worked Example: Evolving a Medical QA System}
+\label{sec:evo-worked-example}
+
+To make the evolutionary loop concrete, we walk through a complete three-generation evolution of a medical question-answering system.
+
+\paragraph{Setup.} The initial bundle $\mathcal{B}_0$ contains:
+\begin{itemize}[leftmargin=1.5em]
+  \item \texttt{system.md}: ``You are a medical assistant. Answer health questions accurately.''
+  \item \texttt{task.md}: ``Given the following question, provide a clear answer.''
+  \item \texttt{evaluator.md}: ``Score 1 if the answer is medically accurate, 0 otherwise.''
+\end{itemize}
+The evaluation dataset has 20 medical questions. Initial fitness: $\mathbf{s}_0 = (0.55, 0.70, -, 0.85, 0.90)$.
+
+\paragraph{Generation 1.} The \textsc{context\_grounding} mutation family adds a fragment to \texttt{system.md}: ``When answering, cite specific biological mechanisms, drug interactions, or clinical guidelines.'' The mutant achieves $\mathbf{s}_1 = (0.70, 0.70, -, 0.80, 0.88)$. Since $s_{\text{acc}}$ improved from 0.55 to 0.70 while $s_{\text{cost}}$ dropped only slightly, the mutant dominates on accuracy and is accepted.
+
+\paragraph{Generation 2.} The \textsc{strict\_json} family adds a JSON schema template to \texttt{task.md}: ``Respond in the format: \texttt{\{"answer": "...", "confidence": "high/medium/low"\}}.'' Schema compliance jumps from 0.70 to 0.95. Scores: $\mathbf{s}_2 = (0.70, 0.95, -, 0.78, 0.85)$. Pareto dominance on schema; accepted.
+
+\paragraph{Generation 3.} The \textsc{exact\_answer} family refines the extraction instruction: ``Begin your answer with the most specific medical term, then explain.'' Accuracy rises to 0.80. Scores: $\mathbf{s}_3 = (0.80, 0.95, -, 0.76, 0.84)$. Despite small cost/latency decreases, the accuracy gain dominates; accepted.
+
+After three generations, the system improved from 55\% to 80\% accuracy and from 70\% to 95\% schema compliance, while trading modest reductions in cost efficiency and latency.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Exercises}
+\label{sec:ch12-exercises}
+
+\begin{enumerate}[label=\textbf{12.\arabic*.}, leftmargin=2.5em]
+
+\item \textbf{[Fundamentals]} Consider a prompt bundle with three gene files: \texttt{system.md} (8 fragments), \texttt{task.md} (4 fragments), and \texttt{mutation.md} (6 fragments). How many distinct single-fragment point mutations are possible? If each mutation has a 15\% acceptance rate under Pareto selection, how many generations are needed on average to find one improving mutation?
+
+\item \textbf{[Analysis]} The fitness function (Equation~\ref{eq:fitness}) uses five weighted objectives. Construct a concrete example where a mutant dominates the parent in Pareto terms (i.e., $\mathbf{s}' \succ_{\text{Pareto}} \mathbf{s}$) but has a \emph{lower} composite score $J(\mathbf{s}') < J(\mathbf{s})$. What does this imply about the relationship between Pareto dominance and weighted-sum selection?
+
+\item \textbf{[Design]} Design a prompt bundle for a medical question-answering system. Specify the contents of each of the four gene files (\texttt{system.md}, \texttt{task.md}, \texttt{mutation.md}, \texttt{evaluator.md}). Identify which fragments in \texttt{system.md} should be mutable and which should be frozen (immune to mutation) for safety reasons.
+
+\item \textbf{[Implementation]} Implement a simplified version of the evolutionary loop in Python. Your implementation should support: (a) loading a prompt bundle from disk, (b) evaluating it against a list of input-output pairs, (c) applying random point mutations, and (d) accepting improvements via Pareto dominance. Test on a dataset of 10 arithmetic word problems.
+
+\item \textbf{[Crossover]} Two parent bundles have the following fitness profiles: Parent A = $(0.90, 0.60, 0.75, 0.80, 0.85)$ and Parent B = $(0.65, 0.95, 0.70, 0.90, 0.80)$. Design a crossover strategy that maximizes the probability of producing a child with high accuracy \emph{and} high schema compliance. Which fragments should come from which parent?
+
+\item \textbf{[Theory]} Prove that if Tera's weight adjustment (Equation~\ref{eq:tera-weights}) satisfies the constraint $\sum_j w_j = 1$ and $w_j > 0$ for all $j$ at every generation, then a mutant accepted by Pareto dominance will always have $J(\mathbf{s}') \geq J(\mathbf{s})$ under the updated weights. Under what conditions is the inequality strict?
+
+\item \textbf{[Fitness Landscape]} Sketch the fitness landscape for a binary classification prompt with exactly two tunable fragments. Each fragment can take one of 5 values, giving a $5 \times 5$ grid of 25 possible genomes. Assign realistic fitness values to each grid cell and identify: (a) all local optima, (b) the global optimum, (c) any neutral networks, and (d) the longest evolutionary path from a corner to the global optimum.
+
+\item \textbf{[Research]} Compare the evolutionary training loop to recent prompt optimization methods such as DSPy, APE (Automatic Prompt Engineering), and OPRO. For each method, identify: (a) the search space representation, (b) the optimization algorithm, (c) whether it supports multi-objective optimization, and (d) how it handles the exploration-exploitation tradeoff. Which method is most similar to the evolutionary loop, and why?
+
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Key Takeaways}
+
+\keytakeaway{
+\begin{itemize}[leftmargin=1.5em]
+  \item Evolutionary optimization and gradient descent are both optimization methods, but they differ in unit of optimization (populations vs.\ single solutions), search space (discrete vs.\ continuous), and gradient requirements (none vs.\ essential). Evolution is the natural choice for prompt optimization where the search space is discrete and evaluation is black-box.
+  \item Prompt bundles are genomes: structured, heritable, mutable collections of gene files (\texttt{system.md}, \texttt{task.md}, \texttt{mutation.md}, \texttt{evaluator.md}) that encode the complete behavioral specification of a DOGMA agent. Hyperparameters and architectural choices are encoded alongside natural language instructions.
+  \item The evolutionary training loop consists of five stages---LOAD, DISTILL, EVALUATE, MUTATE, SELECT---executed iteratively to evolve prompt bundles without gradient computation.
+  \item Selection operates through tournament, rank-based, or Pareto selection. Pareto dominance ensures no objective is sacrificed without compensation; the weighted sum $J(\mathbf{s})$ serves as a tiebreaker for incomparable solutions.
+  \item Crossover combines fragments from multiple high-fitness parents, enabling large jumps across the fitness landscape that mutation alone cannot achieve.
+  \item The fitness landscape of prompts is rugged with cliffs, plateaus, and neutral networks. Selection pressure must be carefully controlled to avoid premature convergence.
+  \item Twelve mutation operators organized into six families (\textsc{context\_grounding}, \textsc{exact\_answer}, \textsc{strict\_json}, \textsc{brevity}, \textsc{structural\_explore}, \textsc{bond\_repair}) provide targeted variation, with Tera dynamically selecting families based on the current fitness profile.
+  \item Distillation transfers behavioral knowledge from teacher to student and compresses evolved bundles into streamlined deployment versions.
+  \item Four dataset types (\texttt{synthetic\_needle}, \texttt{jsonl}, \texttt{repo\_snapshot}, \texttt{fasta}) provide evaluation contexts ranging from controlled retrieval to genomic comprehension.
+\end{itemize}
+}
+
+\section*{Suggested Reading}
+\begin{itemize}[leftmargin=1.5em]
+  \item \citet{holland1992}: Genetic algorithms and the foundations of evolutionary computation.
+  \item \citet{hinton2015}: Knowledge distillation---the neural network version, for contrast with behavioral distillation.
+  \item \citet{zoph2017}: Neural Architecture Search---the closest ML analogue to evolutionary prompt optimization.
+  \item \citet{zhou2023}: Large Language Models as Optimizers (OPRO)---a related approach to prompt optimization via LLMs.
+  \item Chapter~\ref{ch:tera} of this book: Tera regime dynamics and dynamic weight adjustment.
+  \item Chapter~\ref{ch:helixhash} of this book: HelixHash novelty detection and structural signatures.
+  \item Chapter~\ref{ch:dogma-architecture} of this book: The DOGMA pipeline that the evolutionary loop trains.
+\end{itemize}

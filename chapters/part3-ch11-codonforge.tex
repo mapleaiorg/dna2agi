@@ -1,0 +1,1326 @@
+% ═══════════════════════════════════════════════════════════════════════════════
+% Chapter 11: CodonForge — The DNA Compiler (v1.1 — Expanded Edition)
+% Part III: The DOGMA Architecture
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\chapter{CodonForge --- The DNA Compiler and SDANS}
+\label{ch:codonforge}
+
+\chapterepigraph{A compiler is a bridge between the language of intent and the language of execution. In DOGMA, that bridge is biological.}{DOGMA Design Manifesto}
+
+\noindent
+Every sophisticated computational system needs a compiler: a principled mechanism for translating high-level specifications into executable low-level operations. In conventional computing, compilers translate C into assembly, or Python into bytecode. In DOGMA, \textbf{CodonForge} translates prompt bundles and genomic specifications into executable codon programs---using the same triplet encoding that biology uses to translate mRNA into protein.
+
+This chapter presents CodonForge as a \emph{symbolic DNA programming layer} that treats codons as opcodes and genes as execution blocks. We begin with the biological foundations that inspired the design, then build up the full compilation pipeline piece by piece. We conclude with \textbf{SDANS} (Strand Displacement Attention Neural System or Stochastic DNA-Algebraic Neural Simulation), a compilation target that formally bridges CodonForge programs and neural network execution.
+
+\medskip
+
+\noindent\textbf{Learning objectives.} After studying this chapter, students should be able to:
+\begin{itemize}[leftmargin=1.8em]
+  \item Explain how biological codon translation (mRNA $\to$ ribosome $\to$ amino acid) inspired CodonForge's design.
+  \item List and categorize all 64 CodonForge opcodes across the five opcode families.
+  \item Trace a prompt through the full Parse $\to$ Compile $\to$ Optimize pipeline.
+  \item Construct forward and reverse DNA strands for a CodonForge program.
+  \item Encode and decode text using the Word2FASTA bridge.
+  \item Describe how SDANS maps symbolic codon programs to differentiable neural architectures.
+  \item Compare the CodonForge compilation pipeline with traditional compilers such as LLVM.
+\end{itemize}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Biological Foundations: Codon Translation in Nature}
+\label{sec:bio-codon-translation}
+
+Before we can understand CodonForge, we must first understand the biological process that inspired it. In every living cell, the information stored in DNA is translated into functional proteins through a remarkably elegant pipeline. This section reviews that pipeline in detail, because CodonForge directly mirrors each of its stages.
+
+\subsection{The Central Dogma of Molecular Biology}
+
+The \emph{central dogma} describes the flow of genetic information:
+
+\begin{equation}
+\text{DNA} \xrightarrow{\text{Transcription}} \text{mRNA} \xrightarrow{\text{Translation}} \text{Protein}
+\end{equation}
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Transcription.} The enzyme RNA polymerase reads one strand of the DNA double helix (the \emph{template strand}) and synthesizes a complementary messenger RNA (mRNA) molecule. The mRNA is a portable copy of the gene's instructions.
+  \item \textbf{Translation.} The ribosome---a large molecular machine---reads the mRNA three nucleotides at a time. Each triplet of nucleotides is called a \emph{codon}. Transfer RNA (tRNA) molecules carry individual amino acids to the ribosome, where they are matched to the appropriate codon via anticodon base-pairing.
+  \item \textbf{Protein folding.} The resulting chain of amino acids folds into a three-dimensional protein that performs a specific function in the cell.
+\end{enumerate}
+
+\begin{bioinsight}[Why Triplets?]
+Why does biology use three-letter codons instead of two or four? With four possible nucleotides (A, U, G, C), a two-letter code would provide only $4^2 = 16$ combinations---not enough to encode 20 amino acids plus stop signals. A three-letter code provides $4^3 = 64$ combinations, which is more than sufficient and provides redundancy (multiple codons can encode the same amino acid). A four-letter code ($4^4 = 256$) would be wasteful. Three is the minimum length that encodes sufficient information, a principle that CodonForge inherits directly.
+\end{bioinsight}
+
+\subsection{Step-by-Step: From mRNA to Amino Acid}
+
+Let us walk through translation in detail, as each step has a computational analogue in CodonForge.
+
+\medskip
+\noindent\textbf{Step 1: Initiation.} The ribosome assembles on the mRNA at the \emph{start codon} \texttt{AUG}, which encodes the amino acid methionine. This is analogous to a program's entry point or \texttt{main()} function. In CodonForge, this corresponds to the \emph{promoter codon} that marks the beginning of a gene.
+
+\medskip
+\noindent\textbf{Step 2: Elongation.} The ribosome moves along the mRNA, reading one codon at a time. For each codon, a tRNA molecule with the complementary anticodon delivers the correct amino acid. The ribosome catalyzes a peptide bond between the new amino acid and the growing chain. In CodonForge, this corresponds to sequential opcode execution: the ``ribosome'' is the interpreter, and each codon triggers a specific computational operation.
+
+\medskip
+\noindent\textbf{Step 3: Termination.} When the ribosome encounters a \emph{stop codon} (\texttt{UAA}, \texttt{UAG}, or \texttt{UGA}), translation halts. No tRNA matches these codons; instead, release factors cause the ribosome to release the completed protein. In CodonForge, the terminator codon halts gene execution and triggers output emission.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=0.4cm,
+  box/.style={draw, rounded corners, minimum width=2.2cm, minimum height=0.8cm, align=center, font=\small},
+  arrow/.style={-{Stealth[length=3mm]}, thick},
+]
+  % mRNA strand
+  \node[box, fill=dogmalight] (mrna) {mRNA};
+  \node[box, fill=dogmamint, right=1.5cm of mrna] (ribosome) {Ribosome};
+  \node[box, fill=dogmawarm, right=1.5cm of ribosome] (trna) {tRNA + \\Amino Acid};
+  \node[box, fill=white, draw=dogmared, right=1.5cm of trna] (protein) {Protein};
+
+  \draw[arrow, color=dogmablue] (mrna) -- node[above, font=\scriptsize] {read codon} (ribosome);
+  \draw[arrow, color=dogmateal] (ribosome) -- node[above, font=\scriptsize] {match anticodon} (trna);
+  \draw[arrow, color=dogmagold] (trna) -- node[above, font=\scriptsize] {add amino acid} (protein);
+
+  % Analogies below
+  \node[below=0.6cm of mrna, font=\scriptsize\itshape, text=dogmagray] {(CodonForge program)};
+  \node[below=0.6cm of ribosome, font=\scriptsize\itshape, text=dogmagray] {(Interpreter)};
+  \node[below=0.6cm of trna, font=\scriptsize\itshape, text=dogmagray] {(Opcode dispatch)};
+  \node[below=0.6cm of protein, font=\scriptsize\itshape, text=dogmagray] {(Output)};
+\end{tikzpicture}
+\caption{Biological translation and its CodonForge analogy. The ribosome reads mRNA codons sequentially, just as CodonForge's interpreter reads codon opcodes.}
+\label{fig:bio-translation}
+\end{figure}
+
+\subsection{The Complete Biological Codon Table}
+
+The following table shows all 64 codons of the standard genetic code, organized by the first and second nucleotide positions. Understanding this table is essential because CodonForge's opcode table is structured as a direct computational analogue.
+
+\begin{table}[htbp]
+\centering
+\caption{The standard genetic code: all 64 RNA codons and their corresponding amino acids. Start codon (\texttt{AUG}) shown in bold; stop codons shown with \textbf{Stop}.}
+\label{tab:genetic-code}
+\renewcommand{\arraystretch}{1.1}
+\small
+\begin{tabular}{c|c|cccc|c}
+\toprule
+& & \multicolumn{4}{c|}{\textbf{Second Position}} & \\
+& & \textbf{U} & \textbf{C} & \textbf{A} & \textbf{G} & \\
+\midrule
+\multirow{4}{*}{\rotatebox{90}{\textbf{U}}}
+& U & Phe (UUU) & Ser (UCU) & Tyr (UAU) & Cys (UGU) & U \\
+& U & Phe (UUC) & Ser (UCC) & Tyr (UAC) & Cys (UGC) & C \\
+& U & Leu (UUA) & Ser (UCA) & \textbf{Stop} (UAA) & \textbf{Stop} (UGA) & A \\
+& U & Leu (UUG) & Ser (UCG) & \textbf{Stop} (UAG) & Trp (UGG) & G \\
+\midrule
+\multirow{4}{*}{\rotatebox{90}{\textbf{C}}}
+& C & Leu (CUU) & Pro (CCU) & His (CAU) & Arg (CGU) & U \\
+& C & Leu (CUC) & Pro (CCC) & His (CAC) & Arg (CGC) & C \\
+& C & Leu (CUA) & Pro (CCA) & Gln (CAA) & Arg (CGA) & A \\
+& C & Leu (CUG) & Pro (CCG) & Gln (CAG) & Arg (CGG) & G \\
+\midrule
+\multirow{4}{*}{\rotatebox{90}{\textbf{A}}}
+& A & Ile (AUU) & Thr (ACU) & Asn (AAU) & Ser (AGU) & U \\
+& A & Ile (AUC) & Thr (ACC) & Asn (AAC) & Ser (AGC) & C \\
+& A & Ile (AUA) & Thr (ACA) & Lys (AAA) & Arg (AGA) & A \\
+& A & \textbf{Met} (AUG) & Thr (ACG) & Lys (AAG) & Arg (AGG) & G \\
+\midrule
+\multirow{4}{*}{\rotatebox{90}{\textbf{G}}}
+& G & Val (GUU) & Ala (GCU) & Asp (GAU) & Gly (GGU) & U \\
+& G & Val (GUC) & Ala (GCC) & Asp (GAC) & Gly (GGC) & C \\
+& G & Val (GUA) & Ala (GCA) & Glu (GAA) & Gly (GGA) & A \\
+& G & Val (GUG) & Ala (GCG) & Glu (GAG) & Gly (GGG) & G \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{keyinsight}[Degeneracy Is Not Redundancy]
+Notice that 61 codons encode only 20 amino acids. This means most amino acids have multiple codons---a property called \emph{degeneracy}. Critically, degeneracy is not useless redundancy. Different codons for the same amino acid are translated at different speeds, affecting protein folding and expression levels. This is called \emph{codon usage bias}, and organisms optimize their codon choices for translational efficiency. CodonForge inherits this principle: multiple codons map to the same operation but with different optimization hints.
+\end{keyinsight}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{DNA as a Programming Language}
+\label{sec:dna-programming}
+
+The genetic code maps 64 codons (three-nucleotide sequences) to 20 amino acids plus stop signals. CodonForge extends this idea: 64 codons are mapped to \emph{computational opcodes}, organizing computation into gene-like blocks with promoter/terminator control flow.
+
+\begin{definition}[Codon Opcode]
+\label{def:codon-opcode}
+A \emph{codon opcode} is a mapping from a three-letter DNA sequence to a computational operation:
+\begin{equation}
+\text{opcode} : \Sigma_{\text{DNA}}^3 \to \mathcal{O},
+\end{equation}
+where $\Sigma_{\text{DNA}} = \{\texttt{A}, \texttt{T}, \texttt{G}, \texttt{C}\}$ is the DNA alphabet and $\mathcal{O}$ is the set of available operations. Since $|\Sigma_{\text{DNA}}^3| = 4^3 = 64$, CodonForge defines exactly 64 opcodes organized into functional families.
+\end{definition}
+
+\begin{bioinsight}[DNA vs.\ RNA Alphabets]
+Biology uses two slightly different alphabets: DNA uses \{A, T, G, C\} while RNA uses \{A, U, G, C\}, where uracil (U) replaces thymine (T). CodonForge uses the DNA alphabet because its programs are ``stored'' like DNA and ``executed'' like mRNA. When we refer to biological codons (e.g., the start codon \texttt{AUG}), we use the RNA alphabet. When we write CodonForge codons (e.g., \texttt{ATG}), we use the DNA alphabet. The mapping is straightforward: replace every T with U to go from DNA to RNA, and every U with T for the reverse.
+\end{bioinsight}
+
+\subsection{Opcode Families}
+\label{subsec:opcode-families}
+
+CodonForge organizes its 64 opcodes into five families, mirroring the functional categories of biological codons. The families are:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.97\textwidth}{L{2.5cm} L{1.2cm} L{3.2cm} Y}
+\toprule
+\textbf{Family} & \textbf{Count} & \textbf{Example Ops} & \textbf{Biological Analogue} \\
+\midrule
+Sense & 12 & \texttt{LOAD\_CONTEXT}, \texttt{MATCH\_KEY}, \texttt{SCAN\_MOTIF} & Sensor proteins \\
+Binding & 12 & \texttt{BIND\_VALUE}, \texttt{STORE\_REG}, \texttt{ASSOCIATE} & Molecular binding \\
+Regulation & 14 & \texttt{IF\_ACTIVE}, \texttt{GATE\_CHECK}, \texttt{THRESHOLD} & Transcription factors \\
+Expression & 14 & \texttt{EMIT\_JSON}, \texttt{EMIT\_TEXT}, \texttt{FOLD\_STRUCT} & Protein expression \\
+Termination & 12 & \texttt{STOP}, \texttt{CHECKPOINT}, \texttt{CLEANUP} & Stop codons \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Let us examine each family in detail.
+
+\subsubsection{Sense Family (12 opcodes)}
+
+The Sense family handles all input perception and context loading. Just as sensor proteins in a cell detect environmental signals, Sense opcodes detect and load relevant information from the input context.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.1}
+\small
+\begin{tabularx}{0.97\textwidth}{L{1.2cm} L{3cm} Y}
+\toprule
+\textbf{Codon} & \textbf{Opcode} & \textbf{Description} \\
+\midrule
+\texttt{AAA} & \texttt{LOAD\_CONTEXT} & Load the full input context (query + environment) into register R0 \\
+\texttt{AAT} & \texttt{LOAD\_QUERY} & Load only the user query portion into R0 \\
+\texttt{AAG} & \texttt{LOAD\_SYSTEM} & Load system-level instructions into R0 \\
+\texttt{AAC} & \texttt{LOAD\_HISTORY} & Load conversation history into R0 \\
+\texttt{ATA} & \texttt{SCAN\_MOTIF} & Scan current context for recurring motifs; store matches in R1 \\
+\texttt{ATT} & \texttt{SCAN\_ENTITY} & Extract named entities from context; store in R1 \\
+\texttt{ATG} & \texttt{MATCH\_KEY} & Find passages matching key terms; store in R2 \\
+\texttt{ATC} & \texttt{MATCH\_PATTERN} & Match regex-like patterns in context; store in R2 \\
+\texttt{AGA} & \texttt{SENSE\_TONE} & Detect emotional tone of input; store classification in R3 \\
+\texttt{AGT} & \texttt{SENSE\_INTENT} & Classify user intent (question, command, statement); store in R3 \\
+\texttt{AGG} & \texttt{SENSE\_LANG} & Detect input language; store language code in R3 \\
+\texttt{AGC} & \texttt{SENSE\_DOMAIN} & Classify input domain (science, law, casual); store in R3 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsubsection{Binding Family (12 opcodes)}
+
+The Binding family handles data association and storage. Just as molecular binding in biology involves specific lock-and-key interactions between molecules, Binding opcodes create structured associations between data elements.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.1}
+\small
+\begin{tabularx}{0.97\textwidth}{L{1.2cm} L{3cm} Y}
+\toprule
+\textbf{Codon} & \textbf{Opcode} & \textbf{Description} \\
+\midrule
+\texttt{TAA} & \texttt{BIND\_VALUE} & Bind a retrieved value to a template slot; R2 $\to$ R4 \\
+\texttt{TAT} & \texttt{BIND\_PAIR} & Create a key-value pair from R1 and R2; store in R4 \\
+\texttt{TAG} & \texttt{BIND\_LIST} & Aggregate multiple values into an ordered list in R4 \\
+\texttt{TAC} & \texttt{BIND\_STRUCT} & Bind values into a structured record in R4 \\
+\texttt{TTA} & \texttt{STORE\_REG} & Store current accumulator value to specified register \\
+\texttt{TTT} & \texttt{STORE\_MEM} & Store value to named memory location \\
+\texttt{TTG} & \texttt{LOAD\_REG} & Load value from specified register to accumulator \\
+\texttt{TTC} & \texttt{LOAD\_MEM} & Load value from named memory location \\
+\texttt{TGA} & \texttt{ASSOCIATE} & Create a weighted association between two registers \\
+\texttt{TGT} & \texttt{CROSS\_REF} & Cross-reference two data structures for shared elements \\
+\texttt{TGG} & \texttt{MERGE} & Merge two registers into one combined structure \\
+\texttt{TGC} & \texttt{COPY} & Copy value from one register to another \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsubsection{Regulation Family (14 opcodes)}
+
+The Regulation family implements control flow, conditional execution, and gating mechanisms. These opcodes mirror the role of transcription factors in biology---proteins that determine whether a gene is activated or silenced.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.1}
+\small
+\begin{tabularx}{0.97\textwidth}{L{1.2cm} L{3.2cm} Y}
+\toprule
+\textbf{Codon} & \textbf{Opcode} & \textbf{Description} \\
+\midrule
+\texttt{GAA} & \texttt{IF\_ACTIVE} & Conditional: execute next opcodes only if register is non-empty \\
+\texttt{GAT} & \texttt{IF\_MATCH} & Conditional: execute if pattern match succeeded \\
+\texttt{GAG} & \texttt{IF\_ABOVE} & Conditional: execute if register value exceeds threshold \\
+\texttt{GAC} & \texttt{IF\_BELOW} & Conditional: execute if register value is below threshold \\
+\texttt{GTA} & \texttt{GATE\_CHECK} & Gate: pass data only if quality score exceeds minimum \\
+\texttt{GTT} & \texttt{GATE\_TOXICITY} & Gate: block output if toxicity score exceeds limit \\
+\texttt{GTG} & \texttt{GATE\_RELEVANCE} & Gate: block if content relevance score is too low \\
+\texttt{GTC} & \texttt{GATE\_LENGTH} & Gate: enforce output length constraints \\
+\texttt{GGA} & \texttt{THRESHOLD} & Set a numeric threshold value for subsequent comparisons \\
+\texttt{GGT} & \texttt{BRANCH} & Unconditional jump to specified gene \\
+\texttt{GGG} & \texttt{LOOP\_START} & Begin a loop block (with max iteration counter) \\
+\texttt{GGC} & \texttt{LOOP\_END} & End a loop block and check continuation condition \\
+\texttt{GCA} & \texttt{MUTEX\_LOCK} & Acquire exclusive access to a shared register \\
+\texttt{GCT} & \texttt{MUTEX\_UNLOCK} & Release exclusive access to a shared register \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsubsection{Expression Family (14 opcodes)}
+
+The Expression family handles output generation, formatting, and structural assembly. In biology, ``expression'' refers to the process by which a gene's information is synthesized into a functional product (usually a protein). In CodonForge, Expression opcodes synthesize the computational output.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.1}
+\small
+\begin{tabularx}{0.97\textwidth}{L{1.2cm} L{3cm} Y}
+\toprule
+\textbf{Codon} & \textbf{Opcode} & \textbf{Description} \\
+\midrule
+\texttt{CAA} & \texttt{EMIT\_TEXT} & Emit plain text output from register contents \\
+\texttt{CAT} & \texttt{EMIT\_JSON} & Emit structured JSON output from register contents \\
+\texttt{CAG} & \texttt{EMIT\_CODE} & Emit source code with syntax formatting \\
+\texttt{CAC} & \texttt{EMIT\_TABLE} & Emit tabular data output \\
+\texttt{CTA} & \texttt{FOLD\_STRUCT} & Fold flat data into a hierarchical structure \\
+\texttt{CTT} & \texttt{FOLD\_SUMMARY} & Compress data into a summary representation \\
+\texttt{CTG} & \texttt{FOLD\_TREE} & Organize data into a tree structure \\
+\texttt{CTC} & \texttt{FOLD\_GRAPH} & Organize data into a graph structure \\
+\texttt{CGA} & \texttt{FORMAT\_MD} & Apply Markdown formatting to output \\
+\texttt{CGT} & \texttt{FORMAT\_HTML} & Apply HTML formatting to output \\
+\texttt{CGG} & \texttt{FORMAT\_LATEX} & Apply \LaTeX{} formatting to output \\
+\texttt{CGC} & \texttt{FORMAT\_PLAIN} & Strip all formatting; emit raw text \\
+\texttt{CCA} & \texttt{CONCAT} & Concatenate multiple register values into output stream \\
+\texttt{CCT} & \texttt{TEMPLATE} & Fill a template string with register values \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsubsection{Termination Family (12 opcodes)}
+
+The Termination family handles program termination, checkpointing, cleanup, and error handling. These opcodes are analogous to the three biological stop codons (\texttt{UAA}, \texttt{UAG}, \texttt{UGA}), but CodonForge's richer set enables graceful shutdown, state persistence, and error recovery.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.1}
+\small
+\begin{tabularx}{0.97\textwidth}{L{1.2cm} L{3cm} Y}
+\toprule
+\textbf{Codon} & \textbf{Opcode} & \textbf{Description} \\
+\midrule
+\texttt{CCC} & \texttt{STOP} & Halt execution immediately; return current output \\
+\texttt{CCG} & \texttt{STOP\_SUCCESS} & Halt with success status code \\
+\texttt{GCG} & \texttt{STOP\_ERROR} & Halt with error status code and error message \\
+\texttt{GCC} & \texttt{CHECKPOINT} & Save full execution state for later resumption or lineage \\
+\texttt{ATG} & \texttt{CHECKPOINT\_PARTIAL} & Save partial state (registers only, no context) \\
+\texttt{ACT} & \texttt{CLEANUP} & Deallocate temporary registers and memory \\
+\texttt{ACC} & \texttt{CLEANUP\_ALL} & Deallocate all non-output registers \\
+\texttt{ACA} & \texttt{LOG\_STATE} & Write current state to execution log \\
+\texttt{ACG} & \texttt{LOG\_ERROR} & Write error information to execution log \\
+\texttt{TCA} & \texttt{RETRY} & Re-execute current gene from its promoter \\
+\texttt{TCT} & \texttt{FALLBACK} & Switch to fallback gene on error \\
+\texttt{TCC} & \texttt{YIELD} & Pause execution; yield partial output; resume later \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{implnote}[Shared Codons]
+Observant readers will notice that \texttt{ATG} appears in both the Sense family (\texttt{MATCH\_KEY}) and the Termination family (\texttt{CHECKPOINT\_PARTIAL}). This is intentional: just as biological \texttt{AUG} serves as both the start codon and the codon for methionine, CodonForge allows context-dependent interpretation. When \texttt{ATG} appears as the first codon after a promoter, it functions as a Sense opcode. When it appears later in a gene, context determines its family membership. This is resolved at compile time by the contextual disambiguation pass.
+\end{implnote}
+
+\begin{bioinsight}[Degeneracy and Optimization]
+Just as the biological genetic code is \emph{degenerate} (multiple codons encoding the same amino acid), CodonForge supports \emph{opcode aliasing}: multiple codon patterns can invoke the same operation with different optimization hints. For example, several codons might all map to \texttt{LOAD\_CONTEXT}, but with different implicit priorities for cache behavior or precision level. This degeneracy provides a mechanism for codon optimization analogous to biological codon usage bias.
+\end{bioinsight}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Gene Specifications}
+\label{sec:gene-specs}
+
+In CodonForge, a \emph{gene} is an ordered block of codon opcodes bracketed by a promoter and a terminator. This mirrors the biological concept of a gene: a segment of DNA that encodes a functional product, flanked by regulatory sequences.
+
+\begin{definition}[CodonForge Gene]
+\label{def:codonforge-gene}
+A \emph{gene} is a triple $G = (P, \mathbf{c}, T)$ where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $P$ is a promoter codon (determines activation conditions).
+  \item $\mathbf{c} = (c_1, c_2, \ldots, c_m)$ is an ordered sequence of operational codons.
+  \item $T$ is a terminator codon (signals end of gene execution).
+\end{itemize}
+\end{definition}
+
+A \emph{genome program} is an ordered list of genes: $\Pi = (G_1, G_2, \ldots, G_K)$. Execution proceeds gene by gene; within each gene, codons execute sequentially. Promoter conditions determine whether a gene fires in the current context---implementing the regulatory control described in Chapter~\ref{ch:gene-regulation}.
+
+\subsection{Gene Structure in Detail}
+
+Let us examine each component of a gene more closely.
+
+\medskip
+\noindent\textbf{Promoters.}
+A promoter codon does not perform computation itself; instead, it defines the \emph{conditions under which the gene is activated}. Think of it as an \texttt{if} statement that guards an entire function. Promoters can specify:
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Always-on:} The gene always executes (unconditional promoter).
+  \item \textbf{Register-conditional:} The gene executes only if a specified register is non-empty or exceeds a threshold.
+  \item \textbf{Context-conditional:} The gene executes only when the input matches a specific pattern (e.g., a question-type input, a code-generation request).
+  \item \textbf{Priority-conditional:} The gene executes only if no higher-priority gene has already handled the input.
+\end{itemize}
+
+\noindent\textbf{Opcode body.}
+The body of a gene is a sequence of codon opcodes executed in order. Opcodes may read from and write to registers, consume input from the context, and produce intermediate or final output. The body implements the gene's computational function.
+
+\noindent\textbf{Terminators.}
+A terminator codon marks the end of the gene. It can trigger cleanup of temporary data, emit output, checkpoint execution state for lineage tracking, or signal error conditions.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  block/.style={draw, minimum width=1.8cm, minimum height=0.9cm, align=center, font=\small},
+  codon/.style={draw, minimum width=1.0cm, minimum height=0.7cm, align=center, font=\ttfamily\scriptsize, fill=dogmalight},
+  promoter/.style={block, fill=dogmamint, rounded corners=3pt},
+  terminator/.style={block, fill=red!10, rounded corners=3pt},
+  brace/.style={decorate, decoration={brace, amplitude=8pt, raise=4pt}},
+]
+  % Promoter
+  \node[promoter] (prom) at (0,0) {Promoter\\[-2pt]\scriptsize\texttt{IF\_ACTIVE}};
+
+  % Opcode body
+  \node[codon] (c1) at (2.5,0) {\texttt{AAA}\\[-2pt]LOAD};
+  \node[codon] (c2) at (3.8,0) {\texttt{ATA}\\[-2pt]SCAN};
+  \node[codon] (c3) at (5.1,0) {\texttt{ATG}\\[-2pt]MATCH};
+  \node[codon] (c4) at (6.4,0) {\texttt{TAA}\\[-2pt]BIND};
+  \node[codon] (c5) at (7.7,0) {\texttt{CTA}\\[-2pt]FOLD};
+  \node[codon] (c6) at (9.0,0) {\texttt{CAA}\\[-2pt]EMIT};
+
+  % Terminator
+  \node[terminator] (term) at (11.2,0) {Terminator\\[-2pt]\scriptsize\texttt{STOP}};
+
+  % Arrows
+  \draw[-{Stealth}, thick] (prom) -- (c1);
+  \draw[-{Stealth}] (c1) -- (c2);
+  \draw[-{Stealth}] (c2) -- (c3);
+  \draw[-{Stealth}] (c3) -- (c4);
+  \draw[-{Stealth}] (c4) -- (c5);
+  \draw[-{Stealth}] (c5) -- (c6);
+  \draw[-{Stealth}, thick] (c6) -- (term);
+
+  % Brace
+  \draw[brace] (c1.north west) -- (c6.north east) node[midway, above=12pt, font=\small] {Opcode Body ($c_1, c_2, \ldots, c_m$)};
+
+  % Gene label
+  \draw[brace, decoration={mirror}] (prom.south west) -- (term.south east) node[midway, below=12pt, font=\small\bfseries] {Gene $G = (P, \mathbf{c}, T)$};
+\end{tikzpicture}
+\caption{Structure of a CodonForge gene. The promoter gates execution, the opcode body performs computation, and the terminator signals completion.}
+\label{fig:gene-structure}
+\end{figure}
+
+\subsection{Forward and Reverse Strands}
+\label{subsec:fwd-rev-strands}
+
+Following DNA's antiparallel structure, every CodonForge program automatically generates a \emph{reverse strand}: the reverse complement of the forward program. The reverse strand provides:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Redundancy:} Information is encoded twice, enabling error detection.
+  \item \textbf{Bidirectional reading:} Some operations can read the reverse strand for complementary computation.
+  \item \textbf{HelixHash compatibility:} The double-strand representation feeds directly into HelixHash's structural analysis (Chapter~\ref{ch:helixhash}).
+\end{itemize}
+
+\subsubsection{Constructing the Reverse Complement}
+
+To construct the reverse complement, we apply two operations:
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Complement:} Replace each nucleotide with its Watson-Crick complement: A$\leftrightarrow$T and G$\leftrightarrow$C.
+  \item \textbf{Reverse:} Read the complemented sequence from right to left.
+\end{enumerate}
+
+\begin{example}[Forward and Reverse Strand Construction]
+\label{ex:strand-construction}
+Consider a simple gene with the forward strand:
+\begin{center}
+\texttt{5'-ATG\;AAA\;ATA\;TAA\;CAA\;CCC-3'}
+\end{center}
+This encodes: \texttt{MATCH\_KEY} $\to$ \texttt{LOAD\_CONTEXT} $\to$ \texttt{SCAN\_MOTIF} $\to$ \texttt{BIND\_VALUE} $\to$ \texttt{EMIT\_TEXT} $\to$ \texttt{STOP}.
+
+\medskip
+\noindent\textbf{Step 1: Complement} each base:
+\begin{center}
+\texttt{TAC\;TTT\;TAT\;ATT\;GTT\;GGG}
+\end{center}
+
+\noindent\textbf{Step 2: Reverse} the entire sequence:
+\begin{center}
+\texttt{3'-GGG\;TTG\;TTA\;TAT\;TTT\;CAT-5'}
+\end{center}
+
+The reverse complement strand reads (in the 5'$\to$3' direction):
+\begin{center}
+\texttt{5'-GGG\;TTG\;TTA\;TAT\;TTT\;TAC-3'}
+\end{center}
+
+The double-stranded representation is:
+\begin{center}
+\begin{tikzpicture}
+\node[font=\ttfamily\small] at (0,0.4) {5'-ATG\;AAA\;ATA\;TAA\;CAA\;CCC-3'};
+\node[font=\ttfamily\small, text=dogmagray] at (0,0) {\phantom{5'-}~~|~|~|~~|~|~|~~|~|~|~~|~|~|~~|~|~|~~|~|~|};
+\node[font=\ttfamily\small] at (0,-0.4) {3'-TAC\;TTT\;TAT\;ATT\;GTT\;GGG-5'};
+\end{tikzpicture}
+\end{center}
+\end{example}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{The Compilation Pipeline}
+\label{sec:compilation-pipeline}
+
+CodonForge implements a three-stage compilation pipeline that transforms human-readable prompt bundles into executable codon programs:
+
+\begin{equation}
+\text{PromptBundle} \xrightarrow{\text{Parse}} \text{Genomic IR} \xrightarrow{\text{Compile}} \text{Codon Program} \xrightarrow{\text{Optimize}} \text{Executable}
+\end{equation}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  stage/.style={draw, rounded corners, minimum width=3cm, minimum height=1.2cm, align=center, font=\small\bfseries},
+  ir/.style={draw, dashed, rounded corners, minimum width=2.8cm, minimum height=0.8cm, align=center, font=\small\itshape, fill=white},
+  arrow/.style={-{Stealth[length=3mm]}, thick, color=dogmablue},
+]
+  % Input
+  \node[stage, fill=dogmawarm] (input) at (0,0) {PromptBundle\\[-3pt]\scriptsize\texttt{system.md, task.md,}\\[-3pt]\scriptsize\texttt{mutation.md, evaluator.md}};
+
+  % Parse stage
+  \node[stage, fill=dogmamint] (parse) at (5,0) {Stage 1\\Parse};
+  \node[ir] (gir) at (5,-1.8) {Genomic IR};
+
+  % Compile stage
+  \node[stage, fill=dogmalight] (compile) at (9,0) {Stage 2\\Compile};
+  \node[ir] (cprog) at (9,-1.8) {Codon Program};
+
+  % Optimize stage
+  \node[stage, fill=red!8] (optimize) at (13,0) {Stage 3\\Optimize};
+  \node[ir] (exec) at (13,-1.8) {Executable};
+
+  % Arrows between stages
+  \draw[arrow] (input) -- (parse);
+  \draw[arrow] (parse) -- (compile);
+  \draw[arrow] (compile) -- (optimize);
+
+  % Arrows to IRs
+  \draw[-{Stealth}, dashed, color=dogmagray] (parse) -- (gir);
+  \draw[-{Stealth}, dashed, color=dogmagray] (compile) -- (cprog);
+  \draw[-{Stealth}, dashed, color=dogmagray] (optimize) -- (exec);
+\end{tikzpicture}
+\caption{The CodonForge three-stage compilation pipeline. Each stage produces an intermediate representation that feeds the next stage.}
+\label{fig:compilation-pipeline}
+\end{figure}
+
+\subsection{Stage 1: Parse}
+\label{subsec:stage-parse}
+
+The input PromptBundle (consisting of \texttt{system.md}, \texttt{task.md}, \texttt{mutation.md}, \texttt{evaluator.md}) is parsed into a \emph{Genomic Intermediate Representation} (Genomic IR):
+
+\begin{itemize}[leftmargin=1.8em]
+  \item Text fragments are segmented into \emph{functional units}---the smallest independently meaningful pieces of instruction or data.
+  \item Each unit is typed: instruction, constraint, template, or evaluation criterion.
+  \item Dependencies between units are identified (e.g., ``summarize the article'' depends on ``load the article'').
+  \item Region boundaries are established, grouping related units into candidate genes.
+\end{itemize}
+
+The Genomic IR is a directed acyclic graph (DAG) where nodes represent functional units and edges represent dependencies. This DAG is the foundation for all subsequent compilation.
+
+\begin{dogmadef}[Genomic Intermediate Representation]
+Formally, the Genomic IR is a tuple $\mathcal{G} = (V, E, \tau, \delta)$ where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $V$ is a set of functional unit nodes.
+  \item $E \subseteq V \times V$ is a set of dependency edges.
+  \item $\tau : V \to \{\text{instruction}, \text{constraint}, \text{template}, \text{criterion}\}$ is a type function.
+  \item $\delta : V \to \mathbb{N}$ assigns a priority/depth to each node.
+\end{itemize}
+\end{dogmadef}
+
+\subsection{Stage 2: Compile}
+\label{subsec:stage-compile}
+
+The Genomic IR is compiled into a codon program by:
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Gene formation:} Each functional unit (or group of related units) is mapped to a gene (promoter + opcode sequence + terminator). Instruction units become Sense and Binding opcode sequences. Constraint units become Regulation opcodes. Template and criterion units become Expression opcodes.
+  \item \textbf{Gene ordering:} Genes are ordered according to execution dependencies derived from the IR's DAG structure. A topological sort ensures that each gene's inputs are available before it executes.
+  \item \textbf{Regulatory insertion:} Conditional execution is implemented by inserting Regulation opcodes (e.g., \texttt{IF\_ACTIVE}, \texttt{GATE\_CHECK}) as promoters or internal guards.
+  \item \textbf{Reverse strand generation:} The reverse complement strand is generated for each gene and for the complete program.
+\end{enumerate}
+
+\subsection{Stage 3: Optimize}
+\label{subsec:stage-optimize}
+
+The raw codon program is optimized through passes analogous to compiler optimization:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Dead code elimination:} Remove genes that can never be activated (unreachable promoter conditions).
+  \item \textbf{Codon optimization:} Replace codons with aliases that have better execution properties (analogous to biological codon usage optimization). For example, choosing a codon variant that favors cache-friendly memory access patterns.
+  \item \textbf{Regulatory simplification:} Merge redundant regulatory gates. If two consecutive \texttt{IF\_ACTIVE} checks test the same register, the second is redundant.
+  \item \textbf{GC content balancing:} Ensure the program has balanced base composition for HelixHash stability. An extreme GC imbalance can destabilize the double-stranded representation.
+  \item \textbf{Gene fusion:} Merge small adjacent genes with compatible promoters into a single gene to reduce promoter evaluation overhead.
+  \item \textbf{Register allocation:} Minimize register usage by reusing registers whose values are no longer needed.
+\end{itemize}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Worked Example: Compiling ``What is DNA?''}
+\label{sec:codon-worked-example}
+
+To make the compilation pipeline concrete, let us trace a simple prompt through all three stages. Suppose a user submits the prompt:
+
+\begin{center}
+\fbox{\texttt{What is DNA?}}
+\end{center}
+
+with a minimal system prompt: \texttt{``You are a helpful biology tutor. Answer clearly and concisely.''}
+
+\subsection{Stage 1: Parse --- Building the Genomic IR}
+
+The parser segments the input into functional units:
+
+\begin{lstlisting}[style=dogmapython, caption={Genomic IR after parsing (pseudocode representation).}]
+# Functional units extracted from PromptBundle:
+unit_1 = {
+    type: "instruction",
+    content: "load_user_query",
+    source: "task.md",
+    data: "What is DNA?"
+}
+unit_2 = {
+    type: "constraint",
+    content: "persona_constraint",
+    source: "system.md",
+    data: "helpful biology tutor"
+}
+unit_3 = {
+    type: "constraint",
+    content: "style_constraint",
+    source: "system.md",
+    data: "clear and concise"
+}
+unit_4 = {
+    type: "instruction",
+    content: "classify_intent",
+    source: "inferred",
+    data: "question -> factual_answer"
+}
+unit_5 = {
+    type: "template",
+    content: "generate_answer",
+    source: "inferred",
+    data: "produce text output"
+}
+
+# Dependency edges:
+# unit_1 -> unit_4 (must load query before classifying intent)
+# unit_4 -> unit_5 (must know intent before generating answer)
+# unit_2 -> unit_5 (persona constrains generation)
+# unit_3 -> unit_5 (style constrains generation)
+\end{lstlisting}
+
+The resulting DAG has five nodes with the dependency structure:
+\begin{center}
+\begin{tikzpicture}[
+  node distance=1.2cm,
+  unit/.style={draw, rounded corners, minimum width=1.5cm, minimum height=0.6cm, font=\scriptsize, align=center},
+]
+  \node[unit, fill=dogmalight] (u1) {U1: Load Query};
+  \node[unit, fill=dogmamint, right=1.5cm of u1] (u4) {U4: Classify};
+  \node[unit, fill=dogmawarm, right=1.5cm of u4] (u5) {U5: Generate};
+  \node[unit, fill=dogmamint, above=0.6cm of u5] (u2) {U2: Persona};
+  \node[unit, fill=dogmamint, below=0.6cm of u5] (u3) {U3: Style};
+
+  \draw[-{Stealth}, thick] (u1) -- (u4);
+  \draw[-{Stealth}, thick] (u4) -- (u5);
+  \draw[-{Stealth}, thick] (u2) -- (u5);
+  \draw[-{Stealth}, thick] (u3) -- (u5);
+\end{tikzpicture}
+\end{center}
+
+\subsection{Stage 2: Compile --- Generating the Codon Program}
+
+The compiler maps each functional unit group to genes:
+
+\begin{lstlisting}[style=dogmapython, caption={Codon program for ``What is DNA?'' (pseudocode).}]
+# Gene 1: Context Sensing (promoter: always active)
+# Maps from: unit_1, unit_4
+PROMOTER: ALWAYS_ON
+  AAA  LOAD_CONTEXT       # Load "What is DNA?" into R0
+  AGT  SENSE_INTENT       # Classify as question -> R3
+  ATA  SCAN_MOTIF          # Extract key term "DNA" -> R1
+  ATG  MATCH_KEY           # Search knowledge for "DNA" -> R2
+TERMINATOR: GCC CHECKPOINT  # Save state
+
+# Gene 2: Constraint Application (promoter: IF R2 nonempty)
+# Maps from: unit_2, unit_3
+PROMOTER: GAA IF_ACTIVE(R2)
+  GTA  GATE_CHECK          # Verify retrieved content quality
+  GTG  GATE_RELEVANCE      # Ensure "DNA" content is relevant
+  GGA  THRESHOLD(style=concise)  # Set conciseness threshold
+  GTC  GATE_LENGTH         # Enforce length < 200 words
+TERMINATOR: ACT CLEANUP    # Clean temp registers
+
+# Gene 3: Answer Generation (promoter: IF R2 nonempty)
+# Maps from: unit_5
+PROMOTER: GAA IF_ACTIVE(R2)
+  TAA  BIND_VALUE          # Bind DNA knowledge to template -> R4
+  CTA  FOLD_STRUCT         # Structure answer logically -> R5
+  CAA  EMIT_TEXT           # Produce text output from R5
+TERMINATOR: CCC STOP       # Halt with success
+\end{lstlisting}
+
+\noindent The full DNA sequence for this program (forward strand) is:
+\begin{center}
+\small\texttt{5'-AAA\;AGT\;ATA\;ATG\;GCC\;|\;GAA\;GTA\;GTG\;GGA\;GTC\;ACT\;|\;GAA\;TAA\;CTA\;CAA\;CCC-3'}
+\end{center}
+where \texttt{|} marks gene boundaries.
+
+\subsection{Stage 3: Optimize --- Refining the Program}
+
+The optimizer applies several passes to the raw program:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Dead code elimination:} All genes have reachable promoters---no elimination needed.
+  \item \textbf{Codon optimization:} The codon \texttt{AAA} (\texttt{LOAD\_CONTEXT}) could be replaced with \texttt{AAT} (\texttt{LOAD\_QUERY}) since we only need the user query, not the full context. This is more efficient.
+  \item \textbf{Regulatory simplification:} Genes 2 and 3 have the same promoter condition (\texttt{IF\_ACTIVE(R2)}). They can share a single promoter evaluation by fusing into one gene.
+  \item \textbf{GC content check:} The current GC content is $(G + C) / \text{total} = 19/48 \approx 39.6\%$, which is within the acceptable range of 35--65\%. No rebalancing needed.
+\end{enumerate}
+
+\noindent After optimization, the program becomes more compact:
+
+\begin{lstlisting}[style=dogmapython, caption={Optimized codon program for ``What is DNA?''.}]
+# Gene 1: Sense (always on)
+PROMOTER: ALWAYS_ON
+  AAT  LOAD_QUERY          # Load only the query (optimized)
+  AGT  SENSE_INTENT        # Classify intent
+  ATA  SCAN_MOTIF           # Extract "DNA"
+  ATG  MATCH_KEY            # Retrieve knowledge
+TERMINATOR: GCC CHECKPOINT
+
+# Gene 2: Constrain + Generate (fused, IF R2 nonempty)
+PROMOTER: GAA IF_ACTIVE(R2)
+  GTA  GATE_CHECK           # Quality gate
+  GTG  GATE_RELEVANCE       # Relevance gate
+  GTC  GATE_LENGTH          # Length gate
+  TAA  BIND_VALUE           # Bind answer
+  CTA  FOLD_STRUCT          # Structure
+  CAA  EMIT_TEXT            # Output
+TERMINATOR: CCC STOP
+\end{lstlisting}
+
+The optimized program has 2 genes (down from 3) and 12 opcodes (down from 14), a 14\% reduction in program size.
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Execution Semantics}
+\label{sec:execution-semantics}
+
+CodonForge programs execute over a \emph{computational register file}: a set of named registers that hold intermediate values during execution.
+
+\begin{definition}[CodonForge Execution State]
+\label{def:exec-state}
+The execution state is a tuple $S = (\mathbf{R}, \text{PC}, \text{Context})$ where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $\mathbf{R} = \{R_0, R_1, \ldots, R_n\}$ is the register file: a dictionary mapping register names to values (strings, numbers, structured data, or $\bot$ for empty).
+  \item $\text{PC} = (g, i)$ is the program counter: a pair of current gene index $g$ and current codon index $i$ within that gene.
+  \item $\text{Context}$ is the input context (query, task description, environment state).
+\end{itemize}
+State transitions are deterministic: given state $S_t$ and codon $c_t$, the next state $S_{t+1} = \delta(S_t, c_t)$ is uniquely determined.
+\end{definition}
+
+The transition function $\delta$ is defined per opcode family:
+
+\begin{align}
+\delta_{\text{Sense}}(S, c) &= S[\mathbf{R}[r_{\text{out}}] \mapsto \text{perceive}(\text{Context}, c.\text{params})] \\
+\delta_{\text{Binding}}(S, c) &= S[\mathbf{R}[r_{\text{out}}] \mapsto \text{bind}(\mathbf{R}[r_{\text{in}}], c.\text{params})] \\
+\delta_{\text{Regulation}}(S, c) &= \begin{cases} S & \text{if } \text{eval}(\mathbf{R}, c.\text{condition}) = \text{true} \\ S[\text{PC} \mapsto \text{skip}] & \text{otherwise} \end{cases} \\
+\delta_{\text{Expression}}(S, c) &= S[\text{output} \mathrel{+}= \text{emit}(\mathbf{R}[r_{\text{in}}], c.\text{format})] \\
+\delta_{\text{Termination}}(S, c) &= S[\text{status} \mapsto c.\text{halt\_type}]
+\end{align}
+
+\subsection{Example Execution Trace}
+
+Consider running our optimized ``What is DNA?'' program. We trace the register file through each opcode:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\small
+\begin{tabularx}{0.97\textwidth}{L{0.8cm} L{2.2cm} L{2.4cm} Y}
+\toprule
+\textbf{Step} & \textbf{Opcode} & \textbf{Register Changed} & \textbf{Value} \\
+\midrule
+1 & \texttt{LOAD\_QUERY} & $R_0$ & \texttt{"What is DNA?"} \\
+2 & \texttt{SENSE\_INTENT} & $R_3$ & \texttt{intent=factual\_question} \\
+3 & \texttt{SCAN\_MOTIF} & $R_1$ & \texttt{[motif:"DNA", type:acronym]} \\
+4 & \texttt{MATCH\_KEY} & $R_2$ & \texttt{[knowledge:"DNA stands for deoxyribonucleic\ldots"]} \\
+5 & \texttt{CHECKPOINT} & \textit{(log)} & State saved for lineage \\
+\midrule
+\multicolumn{4}{l}{\textit{Gene 2 promoter: \texttt{IF\_ACTIVE(R2)} $\to$ true (R2 is nonempty)}} \\
+\midrule
+6 & \texttt{GATE\_CHECK} & --- & Quality score 0.92 $>$ 0.5: pass \\
+7 & \texttt{GATE\_RELEVANCE} & --- & Relevance 0.97 $>$ 0.7: pass \\
+8 & \texttt{GATE\_LENGTH} & --- & Est.\ length 85 words $<$ 200: pass \\
+9 & \texttt{BIND\_VALUE} & $R_4$ & Knowledge bound to answer template \\
+10 & \texttt{FOLD\_STRUCT} & $R_5$ & Structured: intro $\to$ definition $\to$ significance \\
+11 & \texttt{EMIT\_TEXT} & \textit{(output)} & ``DNA, or deoxyribonucleic acid, is\ldots'' \\
+12 & \texttt{STOP} & \textit{(halt)} & Execution complete with success \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{The Word2FASTA Bridge}
+\label{sec:word2fasta}
+
+CodonForge includes a \emph{reversible translation layer} between text and DNA-encoded representations. This layer, called \textbf{Word2FASTA}, allows arbitrary text (prompts, responses, metadata) to be encoded as DNA sequences in FASTA format---the standard file format used in bioinformatics.
+
+\subsection{Why Encode Text as DNA?}
+
+At first glance, encoding text as DNA might seem like an unnecessary complication. But the Word2FASTA bridge enables several powerful capabilities:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Unified representation:} Both programs (codon opcodes) and data (text) are represented in the same DNA alphabet, enabling uniform processing by HelixHash and other DOGMA components.
+  \item \textbf{Bioinformatics tooling:} Encoded prompts can be analyzed using standard bioinformatics tools: sequence alignment (BLAST), motif discovery, phylogenetic analysis of prompt evolution, and GC content analysis.
+  \item \textbf{Genomic storage:} Prompt genomes can be stored in standard FASTA databases and version-controlled alongside program code.
+  \item \textbf{Mutation compatibility:} Text encoded as DNA can undergo biological-style mutations (point mutation, insertion, deletion, crossover) during the evolutionary optimization described in Chapter~\ref{ch:gene-regulation}.
+\end{itemize}
+
+\subsection{The Encoding Algorithm}
+
+The encoding maps each ASCII character to a pair of codons (6 nucleotides), giving $4^6 = 4096$ possible values---far more than the 128 standard ASCII characters or even the 256 extended ASCII values.
+
+\begin{definition}[Word2FASTA Encoding]
+\label{def:word2fasta}
+Given an ASCII character $a$ with ordinal value $n = \text{ord}(a)$ where $0 \le n < 128$:
+\begin{enumerate}[leftmargin=1.5em]
+  \item Represent $n$ in base 4 as a 4-digit number: $n = d_3 \cdot 4^3 + d_2 \cdot 4^2 + d_1 \cdot 4 + d_0$, padding with leading zeros as needed (since $128 < 4^4 = 256$, four base-4 digits suffice).
+  \item Add two parity digits: $d_4 = (d_3 + d_2) \bmod 4$ and $d_5 = (d_1 + d_0) \bmod 4$.
+  \item Map each digit to a nucleotide: $0 \to \texttt{A}$, $1 \to \texttt{T}$, $2 \to \texttt{G}$, $3 \to \texttt{C}$.
+  \item The six nucleotides $(d_3, d_2, d_1, d_0, d_4, d_5)$ form two codons: $[d_3 d_2 d_1]$ and $[d_0 d_4 d_5]$.
+\end{enumerate}
+\end{definition}
+
+\subsection{Complete Encoding Example: ``Hi''}
+
+Let us encode the two-character string ``Hi'' step by step.
+
+\medskip
+\noindent\textbf{Character `H' (ASCII 72):}
+\begin{enumerate}[leftmargin=1.8em]
+  \item Convert 72 to base 4: $72 = 1 \cdot 64 + 0 \cdot 16 + 2 \cdot 4 + 0 = (1, 0, 2, 0)_4$.
+  \item Parity: $d_4 = (1 + 0) \bmod 4 = 1$; $d_5 = (2 + 0) \bmod 4 = 2$.
+  \item Full digits: $(1, 0, 2, 0, 1, 2)$.
+  \item Map to nucleotides: $1\!\to\!\texttt{T}$, $0\!\to\!\texttt{A}$, $2\!\to\!\texttt{G}$, $0\!\to\!\texttt{A}$, $1\!\to\!\texttt{T}$, $2\!\to\!\texttt{G}$.
+  \item Result: \texttt{TAG\;ATG} (two codons).
+\end{enumerate}
+
+\noindent\textbf{Character `i' (ASCII 105):}
+\begin{enumerate}[leftmargin=1.8em]
+  \item Convert 105 to base 4: $105 = 1 \cdot 64 + 2 \cdot 16 + 2 \cdot 4 + 1 = (1, 2, 2, 1)_4$.
+  \item Parity: $d_4 = (1 + 2) \bmod 4 = 3$; $d_5 = (2 + 1) \bmod 4 = 3$.
+  \item Full digits: $(1, 2, 2, 1, 3, 3)$.
+  \item Map to nucleotides: $1\!\to\!\texttt{T}$, $2\!\to\!\texttt{G}$, $2\!\to\!\texttt{G}$, $1\!\to\!\texttt{T}$, $3\!\to\!\texttt{C}$, $3\!\to\!\texttt{C}$.
+  \item Result: \texttt{TGG\;TCC} (two codons).
+\end{enumerate}
+
+\noindent\textbf{Complete encoding of ``Hi'':}
+\begin{center}
+\texttt{TAG\;ATG\;TGG\;TCC}
+\end{center}
+This 12-nucleotide DNA sequence can be written in FASTA format as:
+
+\begin{lstlisting}[style=dogmapython, caption={FASTA encoding of ``Hi''.}, numbers=none]
+>prompt_fragment_001 Word2FASTA_v1 len=2
+TAGATGTGGTCC
+\end{lstlisting}
+
+\subsection{Decoding: FASTA Back to Text}
+
+Decoding reverses the process:
+\begin{enumerate}[leftmargin=1.8em]
+  \item Read 6 nucleotides at a time.
+  \item Map each nucleotide back to a digit: \texttt{A}$\to$0, \texttt{T}$\to$1, \texttt{G}$\to$2, \texttt{C}$\to$3.
+  \item Extract the data digits $(d_3, d_2, d_1, d_0)$ and verify the parity digits $(d_4, d_5)$.
+  \item Convert the base-4 number back to decimal to get the ASCII ordinal.
+  \item Convert the ordinal to a character.
+\end{enumerate}
+
+If the parity check fails, an error is flagged and error-correction can be attempted using the reverse strand.
+
+\begin{implnote}[Round-Trip Fidelity]
+The Word2FASTA encoding guarantees \emph{perfect round-trip fidelity}: for any ASCII string $s$, $\text{decode}(\text{encode}(s)) = s$. The parity digits provide single-digit error detection, and the reverse complement strand (generated automatically by CodonForge) provides a full backup for error correction. This means that even if a single nucleotide is corrupted, the original text can be recovered.
+\end{implnote}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{SDANS: Strand Displacement Attention Neural System}
+\label{sec:sdans}
+
+\subsection{HelixSim and SDANS: Clarifying the Relationship}
+\label{subsec:helixsim-sdans}
+
+Before presenting the technical details, it is important to clarify the relationship between two closely related terms. \textbf{HelixSim} (Paper~II in the DOGMA research series) is the name of the research project and publication that develops the theoretical framework for compiling symbolic DNA programs into differentiable neural architectures. \textbf{SDANS} (Strand Displacement Attention Neural System) is the formal computational system introduced \emph{within} HelixSim. In short:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{HelixSim} = the research paper and project (Paper~II).
+  \item \textbf{SDANS} = the compilation target defined by HelixSim that formally bridges CodonForge programs and neural network execution.
+\end{itemize}
+
+\noindent
+Throughout this chapter, we refer to SDANS when discussing the specific compilation mechanics and formal mappings, and to HelixSim when referencing the broader research context. All SDANS definitions, theorems, and algorithms originate from HelixSim (Paper~II).
+
+\begin{keyinsight}[Why a Formal Compilation Target Matters]
+Having a well-defined compilation target like SDANS---rather than an ad hoc translation from symbolic programs to neural networks---provides three critical guarantees. First, \emph{correctness}: SDANS defines a formal equivalence between symbolic execution and neural execution, meaning compiled programs provably preserve input-output behavior (Definition~\ref{def:sdans}). Second, \emph{composability}: because each opcode family maps to a specific class of neural operation, compiled modules can be independently verified and composed without interference. Third, \emph{evolvability}: when the evolutionary training loop (Chapter~\ref{ch:evolutionary-training}) mutates a genome, only the affected SDANS modules need recompilation, enabling efficient incremental adaptation. Without a formal compilation target, these guarantees would require extensive empirical validation for every program variant---an approach that does not scale.
+\end{keyinsight}
+
+\subsection{Overview}
+
+SDANS, introduced by HelixSim (Paper~II), is the compilation target that bridges CodonForge's symbolic programs and DOGMA-Supreme's neural execution. SDANS formalizes the equivalence between strand displacement circuits (a model of molecular computation) and attention mechanisms (the core of transformer neural networks).
+
+\subsection{Motivation: Why Do We Need SDANS?}
+
+CodonForge programs are \emph{symbolic}: they define a precise sequence of operations with deterministic semantics. Neural networks, on the other hand, are \emph{subsymbolic}: they operate on continuous-valued vectors through differentiable transformations. These two paradigms seem incompatible:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.9\textwidth}{L{4cm} Y Y}
+\toprule
+\textbf{Property} & \textbf{Symbolic (CodonForge)} & \textbf{Neural (Transformer)} \\
+\midrule
+Data type & Discrete tokens & Continuous vectors \\
+Control flow & Explicit (if/else, loops) & Implicit (attention routing) \\
+Execution & Sequential, deterministic & Parallel, differentiable \\
+Learning & Not applicable & Gradient descent \\
+Interpretability & High & Low \\
+Generalization & Limited & Strong \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+SDANS resolves this tension by providing a \emph{compiler} that translates symbolic CodonForge programs into neural architectures. The key insight is that strand displacement reactions---a well-studied model of molecular computation---can be mapped to attention operations.
+
+\begin{definition}[SDANS Compilation]
+\label{def:sdans}
+An \emph{SDANS compilation} is a mapping from a CodonForge program $\Pi$ to a neural network architecture $\mathcal{N}$ such that:
+\begin{equation}
+\forall \text{ input } x: \quad \mathcal{N}(x) = \text{Execute}(\Pi, x),
+\end{equation}
+where $\text{Execute}$ is CodonForge's deterministic execution semantics. The compilation preserves the input-output behavior while enabling gradient-based parameter optimization.
+\end{definition}
+
+\subsection{How SDANS Maps Opcodes to Neural Operations}
+\label{subsec:sdans-mapping}
+
+The SDANS compilation proceeds by mapping each opcode family to a specific class of differentiable neural operation. This mapping is the core intellectual contribution of SDANS.
+
+\subsubsection{Sense Opcodes $\to$ Input Projections}
+
+Sense opcodes load and perceive input data. In the neural domain, this corresponds to \emph{input embedding and projection}:
+
+\begin{equation}
+\text{LOAD\_CONTEXT}(x) \quad\Longrightarrow\quad h_0 = W_{\text{embed}} \cdot x + b_{\text{embed}}
+\end{equation}
+
+Each Sense opcode becomes a learned linear projection that maps raw input tokens into the model's hidden representation space. The \texttt{SCAN\_MOTIF} opcode, for example, becomes a 1D convolution layer that detects local patterns:
+
+\begin{equation}
+\text{SCAN\_MOTIF}(h) \quad\Longrightarrow\quad m = \text{ReLU}(\text{Conv1D}(h; W_{\text{motif}}))
+\end{equation}
+
+\subsubsection{Binding Opcodes $\to$ Attention-Based Retrieval}
+
+Binding opcodes create associations between data elements. In the neural domain, this is precisely what \emph{attention mechanisms} do:
+
+\begin{equation}
+\text{BIND\_VALUE}(Q, K, V) \quad\Longrightarrow\quad \text{Attention}(Q, K, V) = \text{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right) V
+\end{equation}
+
+The \texttt{ASSOCIATE} opcode becomes a cross-attention layer, while \texttt{MERGE} becomes multi-head attention where each head captures a different associative relationship.
+
+\subsubsection{Regulation Opcodes $\to$ Gated Activation Functions}
+
+Regulation opcodes implement conditional logic. In the neural domain, this maps to \emph{gating mechanisms}:
+
+\begin{equation}
+\text{IF\_ACTIVE}(R, h) \quad\Longrightarrow\quad g = \sigma(W_g \cdot R + b_g), \quad h' = g \odot h
+\end{equation}
+
+where $\sigma$ is the sigmoid function and $\odot$ is element-wise multiplication. The gate $g$ acts as a ``soft conditional'': values close to 1 allow the data through (gene active), values close to 0 block it (gene silenced).
+
+The \texttt{THRESHOLD} opcode becomes a parameterized activation function:
+
+\begin{equation}
+\text{THRESHOLD}(\theta, h) \quad\Longrightarrow\quad h' = \text{ReLU}(h - \theta)
+\end{equation}
+
+\subsubsection{Expression Opcodes $\to$ Output Head Projections}
+
+Expression opcodes produce output. In the neural domain, these become \emph{output projection layers}:
+
+\begin{equation}
+\text{EMIT\_TEXT}(h) \quad\Longrightarrow\quad p = \text{softmax}(W_{\text{out}} \cdot h + b_{\text{out}})
+\end{equation}
+
+The \texttt{FOLD\_STRUCT} opcode becomes a structured prediction layer (e.g., a tree-structured decoder), and \texttt{EMIT\_JSON} becomes a constrained decoding layer that ensures valid JSON output.
+
+\subsubsection{Termination Opcodes $\to$ Halting Mechanisms}
+
+Termination opcodes control when execution stops. In the neural domain, this maps to \emph{adaptive computation time} (ACT) mechanisms:
+
+\begin{equation}
+\text{STOP}(h) \quad\Longrightarrow\quad p_{\text{halt}} = \sigma(W_{\text{halt}} \cdot h), \quad \text{halt if } p_{\text{halt}} > 0.5
+\end{equation}
+
+The \texttt{CHECKPOINT} opcode becomes a residual connection that preserves state across layers:
+
+\begin{equation}
+\text{CHECKPOINT}(h) \quad\Longrightarrow\quad h_{\text{saved}} = h, \quad h' = h + f(h)
+\end{equation}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  opfam/.style={draw, rounded corners, minimum width=2.4cm, minimum height=0.8cm, align=center, font=\small},
+  neural/.style={draw, rounded corners, minimum width=2.8cm, minimum height=0.8cm, align=center, font=\small},
+  arrow/.style={-{Stealth[length=3mm]}, thick},
+]
+  % Left column: CodonForge opcodes
+  \node[opfam, fill=dogmalight] (sense) at (0,4) {Sense};
+  \node[opfam, fill=dogmalight] (bind) at (0,3) {Binding};
+  \node[opfam, fill=dogmalight] (reg) at (0,2) {Regulation};
+  \node[opfam, fill=dogmalight] (expr) at (0,1) {Expression};
+  \node[opfam, fill=dogmalight] (term) at (0,0) {Termination};
+
+  \node[font=\small\bfseries, above=0.3cm of sense] {CodonForge};
+
+  % Right column: Neural operations
+  \node[neural, fill=dogmamint] (proj) at (6,4) {Input Projections};
+  \node[neural, fill=dogmamint] (attn) at (6,3) {Attention Layers};
+  \node[neural, fill=dogmamint] (gate) at (6,2) {Gated Activations};
+  \node[neural, fill=dogmamint] (out) at (6,1) {Output Heads};
+  \node[neural, fill=dogmamint] (halt) at (6,0) {Halting / ACT};
+
+  \node[font=\small\bfseries, above=0.3cm of proj] {Neural Network};
+
+  % SDANS label in middle
+  \node[font=\Large\bfseries, text=dogmared, rotate=90] at (3,2) {SDANS};
+
+  % Arrows
+  \draw[arrow, color=dogmablue] (sense) -- (proj);
+  \draw[arrow, color=dogmablue] (bind) -- (attn);
+  \draw[arrow, color=dogmablue] (reg) -- (gate);
+  \draw[arrow, color=dogmablue] (expr) -- (out);
+  \draw[arrow, color=dogmablue] (term) -- (halt);
+\end{tikzpicture}
+\caption{SDANS opcode-to-neural mapping. Each CodonForge opcode family is compiled to a specific class of differentiable neural operation.}
+\label{fig:sdans-mapping}
+\end{figure}
+
+\subsection{Strand Displacement as Attention}
+
+The name ``Strand Displacement'' in SDANS refers to a specific molecular computing mechanism. In DNA nanotechnology, \emph{toehold-mediated strand displacement} is a process where a single-stranded DNA molecule displaces one strand of a double-stranded complex by binding to an exposed ``toehold'' region.
+
+The mathematical structure of strand displacement is remarkably similar to attention:
+
+\begin{align}
+\text{Strand Displacement:} &\quad A + B{:}C \xrightarrow{k} A{:}B + C \label{eq:strand-displace} \\
+\text{Attention:} &\quad \text{out} = \sum_i \frac{\exp(q \cdot k_i)}{\sum_j \exp(q \cdot k_j)} v_i \label{eq:attention-analogy}
+\end{align}
+
+In both cases, a ``query'' (incoming strand $A$ / query vector $q$) competes for binding with existing ``key-value'' pairs (strand complex $B{:}C$ / key-value pairs $k_i, v_i$). The strength of competition is determined by complementarity (base pairing / dot product similarity).
+
+\begin{keyinsight}[Programs + Parameters]
+SDANS resolves a fundamental tension in AI: \emph{programs are interpretable but rigid; neural networks are flexible but opaque.} By compiling interpretable CodonForge programs into differentiable neural architectures, SDANS achieves both: the program structure ensures interpretability and verifiability, while the learned parameters ensure adaptability and generalization. The codon program is the \emph{skeleton}; the neural weights are the \emph{muscles}.
+\end{keyinsight}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{SDANS Compilation: Step-by-Step}
+\label{sec:sdans-step-by-step}
+
+Let us trace the SDANS compilation (as formalized by HelixSim, Paper~II) of our ``What is DNA?'' codon program into a neural architecture.
+
+\subsection{Step 1: Gene-to-Layer Mapping}
+
+Each gene becomes one or more neural network layers:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\small
+\begin{tabularx}{0.97\textwidth}{L{2.5cm} L{3cm} Y}
+\toprule
+\textbf{Gene} & \textbf{Neural Layer(s)} & \textbf{Purpose} \\
+\midrule
+Gene 1 (Sense) & Embedding + Conv1D + Cross-attention & Encode query, detect motifs, retrieve knowledge \\
+Gene 2 (Regulate + Express) & Gated MLP + Self-attention + Output projection & Apply constraints, bind answer, emit text \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Step 2: Opcode-to-Operation Translation}
+
+Each opcode within a gene becomes a specific neural operation, connected sequentially:
+
+\begin{lstlisting}[style=dogmapython, caption={SDANS-compiled neural architecture (PyTorch-like pseudocode).}]
+class WhatIsDNA_SDANS(nn.Module):
+    def __init__(self, d_model=512):
+        super().__init__()
+        # Gene 1: Sense
+        self.load_query = nn.Embedding(vocab_size, d_model)    # AAT
+        self.sense_intent = nn.Linear(d_model, n_intents)      # AGT
+        self.scan_motif = nn.Conv1d(d_model, d_model, 3)       # ATA
+        self.match_key = nn.MultiheadAttention(d_model, 8)     # ATG
+        self.checkpoint_1 = nn.Identity()  # residual save      # GCC
+
+        # Gene 2: Regulate + Express
+        self.gate_check = GatedUnit(d_model)                   # GTA
+        self.gate_relevance = GatedUnit(d_model)               # GTG
+        self.gate_length = GatedUnit(d_model)                  # GTC
+        self.bind_value = nn.MultiheadAttention(d_model, 8)    # TAA
+        self.fold_struct = TreeDecoder(d_model)                # CTA
+        self.emit_text = nn.Linear(d_model, vocab_size)        # CAA
+
+    def forward(self, x):
+        # Gene 1
+        h = self.load_query(x)
+        intent = self.sense_intent(h.mean(dim=1))
+        motifs = F.relu(self.scan_motif(h.transpose(1,2)))
+        h, _ = self.match_key(h, knowledge_base, knowledge_base)
+        h_saved = h  # checkpoint
+
+        # Gene 2 (promoter: h is nonempty -> always true post-sense)
+        h = self.gate_check(h)
+        h = self.gate_relevance(h)
+        h = self.gate_length(h)
+        h, _ = self.bind_value(h, h_saved, h_saved)
+        h = self.fold_struct(h)
+        logits = self.emit_text(h)
+        return logits
+\end{lstlisting}
+
+\subsection{Step 3: Parameter Initialization from Codon Hints}
+
+SDANS uses the codon program to guide parameter initialization. For example:
+\begin{itemize}[leftmargin=1.8em]
+  \item Sense opcodes with ``query-only'' semantics (\texttt{LOAD\_QUERY} vs.\ \texttt{LOAD\_CONTEXT}) initialize embeddings with smaller receptive fields.
+  \item Gate opcodes initialize bias terms based on the threshold values specified in the program.
+  \item Expression opcodes initialize output projections based on the target format (text, JSON, code).
+\end{itemize}
+
+This program-guided initialization gives SDANS networks a significant advantage over randomly initialized networks: they start with an architecture and initialization that already encodes the computational intent.
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{CodonForge vs.\ LLVM: A Compiler Comparison}
+\label{sec:compiler-comparison}
+
+To help students familiar with traditional compilers understand CodonForge's design, we provide a detailed comparison with LLVM, the industry-standard compiler infrastructure.
+
+\begin{table}[htbp]
+\centering
+\caption{Side-by-side comparison of LLVM and CodonForge compilation.}
+\label{tab:llvm-comparison}
+\renewcommand{\arraystretch}{1.2}
+\small
+\begin{tabularx}{0.97\textwidth}{L{3cm} Y Y}
+\toprule
+\textbf{Aspect} & \textbf{LLVM Compiler} & \textbf{CodonForge Compiler} \\
+\midrule
+\textbf{Source language} & C, C++, Rust, Swift, etc. & PromptBundles (markdown files) \\
+\textbf{Intermediate repr.} & LLVM IR (SSA form) & Genomic IR (DAG of functional units) \\
+\textbf{Target language} & x86, ARM, WASM machine code & Codon programs (DNA sequences) \\
+\textbf{Final target} & CPU/GPU execution & SDANS neural execution \\
+\midrule
+\textbf{Basic unit} & Instruction (opcode + operands) & Codon (3-letter DNA triplet) \\
+\textbf{Grouping unit} & Function & Gene (promoter + codons + terminator) \\
+\textbf{Module unit} & Module / translation unit & Genome (ordered list of genes) \\
+\textbf{Entry point} & \texttt{main()} function & First gene with always-on promoter \\
+\midrule
+\textbf{Control flow} & Branch, jump, call/return & Promoter conditions, \texttt{BRANCH}, \texttt{LOOP} \\
+\textbf{Data storage} & Registers, stack, heap & Register file $\{R_0, \ldots, R_n\}$ \\
+\textbf{Error handling} & Exceptions, error codes & \texttt{STOP\_ERROR}, \texttt{FALLBACK}, \texttt{RETRY} \\
+\midrule
+\textbf{Dead code elim.} & Remove unreachable basic blocks & Remove unreachable genes \\
+\textbf{Constant folding} & Evaluate constant expressions & Pre-evaluate static constraints \\
+\textbf{Inlining} & Inline small functions & Gene fusion \\
+\textbf{Register alloc.} & Graph coloring / linear scan & Greedy register reuse \\
+\midrule
+\textbf{Redundancy} & None (single representation) & Double-stranded (forward + reverse) \\
+\textbf{Error detection} & Type system, static analysis & Parity codons, reverse strand verification \\
+\textbf{Optimization hints} & Compiler flags, pragmas & Codon usage bias (opcode aliasing) \\
+\textbf{Biological analogy} & None & Direct mapping to molecular biology \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{dogmadef}[Compiler Analogy Summary]
+The key structural parallels are:
+\begin{itemize}[leftmargin=1.5em]
+  \item LLVM IR $\leftrightarrow$ Genomic IR: both are intermediate representations that enable optimization passes.
+  \item Functions $\leftrightarrow$ Genes: both are named, callable units of computation.
+  \item SSA registers $\leftrightarrow$ CodonForge registers: both hold intermediate values.
+  \item Machine code $\leftrightarrow$ Codon program: both are the low-level executable output.
+  \item CPU execution $\leftrightarrow$ SDANS neural execution: both are the runtime environments.
+\end{itemize}
+
+The key \emph{differences} are:
+\begin{itemize}[leftmargin=1.5em]
+  \item CodonForge has double-stranded redundancy; LLVM does not.
+  \item CodonForge's opcodes are biologically inspired, enabling codon optimization analogous to codon usage bias.
+  \item CodonForge's ultimate execution target is a differentiable neural network, not a fixed hardware architecture.
+\end{itemize}
+\end{dogmadef}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Connection to the DOGMA Architecture}
+\label{sec:dogma-connection}
+
+CodonForge and SDANS do not exist in isolation; they are critical components of the broader DOGMA architecture introduced in Chapter~\ref{ch:dogma-architecture}. This section explains how CodonForge connects to the other major subsystems.
+
+\subsection{CodonForge in the DOGMA Pipeline}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  component/.style={draw, rounded corners, minimum width=2.5cm, minimum height=1cm, align=center, font=\small},
+  arrow/.style={-{Stealth[length=3mm]}, thick, color=dogmablue},
+]
+  % Components
+  \node[component, fill=dogmawarm] (prompt) at (0,0) {PromptBundle\\[-2pt]\scriptsize(Ch.~6)};
+  \node[component, fill=dogmamint, line width=1.5pt] (codon) at (4,0) {\textbf{CodonForge}\\[-2pt]\scriptsize(This Chapter)};
+  \node[component, fill=dogmalight] (helix) at (8,0) {HelixHash\\[-2pt]\scriptsize(Ch.~8)};
+  \node[component, fill=dogmawarm] (supreme) at (4,-2.2) {DOGMA-Supreme\\[-2pt]\scriptsize(Ch.~12)};
+  \node[component, fill=dogmalight] (tera) at (0,-2.2) {TERA\\[-2pt]\scriptsize(Ch.~9)};
+  \node[component, fill=dogmalight] (tetra) at (8,-2.2) {TetraData\\[-2pt]\scriptsize(Ch.~10)};
+
+  % Arrows
+  \draw[arrow] (prompt) -- node[above, font=\scriptsize] {parse} (codon);
+  \draw[arrow] (codon) -- node[above, font=\scriptsize] {DNA seqs} (helix);
+  \draw[arrow] (codon) -- node[right, font=\scriptsize] {SDANS compile} (supreme);
+  \draw[arrow] (tera) -- node[above, font=\scriptsize] {eval} (supreme);
+  \draw[arrow] (tetra) -- node[above, font=\scriptsize] {data} (supreme);
+  \draw[arrow, dashed] (supreme) -- node[right, font=\scriptsize, text=dogmagray] {feedback} (codon);
+\end{tikzpicture}
+\caption{CodonForge's position in the DOGMA architecture. It receives PromptBundles and produces both DNA sequences (for HelixHash) and neural architectures (for DOGMA-Supreme via SDANS).}
+\label{fig:dogma-pipeline-codonforge}
+\end{figure}
+
+\subsection{CodonForge and DOGMA-Supreme v2}
+
+DOGMA-Supreme v2 (Chapter~\ref{ch:dogma-supreme}) relies on CodonForge in several ways:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Architecture generation:} SDANS compilation produces the neural network architecture that DOGMA-Supreme executes. The architecture is not hand-designed; it is \emph{compiled from the prompt genome}.
+  \item \textbf{Evolutionary optimization:} When DOGMA-Supreme runs evolutionary optimization (Chapter~\ref{ch:gene-regulation}), the mutations operate on the codon program. CodonForge then recompiles the mutated program into a new neural architecture, closing the evolutionary loop.
+  \item \textbf{Lineage tracking:} CodonForge's \texttt{CHECKPOINT} opcodes create snapshots that feed into DOGMA-Supreme's lineage tracking system, enabling provenance analysis of model behavior.
+  \item \textbf{Multi-gene expression:} DOGMA-Supreme v2 can execute multiple genes in parallel (multi-head processing), with each gene compiled to a separate attention head. This is analogous to polycistronic mRNA in bacteria, where multiple genes are transcribed together but produce separate proteins.
+\end{itemize}
+
+\begin{implnote}[Hot Recompilation]
+DOGMA-Supreme v2 supports \emph{hot recompilation}: when a prompt genome is mutated during evolutionary optimization, only the affected genes are recompiled, not the entire program. This is possible because SDANS compilation is modular---each gene compiles to an independent neural submodule. Hot recompilation reduces the compilation overhead from $O(K)$ (all genes) to $O(1)$ (just the mutated gene), where $K$ is the number of genes in the program.
+\end{implnote}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Advanced Topics}
+\label{sec:advanced-topics}
+
+\subsection{Codon Optimization Strategies}
+
+Just as organisms evolve preferred codon usage patterns for translational efficiency, CodonForge programs can be optimized by choosing among alias codons. The optimization criteria include:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{GC content:} Maintaining GC content between 40--60\% ensures structural stability in the double-stranded representation.
+  \item \textbf{Cache locality:} Some codon aliases map to operations that are more cache-friendly. For example, sequential register access ($R_0, R_1, R_2$) is more cache-efficient than random access ($R_0, R_7, R_3$).
+  \item \textbf{Codon pair bias:} Certain codon pairs execute more efficiently in sequence than others, analogous to biological codon pair bias affecting translational speed.
+  \item \textbf{Repetition avoidance:} Long runs of the same codon can cause ``slippage'' in the interpreter (analogous to polymerase slippage in biology). The optimizer breaks up such runs with functionally equivalent alternatives.
+\end{enumerate}
+
+\subsection{Error Detection and Correction}
+
+CodonForge provides multiple layers of error protection:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Parity codons:} As shown in the Word2FASTA encoding, parity digits enable single-error detection.
+  \item \textbf{Reverse strand verification:} The reverse complement strand provides a complete backup. If the forward strand is corrupted, the reverse strand can be used to reconstruct the original.
+  \item \textbf{Checksum genes:} Special genes can be inserted that compute a checksum over the preceding genes, analogous to CRC checks in digital communication.
+  \item \textbf{Proofreading opcodes:} The \texttt{RETRY} and \texttt{FALLBACK} opcodes enable runtime error recovery, analogous to ribosomal proofreading during translation.
+\end{itemize}
+
+\subsection{Multi-Gene Regulation Patterns}
+
+Complex CodonForge programs use sophisticated regulatory patterns borrowed from biology:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Operon structure:} Multiple related genes share a single promoter and are expressed together (analogous to bacterial operons).
+  \item \textbf{Enhancer genes:} Special genes that boost the expression of downstream genes when activated (analogous to enhancer elements in eukaryotic DNA).
+  \item \textbf{Silencer genes:} Genes that suppress downstream gene expression when activated (analogous to silencer elements).
+  \item \textbf{Feedback loops:} A gene's output can activate or repress its own promoter, creating positive or negative feedback (analogous to autoregulatory circuits in gene regulatory networks).
+\end{itemize}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Exercises}
+\label{sec:ch11-exercises}
+
+\begin{enumerate}[label=\textbf{11.\arabic*.}, leftmargin=2.5em]
+
+\item \textbf{[Fundamentals]} How many distinct codon opcodes does a three-letter DNA alphabet ($|\Sigma| = 4$) support? If we wanted 256 opcodes, what minimum codon length would be needed? Show your calculation.
+
+\item \textbf{[Biology Review]} Using the biological codon table (Table~\ref{tab:genetic-code}), translate the following mRNA sequence into amino acids: \texttt{AUG-GCA-UUU-GAA-UAA}. Identify the start and stop codons.
+
+\item \textbf{[Opcode Design]} Write a CodonForge program (using opcode mnemonics) for a text summarization task. Your program should have at least three genes: one for loading and analyzing the input text, one for applying length and quality constraints, and one for generating the summary. Specify promoter conditions for each gene.
+
+\item \textbf{[Word2FASTA]} Encode the string ``DNA'' using the Word2FASTA algorithm (Definition~\ref{def:word2fasta}). Show all intermediate steps: ASCII values, base-4 conversion, parity calculation, and nucleotide mapping. Verify your answer by decoding the result back to text.
+
+\item \textbf{[Strand Construction]} Given the forward strand \texttt{5'-GAA\;TAA\;CTA\;CAA\;CCC-3'}, construct the reverse complement strand. Then decode each codon on both strands into CodonForge opcodes.
+
+\item \textbf{[Compiler Comparison]} Compare CodonForge's compilation pipeline with LLVM's compilation pipeline (source $\to$ IR $\to$ optimization $\to$ machine code). For each optimization pass in CodonForge (dead code elimination, codon optimization, regulatory simplification, GC content balancing), identify the closest LLVM analogue and explain the similarity.
+
+\item \textbf{[SDANS]} Consider the CodonForge opcode \texttt{GATE\_CHECK}. Write the mathematical equation for its SDANS neural equivalent. Then explain: what happens when the gate's learned parameters are updated by gradient descent? Does the program's structure change, or only the gate's threshold? What are the implications for interpretability?
+
+\item \textbf{[Pipeline Trace]} Trace the prompt ``Translate `hello' to French'' through the full CodonForge pipeline:
+\begin{enumerate}
+  \item Parse: identify functional units and their types.
+  \item Compile: assign opcodes and construct genes.
+  \item Optimize: identify at least one optimization that could be applied.
+\end{enumerate}
+
+\item \textbf{[Theory]} Formalize the SDANS equivalence theorem: under what conditions does the neural execution of a compiled program produce identical outputs to symbolic execution? What happens when neural weights are updated by gradient descent---does the equivalence break? Under what conditions can it be restored?
+
+\item \textbf{[Research]} The biological ribosome performs error correction during translation (proofreading). Design an error-correction mechanism for CodonForge execution that detects and corrects codon-level errors during program execution. Your design should specify: (a) how errors are detected, (b) what types of errors can be corrected, and (c) the computational overhead of your error-correction scheme.
+
+\item \textbf{[Coding]} Implement the Word2FASTA encoder and decoder in Python. Your implementation should:
+\begin{enumerate}
+  \item Accept any ASCII string and produce a FASTA-formatted DNA sequence.
+  \item Accept a FASTA-formatted DNA sequence and produce the original string.
+  \item Verify round-trip fidelity: \texttt{decode(encode(s)) == s} for all printable ASCII strings.
+  \item Detect single-nucleotide errors using the parity digits.
+\end{enumerate}
+
+\item \textbf{[Design Challenge]} Design a CodonForge program for a multi-turn chatbot. Your design must handle: (a) conversation history loading, (b) context window management (what happens when history is too long?), (c) persona consistency across turns, and (d) graceful handling of off-topic inputs. Use at least five genes and explain the promoter logic for each.
+
+\end{enumerate}
+
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Key Takeaways}
+
+\keytakeaway{
+\begin{itemize}[leftmargin=1.5em]
+  \item Biological codon translation (mRNA $\to$ ribosome $\to$ amino acid) directly inspires CodonForge's design: codons are opcodes, genes are execution blocks, and the ribosome is the interpreter.
+  \item CodonForge maps all 64 three-letter DNA codons to computational opcodes, organized into five families: Sense (input perception), Binding (data association), Regulation (control flow), Expression (output generation), and Termination (halting and cleanup).
+  \item Genes are ordered blocks of opcodes bracketed by promoters (activation conditions) and terminators (halt signals), mirroring biological gene structure.
+  \item The three-stage compilation pipeline (Parse $\to$ Compile $\to$ Optimize) translates prompt bundles into executable codon programs with optimization passes analogous to traditional compilers like LLVM.
+  \item The Word2FASTA bridge enables reversible translation between text and DNA-encoded representations, with parity-based error detection and round-trip fidelity.
+  \item Forward and reverse complement strands provide redundancy, error detection, and compatibility with HelixHash's double-stranded analysis.
+  \item SDANS compilation maps symbolic CodonForge programs to differentiable neural architectures, achieving both interpretability (from program structure) and adaptability (from learned parameters).
+  \item CodonForge is central to the DOGMA architecture: it receives PromptBundles, produces DNA sequences for HelixHash, and generates neural architectures for DOGMA-Supreme via SDANS.
+\end{itemize}
+}
+
+\section*{Suggested Reading}
+\begin{itemize}[leftmargin=1.5em]
+  \item Chapter~\ref{ch:code-of-life}, Section on the Genetic Code: biological codons as the original inspiration.
+  \item Chapter~\ref{ch:dogma-architecture}: CodonForge's role in the DOGMA pipeline.
+  \item Chapter~\ref{ch:dogma-supreme}: SDANS compilation in the DOGMA-Supreme implementation.
+  \item \citet{soloveichik2010}: CRN Turing completeness---theoretical foundation for molecular program execution.
+  \item Alberts et al., \emph{Molecular Biology of the Cell}: the definitive reference on biological translation.
+  \item Lattner \& Adve, ``LLVM: A Compilation Framework for Lifelong Program Analysis \& Transformation'': for deeper understanding of the compiler comparison.
+\end{itemize}

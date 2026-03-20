@@ -1,0 +1,893 @@
+% ═══════════════════════════════════════════════════════════════════════════════
+% Chapter 8: HelixHash — Structural Representation of Computational Genomes
+% Part III: The DOGMA Architecture
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\chapter{HelixHash --- Structural Representation of Computational Genomes}
+\label{ch:helixhash}
+
+\chapterepigraph{The double helix is not merely a shape. It is a commitment to redundancy, error correction, and bidirectional reading---properties any serious computational substrate must share.}{DOGMA Design Manifesto}
+
+\noindent
+Chapter~\ref{ch:dogma-architecture} introduced the DOGMA pipeline and its genomic bases. But a genome is more than a sequence of bases---it has \emph{structure}. In molecular biology, structure determines function: the double helix enables replication, the codon frame enables translation, and chromatin folding enables regulation. In DOGMA, the analogous structural analysis framework is \textbf{HelixHash}.
+
+HelixHash serves three roles within the DOGMA architecture. First, it provides a \emph{double-helix representation} that encodes every computational genome as a pair of complementary strands, enabling bidirectional analysis. Second, it extracts \emph{structural signatures}---motifs, sketches, and bond matrices---that characterize a genome's organization independently of its semantic content. Third, it maintains a \emph{novelty archive} that drives evolutionary diversity, ensuring that the synthesis stage (Chapter~\ref{ch:dogma-architecture}) explores broadly rather than collapsing to a narrow optimum.
+
+This chapter develops HelixHash from first principles, drawing on techniques from bioinformatics (k-mer analysis), NLP (n-gram models), and streaming algorithms (locality-sensitive hashing). We formalize each component, analyze its complexity, and show how the pieces compose into a unified structural embedding suitable for foundation model training.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Double-Helix as a Data Structure}
+\label{sec:double-helix}
+
+Before we define HelixHash's computational representation, let us carefully review the biological structure that inspires it. DNA is composed of two polynucleotide chains wound around a common axis, forming a right-handed helix. The two chains run in \emph{opposite} directions---they are \emph{antiparallel}. One strand runs 5\('\to\)3\('\) (the \emph{sense} or \emph{coding} strand), while its partner runs 3\('\to\)5\('\) (the \emph{antisense} or \emph{template} strand). The strands are held together by hydrogen bonds between complementary bases: adenine (A) pairs with thymine (T) via two hydrogen bonds, and guanine (G) pairs with cytosine (C) via three hydrogen bonds.
+
+\subsection{Step-by-Step Construction of the Double Helix}
+
+We now build DOGMA's computational double helix in four steps.
+
+\paragraph{Step 1: The Sense Strand (Forward Strand).}
+Given a computational genome $G$ consisting of $n$ fragment embeddings, the \emph{sense strand} is simply the genome read in its natural order:
+\begin{equation}
+F(G) = [f_1,\; f_2,\; \ldots,\; f_n]. \quad \text{(5\('\to\)3\('\) direction)}
+\end{equation}
+Each $f_i \in \mathbb{R}^d$ carries both a \emph{type tag} $\tau_i \in \{\mathsf{A}, \mathsf{T}, \mathsf{C}, \mathsf{G}\}$ and a \emph{semantic embedding} $\sigma_i \in \mathbb{R}^{d-1}$. The type tag determines how the fragment participates in bonding; the embedding carries content.
+
+\paragraph{Step 2: The Complementation Operator.}
+To form the antisense strand we need a function that maps every fragment to its ``complement.'' In biology, this is dictated by Watson--Crick rules: A\,$\leftrightarrow$\,T and G\,$\leftrightarrow$\,C. In DOGMA, the complementation operator is a learned linear map:
+
+\begin{definition}[Complementation Operator]
+\label{def:complementation}
+The \emph{complementation operator} $\mathrm{rev}: \mathbb{R}^d \to \mathbb{R}^d$ satisfies two constraints:
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Type complementarity:} $\tau(\mathrm{rev}(f)) = \overline{\tau(f)}$, where $\overline{\mathsf{A}} = \mathsf{T}$, $\overline{\mathsf{T}} = \mathsf{A}$, $\overline{\mathsf{G}} = \mathsf{C}$, $\overline{\mathsf{C}} = \mathsf{G}$.
+  \item \textbf{Approximate involution:} $\|\mathrm{rev}(\mathrm{rev}(f)) - f\|_2 \leq \epsilon$ for a small tolerance $\epsilon > 0$.
+\end{enumerate}
+In practice, $\mathrm{rev}$ is parameterized as a block-diagonal matrix that acts on the type tag deterministically and on the semantic embedding through a learned orthogonal transform.
+\end{definition}
+
+The involution constraint ensures that complementing a strand twice recovers (approximately) the original, mirroring the biological reality that the complement of the complement of a DNA sequence is the original sequence.
+
+\paragraph{Step 3: The Antisense Strand (Reverse Strand).}
+The antisense strand is constructed by complementing every fragment and \emph{reversing} the order:
+
+\begin{definition}[Forward and Reverse Strands]
+\label{def:strands}
+Let $G = (f_1, f_2, \ldots, f_n)$ be a computational genome represented as a sequence of $n$ fragment embeddings. The \emph{forward strand} is:
+\begin{equation}
+F(G) = [f_1, f_2, \ldots, f_n],
+\end{equation}
+and the \emph{reverse strand} is:
+\begin{equation}
+R(G) = [\mathrm{rev}(f_n), \mathrm{rev}(f_{n-1}), \ldots, \mathrm{rev}(f_1)],
+\end{equation}
+where $\mathrm{rev}(\cdot)$ is the complementation operator from Definition~\ref{def:complementation}.
+\end{definition}
+
+The reversal is essential. In biology, the antiparallel orientation means that if you read one strand left-to-right (5\('\to\)3\('\)), you must read the other strand right-to-left. This asymmetry is what enables bidirectional transcription: genes on the sense strand are transcribed in one direction, while genes on the antisense strand are transcribed in the opposite direction.
+
+\paragraph{Step 4: Base Pairing.}
+The two strands are ``bonded'' position-by-position. Position $i$ on the forward strand pairs with position $n + 1 - i$ on the reverse strand. The bond strength at each position is determined by the type tags of the paired fragments, as formalized in the bond matrix (Section~\ref{sec:bond-matrices}).
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  base/.style={minimum width=0.9cm, minimum height=0.6cm, draw, rounded corners=2pt, font=\small\ttfamily\bfseries},
+  bond/.style={dashed, thick},
+]
+  % Forward strand (sense, 5'->3')
+  \node[font=\small\bfseries, text=dogmablue] at (-2.2, 1.6) {5\('\)};
+  \node[font=\small\bfseries, text=dogmablue] at (8.4, 1.6) {3\('\)};
+  \draw[-{Latex[length=2.5mm]}, thick, dogmablue] (-1.8, 1.6) -- (8.0, 1.6);
+  \node[font=\small\bfseries, text=dogmablue] at (-2.2, 2.1) {Sense};
+
+  \foreach \i/\base/\col in {0/A/dogmared, 1/C/dogmablue, 2/G/dogmateal, 3/T/dogmagold, 4/A/dogmared, 5/C/dogmablue, 6/G/dogmateal, 7/T/dogmagold} {
+    \node[base, fill=\col!15, text=\col] (f\i) at (\i*1.1 + 0.2, 0.8) {\base};
+    \node[font=\tiny, text=dogmagray] at (\i*1.1 + 0.2, 0.35) {$f_{\the\numexpr\i+1}$};
+  }
+
+  % Reverse strand (antisense, 3'->5')
+  \node[font=\small\bfseries, text=dogmared] at (-2.2, -1.6) {3\('\)};
+  \node[font=\small\bfseries, text=dogmared] at (8.4, -1.6) {5\('\)};
+  \draw[-{Latex[length=2.5mm]}, thick, dogmared] (8.0, -1.6) -- (-1.8, -1.6);
+  \node[font=\small\bfseries, text=dogmared] at (-2.2, -2.1) {Antisense};
+
+  \foreach \i/\base/\col in {0/T/dogmagold, 1/G/dogmateal, 2/C/dogmablue, 3/A/dogmared, 4/T/dogmagold, 5/G/dogmateal, 6/C/dogmablue, 7/A/dogmared} {
+    \node[base, fill=\col!15, text=\col] (r\i) at (\i*1.1 + 0.2, -0.8) {\base};
+  }
+
+  % Hydrogen bonds between base pairs
+  \foreach \i/\bonds in {0/2, 1/3, 2/3, 3/2, 4/2, 5/3, 6/3, 7/2} {
+    \pgfmathsetmacro{\x}{\i*1.1 + 0.2}
+    \ifnum\bonds=2
+      \draw[bond, dogmagray] (\x-0.08, 0.5) -- (\x-0.08, -0.5);
+      \draw[bond, dogmagray] (\x+0.08, 0.5) -- (\x+0.08, -0.5);
+    \else
+      \draw[bond, dogmagray] (\x-0.12, 0.5) -- (\x-0.12, -0.5);
+      \draw[bond, dogmagray] (\x, 0.5) -- (\x, -0.5);
+      \draw[bond, dogmagray] (\x+0.12, 0.5) -- (\x+0.12, -0.5);
+    \fi
+  }
+
+  % Bond count labels
+  \foreach \i/\bonds in {0/2, 1/3, 2/3, 3/2, 4/2, 5/3, 6/3, 7/2} {
+    \pgfmathsetmacro{\x}{\i*1.1 + 0.2}
+    \node[font=\tiny, text=dogmagray, fill=white, inner sep=1pt] at (\x, 0) {\bonds H};
+  }
+
+  % Labels
+  \node[font=\footnotesize, text=dogmablue, align=center] at (3.5, 2.8) {Forward strand: $F(G) = [f_1, f_2, \ldots, f_8]$};
+  \node[font=\footnotesize, text=dogmared, align=center] at (3.5, -2.8) {Reverse strand: $R(G) = [\mathrm{rev}(f_8), \mathrm{rev}(f_7), \ldots, \mathrm{rev}(f_1)]$};
+\end{tikzpicture}
+\caption{The double-helix representation of a computational genome with type sequence $\mathsf{ACGTACGT}$. The sense strand runs 5\('\to\)3\('\) (left to right); the antisense strand runs 3\('\to\)5\('\) (right to left). Dashed lines represent hydrogen bonds: A--T pairs have 2 bonds, G--C pairs have 3 bonds. Each fragment $f_i$ is paired with its complement $\mathrm{rev}(f_{n+1-i})$ on the opposite strand.}
+\label{fig:double-helix-structure}
+\end{figure}
+
+\begin{bioinsight}[Why Two Strands?]
+In biology, the double-stranded structure of DNA serves three purposes: (i) \emph{redundancy} for error correction---damage to one strand can be repaired using the other as a template; (ii) \emph{bidirectional transcription}---genes on opposite strands can be read independently; and (iii) \emph{structural stability}---base pairing provides thermodynamic stability to the molecule. In DOGMA, the double-helix representation inherits all three advantages:
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Robustness:} If a fragment embedding is corrupted (e.g., by mutation during evolutionary training), the reverse strand provides a recovery signal.
+  \item \textbf{Bidirectional context:} Forward and reverse strands capture different directional dependencies, analogous to bidirectional RNNs but with an explicit structural motivation.
+  \item \textbf{Structural fingerprinting:} The relationship between a genome and its reverse complement encodes structural information that single-strand analysis cannot capture.
+\end{enumerate}
+\end{bioinsight}
+
+\subsection{Watson--Crick Complementarity as a Hash Function}
+\label{subsec:wc-hash}
+
+An elegant way to view Watson--Crick complementarity is as a \emph{hash function}. Define the complementarity map $\overline{(\cdot)}: \{\mathsf{A}, \mathsf{T}, \mathsf{C}, \mathsf{G}\} \to \{\mathsf{A}, \mathsf{T}, \mathsf{C}, \mathsf{G}\}$ by:
+\begin{equation}
+\overline{\mathsf{A}} = \mathsf{T}, \quad \overline{\mathsf{T}} = \mathsf{A}, \quad \overline{\mathsf{G}} = \mathsf{C}, \quad \overline{\mathsf{C}} = \mathsf{G}.
+\end{equation}
+
+This map is an involution ($\overline{\overline{x}} = x$) and a fixed-point-free permutation (no base is its own complement). For a type sequence $\mathbf{t} = (t_1, t_2, \ldots, t_k)$, the reverse-complement hash is:
+\begin{equation}
+\mathrm{RC}(\mathbf{t}) = (\overline{t_k},\; \overline{t_{k-1}},\; \ldots,\; \overline{t_1}).
+\label{eq:rc-hash}
+\end{equation}
+
+A type sequence and its reverse complement always hash to distinct values (since the map is fixed-point-free and reversal breaks palindromic symmetry for most sequences). This provides a natural way to canonicalize motifs: we can define the \emph{canonical form} of a type sequence as the lexicographically smaller of $\mathbf{t}$ and $\mathrm{RC}(\mathbf{t})$. This halves the effective motif vocabulary and enforces strand symmetry in all downstream analyses.
+
+\begin{example}[Canonical Motif Forms]
+\label{ex:canonical-motifs}
+Consider the 3-motif type sequence $\mathbf{t} = \mathsf{ACG}$. Its reverse complement is $\mathrm{RC}(\mathsf{ACG}) = \mathsf{CGT}$. Since $\mathsf{ACG} < \mathsf{CGT}$ lexicographically, the canonical form is $\mathsf{ACG}$. Now consider $\mathbf{t} = \mathsf{GCA}$. Its reverse complement is $\mathrm{RC}(\mathsf{GCA}) = \mathsf{TGC}$. The canonical form is $\mathsf{GCA}$. Notice that $\mathsf{ACG}$ and $\mathsf{CGT}$ share the same canonical form, reflecting that they represent the same structural motif read from opposite strands.
+\end{example}
+
+\subsection{Strand Alignment Score}
+
+Given two genomes $G_1$ and $G_2$, we can measure their structural similarity by comparing strand representations:
+
+\begin{equation}
+S_{\text{strand}}(G_1, G_2) = \frac{1}{2}\bigl[\cos(F(G_1), F(G_2)) + \cos(R(G_1), R(G_2))\bigr],
+\label{eq:strand-alignment}
+\end{equation}
+
+where $\cos(\cdot, \cdot)$ denotes cosine similarity computed over averaged fragment embeddings. The strand alignment score is symmetric and bounded in $[-1, 1]$, with values near 1 indicating structurally similar genomes.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Bond Matrix}
+\label{sec:bond-matrices}
+
+The bond matrix is a central data structure in HelixHash that captures how strongly each pair of positions in a genome interacts. Its design is inspired by the hydrogen bonding patterns of biological DNA.
+
+\subsection{The 4\texttimes 4 Hydrogen Bond Matrix}
+\label{subsec:hydrogen-bond-matrix}
+
+In molecular biology, the strength of a base pair is determined by the number of hydrogen bonds. We encode this in a \emph{base interaction matrix}:
+
+\begin{definition}[Base Interaction Matrix]
+\label{def:base-interaction}
+The \emph{base interaction matrix} $\mathbf{H} \in \mathbb{R}^{4 \times 4}$ assigns a bond strength to every possible pair of base types:
+\begin{equation}
+\mathbf{H} =
+\begin{pmatrix}
+ & \mathsf{A} & \mathsf{T} & \mathsf{G} & \mathsf{C} \\
+\mathsf{A} & 0 & 2 & 0 & 0 \\
+\mathsf{T} & 2 & 0 & 0 & 0 \\
+\mathsf{G} & 0 & 0 & 0 & 3 \\
+\mathsf{C} & 0 & 0 & 3 & 0
+\end{pmatrix}.
+\label{eq:hydrogen-bond-matrix}
+\end{equation}
+Complementary pairs (A--T, T--A) receive a bond strength of 2 (two hydrogen bonds), while G--C and C--G pairs receive 3 (three hydrogen bonds). All non-complementary pairs receive 0.
+\end{definition}
+
+\begin{remark}
+The asymmetry between A--T (2 bonds) and G--C (3 bonds) has profound consequences. GC-rich regions of a genome are thermodynamically more stable than AT-rich regions. In DOGMA, this translates to stronger structural coherence in regions dominated by G and C type tags, making these regions more resistant to disruptive mutations.
+\end{remark}
+
+\begin{table}[H]
+\centering
+\caption{The 4\texttimes 4 hydrogen bond matrix $\mathbf{H}$. Entries show the number of hydrogen bonds for each base pair. Non-zero entries occur only for Watson--Crick complementary pairs.}
+\label{tab:bond-matrix}
+\begin{tabular}{c|cccc}
+\toprule
+ & \textbf{A} & \textbf{T} & \textbf{G} & \textbf{C} \\
+\midrule
+\textbf{A} & 0 & 2 & 0 & 0 \\
+\textbf{T} & 2 & 0 & 0 & 0 \\
+\textbf{G} & 0 & 0 & 0 & 3 \\
+\textbf{C} & 0 & 0 & 3 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Bond Energies as Attention Weights}
+\label{subsec:bond-attention}
+
+A key insight of HelixHash is that the hydrogen bond strengths in $\mathbf{H}$ can serve as \emph{natural attention weights}. In a transformer, the attention weight between positions $i$ and $j$ is a learned function of the content at those positions. In HelixHash, we have a biologically grounded alternative: the bond strength between two fragments is determined by their type tags.
+
+Define the \emph{type-based attention weight} between fragments $f_i$ and $f_j$ as:
+\begin{equation}
+a_{ij}^{\text{type}} = \frac{\mathbf{H}[\tau_i, \tau_j]}{\sum_{k=1}^{n} \mathbf{H}[\tau_i, \tau_k] + \epsilon},
+\label{eq:type-attention}
+\end{equation}
+where $\epsilon > 0$ is a small constant for numerical stability. This gives a sparse attention pattern: each fragment attends only to fragments with complementary type tags. A-type fragments attend to T-type fragments (with weight proportional to 2), and G-type fragments attend to C-type fragments (with weight proportional to 3). All other attention weights are zero.
+
+\begin{keyinsight}[Sparse Biological Attention]
+Type-based attention is \emph{extremely sparse}: at most 25\% of positions have non-zero attention weight (assuming uniform type distribution). This contrasts sharply with dense transformer attention, where every position attends to every other position. The sparsity is not a limitation but a feature---it encodes the structural constraint that only complementary bases interact, dramatically reducing the computational cost of attention while preserving biologically meaningful interactions.
+\end{keyinsight}
+
+\subsection{SantaLucia Nearest-Neighbor Parameters}
+\label{subsec:santalucia}
+
+While the simple hydrogen bond count (2 for A--T, 3 for G--C) captures the qualitative picture, real DNA thermodynamics depend on the \emph{stacking interactions} between adjacent base pairs. The \textbf{SantaLucia nearest-neighbor model} \citep{santalucia1998} provides experimentally measured free energy parameters for all 16 possible nearest-neighbor dinucleotide pairs.
+
+\begin{definition}[Nearest-Neighbor Free Energy]
+\label{def:nearest-neighbor}
+The free energy contribution of a nearest-neighbor pair is denoted $\Delta G^{\circ}(XY/X'Y')$, where $XY$ represents two adjacent bases on the sense strand and $X'Y'$ represents the complementary bases on the antisense strand (read 3\('\to\)5\('\)). The total free energy of duplex formation for a sequence of length $n$ is:
+\begin{equation}
+\Delta G^{\circ}_{\text{total}} = \Delta G^{\circ}_{\text{init}} + \sum_{i=1}^{n-1} \Delta G^{\circ}(s_i s_{i+1} / \overline{s_{i+1}}\, \overline{s_i}),
+\label{eq:total-free-energy}
+\end{equation}
+where $\Delta G^{\circ}_{\text{init}}$ is the initiation free energy and the sum runs over all adjacent pairs in the sequence.
+\end{definition}
+
+The 16 unique nearest-neighbor $\Delta G^{\circ}$ values (in kcal/mol at 37\textdegree C, 1~M NaCl) are listed in Table~\ref{tab:nn-params}.
+
+\begin{table}[H]
+\centering
+\caption{SantaLucia nearest-neighbor $\Delta G^{\circ}_{37}$ values (kcal/mol) for all 16 dinucleotide pairs. More negative values indicate stronger (more stable) stacking. Data from \citet{santalucia1998}.}
+\label{tab:nn-params}
+\begin{tabular}{cccc}
+\toprule
+\textbf{Pair (5\('\to\)3\('\)/3\('\to\)5\('\))} & \textbf{$\Delta G^{\circ}_{37}$} & \textbf{Pair (5\('\to\)3\('\)/3\('\to\)5\('\))} & \textbf{$\Delta G^{\circ}_{37}$} \\
+\midrule
+AA/TT & $-1.00$ & GA/CT & $-1.30$ \\
+AT/TA & $-0.88$ & GC/CG & $-2.24$ \\
+AC/TG & $-1.44$ & GG/CC & $-1.84$ \\
+AG/TC & $-1.28$ & GT/CA & $-1.44$ \\
+TA/AT & $-0.58$ & CA/GT & $-1.45$ \\
+TT/AA & $-1.00$ & CC/GG & $-1.84$ \\
+TC/AG & $-1.30$ & CG/GC & $-2.17$ \\
+TG/AC & $-1.45$ & CT/GA & $-1.28$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{implnote}[Using SantaLucia Parameters in HelixHash]
+HelixHash uses the SantaLucia nearest-neighbor parameters to compute a \emph{thermodynamic bond weight} for each adjacent pair in a genome. Given fragments $f_i$ and $f_{i+1}$ with type tags $\tau_i$ and $\tau_{i+1}$, the stacking weight is:
+\begin{equation}
+w_{\text{stack}}(i, i+1) = \frac{|\Delta G^{\circ}(\tau_i \tau_{i+1} / \overline{\tau_{i+1}}\, \overline{\tau_i})|}{\max_{\mathbf{t}} |\Delta G^{\circ}(\mathbf{t})|} \in [0, 1],
+\end{equation}
+where the denominator normalizes by the strongest possible stacking interaction (GC/CG at $-2.24$ kcal/mol). This normalized weight enters the bond matrix as an additional term beyond Jaccard overlap and boundary alignment.
+\end{implnote}
+
+\subsection{Worked Example: Computing $\Delta G^{\circ}$ for \textsf{ACGTACGT}}
+\label{subsec:free-energy-example}
+
+Let us compute the total free energy of duplex formation for the sequence $\mathsf{ACGTACGT}$ step by step.
+
+\begin{example}[Free Energy Calculation]
+\label{ex:free-energy}
+\textbf{Given:} Sense strand = $\mathsf{ACGTACGT}$; Antisense strand = $\mathsf{TGCATGCA}$ (read 3\('\to\)5\('\)).
+
+\textbf{Step 1: Identify all nearest-neighbor pairs.} Reading left to right along the sense strand, the seven adjacent dinucleotide pairs are:
+\begin{center}
+\begin{tabular}{ccccccc}
+$i$ & 1 & 2 & 3 & 4 & 5 & 6 \\
+\midrule
+Pair & AC/TG & CG/GC & GT/CA & TA/AT & AC/TG & CG/GC \\
+\end{tabular}
+\end{center}
+and the seventh pair: TT/AA for position 7 (GT at positions 7--8 is actually GT/CA).
+
+Let us be precise. The pairs (sense 5\('\to\)3\('\) / antisense 3\('\to\)5\('\)) are:
+\begin{align*}
+&\text{Position 1--2:} \quad \mathsf{AC/TG} \quad \Delta G^{\circ} = -1.44 \\
+&\text{Position 2--3:} \quad \mathsf{CG/GC} \quad \Delta G^{\circ} = -2.17 \\
+&\text{Position 3--4:} \quad \mathsf{GT/CA} \quad \Delta G^{\circ} = -1.44 \\
+&\text{Position 4--5:} \quad \mathsf{TA/AT} \quad \Delta G^{\circ} = -0.58 \\
+&\text{Position 5--6:} \quad \mathsf{AC/TG} \quad \Delta G^{\circ} = -1.44 \\
+&\text{Position 6--7:} \quad \mathsf{CG/GC} \quad \Delta G^{\circ} = -2.17 \\
+&\text{Position 7--8:} \quad \mathsf{GT/CA} \quad \Delta G^{\circ} = -1.44
+\end{align*}
+
+\textbf{Step 2: Sum the contributions.}
+\begin{equation*}
+\sum_{i=1}^{7} \Delta G^{\circ}_i = (-1.44) + (-2.17) + (-1.44) + (-0.58) + (-1.44) + (-2.17) + (-1.44) = -10.68 \;\text{kcal/mol}.
+\end{equation*}
+
+\textbf{Step 3: Add initiation energy.} For a sequence starting with A and ending with T, the initiation free energy is $\Delta G^{\circ}_{\text{init}} = +2.2$ kcal/mol (accounting for both initiation terms):
+\begin{equation*}
+\Delta G^{\circ}_{\text{total}} = 2.2 + (-10.68) = -8.48 \;\text{kcal/mol}.
+\end{equation*}
+
+\textbf{Interpretation:} The negative total free energy ($-8.48$ kcal/mol) indicates that duplex formation is thermodynamically favorable. In HelixHash, this sequence would receive a normalized bond energy of $|-8.48| / |\Delta G^{\circ}_{\max}| \approx 0.54$, indicating moderate structural stability.
+\end{example}
+
+\subsection{The Full Bond Matrix}
+
+While the hydrogen bond matrix $\mathbf{H}$ captures type-level interactions, the full HelixHash bond matrix also incorporates content-level similarity:
+
+\begin{definition}[Bond Matrix]
+\label{def:bond-matrix}
+Given a genome $G = (f_1, \ldots, f_n)$, the \emph{bond matrix} $\mathbf{B} \in [0, 1]^{n \times n}$ is defined by:
+\begin{equation}
+\mathbf{B}[i, j] = \alpha \cdot J(f_i, f_j) + (1 - \alpha) \cdot A(f_i, f_j),
+\label{eq:bond-matrix}
+\end{equation}
+where $J(f_i, f_j)$ is the Jaccard overlap between the motif sets of fragments $f_i$ and $f_j$, $A(f_i, f_j)$ is the boundary alignment score between fragments $f_i$ and $f_j$, and $\alpha = 0.75$ controls the balance between overlap and alignment.
+\end{definition}
+
+The \textbf{Jaccard overlap} measures the fraction of shared $k$-motifs between two fragments:
+\begin{equation}
+J(f_i, f_j) = \frac{|\mathcal{M}_k(f_i) \cap \mathcal{M}_k(f_j)|}{|\mathcal{M}_k(f_i) \cup \mathcal{M}_k(f_j)|}.
+\end{equation}
+
+The \textbf{boundary alignment} measures how well the ending motifs of fragment $f_i$ match the starting motifs of fragment $f_j$, using cosine similarity over the last and first $\ell$ embeddings (default $\ell = 3$):
+\begin{equation}
+A(f_i, f_j) = \cos\bigl(f_i[{-\ell}{:}], \; f_j[{:}{\ell}]\bigr).
+\end{equation}
+
+The 75\%/25\% weighting reflects the empirical finding that content overlap is more indicative of structural coherence than boundary smoothness alone, but that boundary alignment is essential for detecting well-assembled genomes versus randomly concatenated fragments.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[scale=0.65]
+  % Draw the bond matrix as a heatmap
+  \def\n{8}
+  % Values for an 8x8 bond matrix (symmetric, sparse)
+  % Diagonal is 1.0, adjacent entries high, far entries low
+  \foreach \i in {1,...,\n} {
+    \foreach \j in {1,...,\n} {
+      \pgfmathsetmacro{\diff}{abs(\i-\j)}
+      \pgfmathsetmacro{\val}{
+        \diff == 0 ? 100 :
+        \diff == 1 ? 75 :
+        \diff == 2 ? 30 :
+        \diff == 3 ? 10 : 2
+      }
+      \pgfmathsetmacro{\fillcol}{\val}
+      \fill[dogmablue!\fillcol!white] (\j-1, \n-\i) rectangle (\j, \n-\i+1);
+      \draw[dogmagray!30, very thin] (\j-1, \n-\i) rectangle (\j, \n-\i+1);
+      \pgfmathsetmacro{\valdisp}{int(\val)}
+      \ifnum\valdisp>15
+        \node[font=\tiny, white] at (\j-0.5, \n-\i+0.5) {.\pgfmathprintnumber[fixed, precision=0]{\val}};
+      \fi
+    }
+  }
+  % Axis labels
+  \foreach \i in {1,...,\n} {
+    \node[font=\small, text=dogmablue] at (\i-0.5, \n+0.4) {$f_{\i}$};
+    \node[font=\small, text=dogmablue] at (-0.5, \n-\i+0.5) {$f_{\i}$};
+  }
+  % Title
+  \node[font=\small\bfseries, text=dogmablue] at (3.5, \n+1.2) {Bond Matrix $\mathbf{B}$};
+  % Colorbar
+  \foreach \v in {0,20,...,100} {
+    \pgfmathsetmacro{\ypos}{\v/100 * \n}
+    \fill[dogmablue!\v!white] (\n+0.8, \ypos*0.08*\n/8) rectangle (\n+1.3, \ypos*0.08*\n/8 + \n/5.0);
+  }
+  \node[font=\tiny, text=dogmagray] at (\n+1.8, 0) {0.0};
+  \node[font=\tiny, text=dogmagray] at (\n+1.8, \n) {1.0};
+  % Highlight superdiagonal
+  \draw[dogmared, thick] (1, \n-1) rectangle (2, \n);
+  \draw[dogmared, thick] (2, \n-2) rectangle (3, \n-1);
+  \draw[dogmared, thick] (3, \n-3) rectangle (4, \n-2);
+  \draw[dogmared, thick] (4, \n-4) rectangle (5, \n-3);
+  \draw[dogmared, thick] (5, \n-5) rectangle (6, \n-4);
+  \draw[dogmared, thick] (6, \n-6) rectangle (7, \n-5);
+  \draw[dogmared, thick] (7, \n-7) rectangle (8, \n-6);
+  \node[font=\footnotesize, text=dogmared] at (10.5, 4) {Superdiagonal};
+  \node[font=\footnotesize, text=dogmared] at (10.5, 3.4) {$\to$ bond strength};
+\end{tikzpicture}
+\caption{Visualization of the bond matrix $\mathbf{B}$ for an 8-fragment genome. Darker blue indicates stronger bonds. The matrix is naturally sparse: only nearby fragments share significant motif overlap. The superdiagonal (red outline) is averaged to compute bond strength $C_{\text{bond}}(G)$.}
+\label{fig:bond-matrix-viz}
+\end{figure}
+
+\begin{keyinsight}[Sparse Bonds vs.\ Dense Attention]
+The bond matrix $\mathbf{B}$ superficially resembles a transformer's attention matrix, but differs in three critical respects:
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Sparsity:} Bond matrices are naturally sparse. Most fragment pairs share few motifs, so $\mathbf{B}[i,j] \approx 0$ for distant or unrelated fragments. In practice, over 85\% of entries fall below a threshold of $0.1$.
+  \item \textbf{Interpretation:} Each entry has a concrete structural meaning (shared motifs + boundary alignment), unlike attention weights which are learned correlations without guaranteed semantics.
+  \item \textbf{Persistence:} Bond matrices are computed once per genome and cached in the HelixHash archive, whereas attention matrices are recomputed at every forward pass.
+\end{enumerate}
+\end{keyinsight}
+
+\subsection{Bond Strength}
+
+The overall \emph{bond strength} of a genome quantifies its structural integrity as a single scalar:
+
+\begin{equation}
+C_{\text{bond}}(G) = \frac{1}{n - 1} \sum_{i=1}^{n-1} \mathbf{B}[i, i+1],
+\label{eq:bond-strength}
+\end{equation}
+
+i.e., the mean bond score along the main superdiagonal. A high bond strength indicates that consecutive fragments are coherent---they share motifs and have smooth boundaries. A low bond strength suggests fragmentation or poor assembly. Bond strength enters the selection objective as a regularization term (Section~\ref{sec:novelty-diversity}).
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Motif Detection and Analysis}
+\label{sec:motif-extraction}
+
+The basic unit of structural analysis in HelixHash is the \emph{motif}---a short, contiguous subsequence of fragment embeddings extracted from a genome strand. Motifs are to HelixHash what k-mers are to bioinformatics and n-grams are to NLP.
+
+\subsection{Defining Genomic Motifs}
+
+\begin{definition}[Genomic Motif]
+\label{def:motif}
+A \emph{$k$-motif} of a genome $G = (f_1, \ldots, f_n)$ is any contiguous subsequence of width $k$:
+\begin{equation}
+m_i^{(k)} = (f_i, f_{i+1}, \ldots, f_{i+k-1}), \quad 1 \leq i \leq n - k + 1.
+\end{equation}
+The complete set of overlapping $k$-motifs from $G$ is denoted $\mathcal{M}_k(G)$, with $|\mathcal{M}_k(G)| = n - k + 1$.
+\end{definition}
+
+\begin{keyinsight}[Why $k = 6$?]
+The default motif width in HelixHash is $k = 6$, chosen by analogy with biological codons. In molecular biology, codons are three-nucleotide units that specify amino acids. Since DOGMA uses four base types (A, T, C, G), a width-6 motif spans two ``codons'' worth of type information, yielding $4^6 = 4{,}096$ distinct type patterns. This provides sufficient granularity to capture structural variation while remaining computationally tractable. The choice also aligns with empirical findings in bioinformatics, where 6-mers are widely used for sequence classification tasks \citep{wood2014}.
+\end{keyinsight}
+
+\subsection{How HelixHash Detects Motifs}
+
+Motif detection in HelixHash proceeds in three phases:
+
+\paragraph{Phase 1: Extraction.} A sliding window of width $k$ moves along both the forward and reverse strands, extracting all overlapping motifs. For a genome of length $n$, this yields $2(n - k + 1)$ motifs in total (counting both strands).
+
+\paragraph{Phase 2: Type Quantization.} Each motif is reduced to its \emph{type sequence}---the ordered tuple of type tags $(\tau_i, \tau_{i+1}, \ldots, \tau_{i+k-1})$. This quantization maps the continuous fragment embeddings to a discrete alphabet, enabling efficient hashing and counting.
+
+\paragraph{Phase 3: Frequency Counting.} The frequency of each type pattern is tallied to produce the \emph{motif frequency spectrum}.
+
+\subsection{Motif Frequency Spectrum}
+
+The \emph{motif frequency spectrum} of a genome is the distribution of motif occurrences, quantized by their type patterns:
+
+\begin{equation}
+\phi_k(G)[\mathbf{t}] = \frac{|\{m_i^{(k)} \in \mathcal{M}_k(G) : \mathrm{typeseq}(m_i^{(k)}) = \mathbf{t}\}|}{|\mathcal{M}_k(G)|},
+\label{eq:motif-spectrum}
+\end{equation}
+
+where $\mathbf{t} \in \{\mathsf{A}, \mathsf{T}, \mathsf{C}, \mathsf{G}\}^k$ is a type sequence and $\mathrm{typeseq}(\cdot)$ extracts the type tags $\tau_i$ from each fragment in the motif. The motif frequency spectrum $\phi_k(G)$ is a probability distribution over the $4^k$ possible type patterns, serving as a structural fingerprint of the genome.
+
+\begin{example}[Computing a Motif Spectrum]
+\label{ex:motif-spectrum}
+Consider a short genome with type sequence $\mathsf{AATCGG}$ and motif width $k = 3$. The four overlapping 3-motifs are:
+\begin{center}
+\begin{tabular}{cccc}
+Position & 1 & 2 & 3 \\
+\midrule
+Motif & $\mathsf{AAT}$ & $\mathsf{ATC}$ & $\mathsf{TCG}$ \\
+\end{tabular}
+\end{center}
+and the fourth motif at position 4: $\mathsf{CGG}$. So the motif frequency spectrum has:
+\[
+\phi_3(G)[\mathsf{AAT}] = \tfrac{1}{4}, \quad
+\phi_3(G)[\mathsf{ATC}] = \tfrac{1}{4}, \quad
+\phi_3(G)[\mathsf{TCG}] = \tfrac{1}{4}, \quad
+\phi_3(G)[\mathsf{CGG}] = \tfrac{1}{4}.
+\]
+All other entries of $\phi_3(G)$ are zero. This uniform distribution indicates maximum diversity among the observed motifs---no single pattern dominates.
+\end{example}
+
+\subsection{Hash Function Design for DNA-Like Sequences}
+\label{subsec:hash-design}
+
+Efficient motif detection requires a hash function that maps type sequences to integer indices quickly and with low collision rates. HelixHash uses a \emph{radix-4 encoding} that treats the type sequence as a base-4 number:
+
+\begin{equation}
+h_{\text{radix}}(\mathbf{t}) = \sum_{j=0}^{k-1} \mathrm{ord}(t_{j+1}) \cdot 4^{k-1-j},
+\label{eq:radix-hash}
+\end{equation}
+
+where $\mathrm{ord}(\mathsf{A}) = 0$, $\mathrm{ord}(\mathsf{C}) = 1$, $\mathrm{ord}(\mathsf{G}) = 2$, $\mathrm{ord}(\mathsf{T}) = 3$. This produces a perfect hash (no collisions) mapping $4^k$ type sequences to $\{0, 1, \ldots, 4^k - 1\}$. The hash can be updated incrementally as the sliding window advances: dropping the leftmost base and appending the rightmost base requires only a multiply, subtract, and add operation.
+
+\begin{implnote}[Comparison to NLP and Bioinformatics]
+The motif frequency spectrum occupies a middle ground between two well-studied tools:
+\begin{itemize}[leftmargin=1.5em]
+  \item In \textbf{NLP}, character or word n-gram frequency profiles are used for language identification, authorship attribution, and text classification. HelixHash motifs are the genomic analogue, except that the ``alphabet'' is typed fragment embeddings rather than characters.
+  \item In \textbf{bioinformatics}, k-mer frequency vectors are used for metagenomic binning, phylogenetic classification, and sequence comparison \citep{wood2014}. HelixHash inherits the computational efficiency of k-mer methods while operating over DOGMA's richer base representation.
+\end{itemize}
+The key difference is that HelixHash motifs carry both \emph{type} information (from the $\tau_i$ tags) and \emph{content} information (from the $\sigma_i$ embeddings), enabling both structural and semantic analysis.
+\end{implnote}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{HelixHash as Locality-Preserving Encoding}
+\label{sec:locality-preserving}
+
+A fundamental question in sequence representation is: \emph{does the encoding preserve biological locality?} Two sequence regions that are biologically related (e.g., they regulate the same gene, or they fold into adjacent structural elements) should be ``close'' in the encoded representation. We now show that HelixHash's helical representation achieves this property more naturally than standard positional encodings.
+
+\subsection{Why Helical Representation Preserves Locality}
+
+Standard positional encodings (sinusoidal or learned) assign each position an embedding based solely on its linear index. This means that positions 1 and 100 are always ``far apart,'' regardless of whether they participate in the same structural motif. The double-helix representation introduces a second axis of locality: the \emph{complementary position} on the reverse strand.
+
+\begin{proposition}[Complementary Locality]
+In the double-helix representation, the encoding of position $i$ on the forward strand is structurally linked to the encoding of position $n + 1 - i$ on the reverse strand. If two positions $i$ and $j$ are both structurally linked to the same region of the reverse strand (i.e., $|n + 1 - i - j| \leq k$ for motif width $k$), then they share motif overlap and have correlated bond matrix entries.
+\end{proposition}
+
+This means that the helix encoding captures \emph{three-dimensional} proximity (positions that interact across strands) in addition to linear proximity (adjacent positions on the same strand).
+
+\subsection{Comparison with Standard Positional Encodings}
+
+\begin{table}[H]
+\centering
+\caption{Comparison of HelixHash helical encoding with standard positional encoding approaches.}
+\label{tab:encoding-comparison}
+\begin{tabularx}{\textwidth}{L{3cm} Y Y}
+\toprule
+\textbf{Property} & \textbf{Standard Positional} & \textbf{HelixHash Helical} \\
+\midrule
+Locality & Linear only (position distance) & Linear + complementary (cross-strand) \\
+Structural info & None (position index only) & Type tags, bond strengths, motif overlap \\
+Bidirectionality & Requires separate forward/backward passes & Built-in via sense/antisense strands \\
+Sparsity & Dense (all positions interact) & Sparse (only bonded positions interact) \\
+Biological grounding & None & Watson--Crick base pairing \\
+Scalability & $O(T^2)$ in attention & $O(T \cdot k)$ via motif windowing \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Locality-Sensitive Hashing on Helical Structure}
+\label{subsec:lsh-helical}
+
+The helical structure enables a specialized form of locality-sensitive hashing (LSH) that respects both linear and complementary proximity.
+
+\begin{definition}[Helical LSH]
+\label{def:helical-lsh}
+A \emph{helical LSH} hash function $h_{\text{helix}}: \mathcal{G} \to \{0, 1\}^B$ maps a genome to a $B$-bit signature such that:
+\begin{enumerate}[leftmargin=1.5em]
+  \item Genomes with similar forward-strand motif spectra have high probability of sharing hash bits.
+  \item Genomes with similar reverse-strand motif spectra \emph{also} have high probability of sharing hash bits.
+  \item The hash is \emph{strand-symmetric}: $h_{\text{helix}}(G) = h_{\text{helix}}(G')$ whenever $G$ and $G'$ have the same canonical motif spectrum (where each motif is replaced by its canonical form from Eq.~\ref{eq:rc-hash}).
+\end{enumerate}
+\end{definition}
+
+Property (3) is what distinguishes helical LSH from standard LSH: it ensures that the hash respects the biological symmetry of complementary strands. Two genomes that differ only by a swap of sense and antisense strands receive the same hash.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Strand Sketches}
+\label{sec:strand-sketches}
+
+Storing and comparing full motif frequency spectra is expensive for large genomes ($4^6 = 4{,}096$ dimensions even for the default width). HelixHash addresses this through \emph{strand sketches}---compact, fixed-size summaries that support fast similarity estimation.
+
+\begin{definition}[Signed Count Sketch]
+\label{def:count-sketch}
+A \emph{signed count sketch} of width $w$ for a genome $G$ is a vector $\mathbf{s} \in \mathbb{Z}^w$ constructed as follows. Let $h: \{\mathsf{A}, \mathsf{T}, \mathsf{C}, \mathsf{G}\}^k \to \{1, \ldots, w\}$ be a hash function and $g: \{\mathsf{A}, \mathsf{T}, \mathsf{C}, \mathsf{G}\}^k \to \{-1, +1\}$ be a sign function. For each motif $m_i^{(k)} \in \mathcal{M}_k(G)$ with type sequence $\mathbf{t}_i$:
+\begin{equation}
+\mathbf{s}[h(\mathbf{t}_i)] \;\mathrel{+}= \; g(\mathbf{t}_i).
+\end{equation}
+\end{definition}
+
+The sketch $\mathbf{s}$ has three desirable properties. First, it is \emph{linear}: the sketch of a union is the sum of individual sketches. Second, inner products of sketches approximate inner products of full frequency vectors, with error decreasing as $O(1/\sqrt{w})$. Third, construction is $O(n)$ in genome length, requiring a single pass over the fragment sequence.
+
+\subsection{MinHash Lineage and Locality-Sensitive Hashing}
+
+For clustering and nearest-neighbor search over large genome populations, HelixHash employs \emph{locality-sensitive hashing} (LSH) derived from the MinHash family.
+
+\begin{definition}[HelixHash LSH Signature]
+\label{def:lsh-signature}
+Given a genome $G$, its \emph{LSH signature} is a vector of $B$ hash values:
+\begin{equation}
+\mathrm{LSH}(G) = \bigl(h_1^{\min}(G), h_2^{\min}(G), \ldots, h_B^{\min}(G)\bigr) \in \{0, 1, \ldots, 2^b - 1\}^B,
+\end{equation}
+where each $h_j^{\min}(G) = \min_{\mathbf{t} \in \mathrm{typeseq}(\mathcal{M}_k(G))} h_j(\mathbf{t})$ is a MinHash value computed from a distinct hash function $h_j$, and $b$ is the bit width per hash. The default configuration uses $B = 12$ bands with $b = 12$ bits, yielding a 144-bit signature.
+\end{definition}
+
+\begin{dogmadef}[LSH Clustering Protocol]
+Two genomes $G_1$ and $G_2$ are assigned to the same \emph{LSH cluster} if their signatures agree on at least one complete band of $r$ consecutive hash values:
+\begin{equation}
+\mathrm{SameCluster}(G_1, G_2) \iff \exists\, j : \mathrm{LSH}(G_1)[j \cdot r : (j+1) \cdot r] = \mathrm{LSH}(G_2)[j \cdot r : (j+1) \cdot r].
+\end{equation}
+With $B = 12$ bands and $r = 1$ row per band, the probability that two genomes with Jaccard similarity $J$ are placed in the same cluster is $1 - (1 - J)^{12}$, providing high recall for pairs with $J > 0.3$.
+\end{dogmadef}
+
+The 12-bit LSH clustering is the primary mechanism by which HelixHash maintains structural diversity during evolutionary training (Section~\ref{sec:novelty-diversity}).
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Novelty Detection}
+\label{sec:novelty-diversity}
+
+Evolutionary search risks premature convergence: the population collapses to a narrow region of genome space, losing the diversity needed to discover novel solutions. HelixHash provides three complementary novelty mechanisms that counteract this tendency.
+
+\subsection{Archive-Based Novelty}
+
+The HelixHash archive $\mathcal{A}_t$ stores the strand sketches of all genomes encountered during evolutionary training. The \emph{archive novelty} of a candidate genome $G$ is its average distance to the $K$ nearest archived sketches:
+
+\begin{equation}
+N_{\text{archive}}(G) = \frac{1}{K} \sum_{i=1}^{K} \|\mathbf{s}(G) - \mathbf{s}(G_i^{\text{nn}})\|_2,
+\label{eq:archive-novelty}
+\end{equation}
+
+where $G_1^{\text{nn}}, \ldots, G_K^{\text{nn}}$ are the $K$ nearest neighbors of $G$ in the archive under sketch distance, and $\mathbf{s}(\cdot)$ denotes the signed count sketch. High archive novelty indicates that the genome is structurally distinct from previously seen genomes.
+
+\subsection{Detecting Novel vs.\ Seen Patterns}
+
+A key application of HelixHash's novelty machinery is distinguishing genuinely novel genomic configurations from previously encountered patterns. This capability is critical during evolutionary training: mutations that produce structurally novel genomes should be encouraged (to maintain diversity), while mutations that merely recreate previously explored configurations should be deprioritized.
+
+\begin{definition}[Novelty Threshold]
+\label{def:novelty-threshold}
+A genome $G$ is classified as \emph{novel} at generation $t$ if:
+\begin{equation}
+N_{\text{archive}}(G) > \mu_{\mathcal{A}} + \kappa \cdot \sigma_{\mathcal{A}},
+\end{equation}
+where $\mu_{\mathcal{A}}$ and $\sigma_{\mathcal{A}}$ are the mean and standard deviation of archive novelty scores across the current population, and $\kappa > 0$ is a sensitivity parameter (default $\kappa = 1.5$).
+\end{definition}
+
+The threshold adapts over time: as the archive grows and the population explores more of genome space, $\mu_{\mathcal{A}}$ decreases (new genomes tend to be closer to something in the archive), and the threshold tightens accordingly. This progressive tightening is desirable---early in training, the bar for ``novelty'' is low (encouraging broad exploration), while later in training the bar rises (requiring genuinely innovative configurations).
+
+\begin{example}[Novel vs.\ Seen Classification]
+\label{ex:novel-seen}
+Suppose the archive contains 500 genomes and the current population has 50 candidates. The archive novelty scores have mean $\mu_{\mathcal{A}} = 4.2$ and standard deviation $\sigma_{\mathcal{A}} = 1.8$. With $\kappa = 1.5$, the novelty threshold is $4.2 + 1.5 \times 1.8 = 6.9$.
+
+\begin{itemize}[leftmargin=1.5em]
+  \item Genome $G_a$ with $N_{\text{archive}} = 8.1$: \textbf{Novel}. This genome's structural signature is far from anything in the archive. It likely arose from a rare mutation combination.
+  \item Genome $G_b$ with $N_{\text{archive}} = 3.5$: \textbf{Seen}. This genome is structurally similar to archived genomes. It may be a minor variant of a previously explored configuration.
+\end{itemize}
+\end{example}
+
+\subsection{Cluster-Aware Selection}
+
+Using the LSH clusters from Section~\ref{sec:strand-sketches}, HelixHash computes a \emph{cluster novelty} score that penalizes genomes falling into already-crowded clusters:
+
+\begin{equation}
+N_{\text{cluster}}(G) = \frac{1}{|\mathcal{C}(G)|},
+\label{eq:cluster-novelty}
+\end{equation}
+
+where $\mathcal{C}(G)$ is the LSH cluster containing $G$ and $|\mathcal{C}(G)|$ is its population count. Genomes in sparsely populated clusters receive higher novelty scores, encouraging exploration of underrepresented structural regions.
+
+\subsection{Temporal Novelty Decay}
+
+To prevent the archive from growing without bound and to prioritize \emph{recent} novelty, HelixHash applies exponential temporal decay:
+
+\begin{equation}
+N_{\text{temporal}}(G, t) = \sum_{s=0}^{t-1} \gamma^{t - s} \cdot \mathbf{1}[\mathrm{SameCluster}(G, G_s)],
+\label{eq:temporal-novelty}
+\end{equation}
+
+where $\gamma = 0.9$ is the decay factor, $t$ is the current generation, and $G_s$ is the genome selected at generation $s$. The indicator $\mathbf{1}[\cdot]$ counts cluster co-occurrences with exponentially decreasing weight. Low temporal novelty (few recent cluster mates) is rewarded.
+
+\subsection{The Selection Objective}
+
+The complete HelixHash-informed selection objective combines task fitness with structural diversity pressures:
+
+\begin{equation}
+\boxed{
+\mathcal{L}(G) = J_{\text{task}} - \eta_1 N_{\text{archive}} - \eta_2 N_{\text{cluster}} - \eta_3 N_{\text{temporal}} - \eta_4 C_{\text{bond}} - \eta_5 C_{\text{strand}}
+}
+\label{eq:selection-objective}
+\end{equation}
+
+where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $J_{\text{task}}$ is the primary task fitness (e.g., accuracy, perplexity).
+  \item $N_{\text{archive}}$, $N_{\text{cluster}}$, $N_{\text{temporal}}$ are the three novelty terms (negated because higher novelty should \emph{increase} the objective).
+  \item $C_{\text{bond}}$ is the bond strength (Eq.~\ref{eq:bond-strength}), regularizing structural coherence.
+  \item $C_{\text{strand}}$ is the strand alignment consistency between $F(G)$ and $R(G)$.
+  \item $\eta_1, \ldots, \eta_5 > 0$ are weighting coefficients tuned per task.
+\end{itemize}
+
+\begin{implnote}[Sign Convention]
+Note the negative signs on the novelty terms. Because $\mathcal{L}(G)$ is \emph{maximized} during selection, and high novelty scores ($N_{\text{archive}}, N_{\text{cluster}}$) indicate \emph{desirable} structural uniqueness, they are subtracted (i.e., added in effect) to increase the objective. The bond and strand coherence terms $C_{\text{bond}}, C_{\text{strand}}$ are similarly subtracted because higher coherence is desirable. The convention follows the evo-trainer codebase, where the objective is framed as a loss to be minimized in the outer loop, with the sign flip handled at the selection stage.
+\end{implnote}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{HelixHash as Embedding}
+\label{sec:helixhash-embedding}
+
+Beyond its role in evolutionary selection, HelixHash provides a \emph{motif-based embedding layer} that can serve as the input representation for foundation models. This section describes the dual-stream architecture that integrates HelixHash embeddings with standard token embeddings.
+
+\subsection{Motif Embedding Layer}
+
+Each $k$-motif is mapped to a dense vector through a learned embedding:
+
+\begin{equation}
+\mathbf{e}_i^{\text{motif}} = W_{\text{motif}} \cdot \mathrm{pool}\bigl(m_i^{(k)}\bigr) + \mathbf{p}_i,
+\label{eq:motif-embedding}
+\end{equation}
+
+where $W_{\text{motif}} \in \mathbb{R}^{d \times (k \cdot d_f)}$ is the motif projection matrix, $\mathrm{pool}(\cdot)$ concatenates the $k$ fragment embeddings in the motif, and $\mathbf{p}_i$ is a positional encoding. The motif embedding captures local structural patterns in a form compatible with downstream transformer or DOGMA processing blocks.
+
+\subsection{Dual-Stream Architecture}
+
+The HelixHash embedding layer feeds into a \emph{dual-stream} architecture that processes standard and helix channels in parallel:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  block/.style={draw, rounded corners, minimum width=2.8cm, minimum height=0.8cm, align=center},
+  arrow/.style={-{Latex[length=2.5mm]}, thick},
+]
+  % Input
+  \node[block, fill=dogmalight] (genome) at (0, 4.5) {Genome $G$};
+
+  % Two streams
+  \node[block, fill=dogmamint] (standard) at (-3, 2.8) {Standard\\Embedding};
+  \node[block, fill=dogmawarm] (helix) at (3, 2.8) {HelixHash\\Motif Embedding};
+
+  % Processing
+  \node[block, fill=dogmamint] (proc1) at (-3, 1.2) {Standard\\Processing};
+  \node[block, fill=dogmawarm] (proc2) at (3, 1.2) {Helix-Aware\\Processing};
+
+  % Cross-attention
+  \node[block, fill=dogmalight, minimum width=4cm] (cross) at (0, -0.2) {Cross-Stream Attention};
+
+  % Output
+  \node[block, fill=dogmamint, minimum width=3.5cm] (output) at (0, -1.6) {Fused Representation};
+
+  % Arrows
+  \draw[arrow, dogmablue] (genome.south) -- ++(-3, 0) -- (standard.north);
+  \draw[arrow, dogmablue] (genome.south) -- ++(3, 0) -- (helix.north);
+  \draw[arrow, dogmateal] (standard) -- (proc1);
+  \draw[arrow, dogmateal] (helix) -- (proc2);
+  \draw[arrow, dogmared] (proc1.south) -- ++(0, -0.4) -| (cross.north west);
+  \draw[arrow, dogmared] (proc2.south) -- ++(0, -0.4) -| (cross.north east);
+  \draw[arrow, dogmablue] (cross) -- (output);
+
+  % Cross-connection
+  \draw[arrow, dashed, dogmagray] (proc1.east) -- (proc2.west) node[midway, above, font=\footnotesize] {cross-strand};
+\end{tikzpicture}
+\caption{Dual-stream HelixHash embedding architecture. The standard channel processes token-level embeddings; the helix channel processes motif-level structural features. Cross-stream attention fuses both representations.}
+\label{fig:dual-stream}
+\end{figure}
+
+The standard stream processes fragment embeddings through conventional layers (attention or state-space blocks). The helix stream processes motif embeddings that encode local structural patterns from both the forward and reverse strands. A cross-stream attention mechanism allows information to flow between the two channels:
+
+\begin{equation}
+\mathbf{h}_{\text{fused}} = \text{CrossAttn}(\mathbf{h}_{\text{std}}, \mathbf{h}_{\text{helix}}) + \mathbf{h}_{\text{std}},
+\label{eq:cross-stream}
+\end{equation}
+
+where $\mathbf{h}_{\text{std}}$ and $\mathbf{h}_{\text{helix}}$ are the hidden states of the standard and helix streams, respectively. The residual connection ensures that the helix stream \emph{augments} rather than replaces standard processing.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The HelixHash Algorithm}
+\label{sec:helixhash-algorithm}
+
+We now present the complete HelixHash computation as a unified algorithm. Given a genome, Algorithm~\ref{alg:helixhash} produces all structural signatures needed for the selection objective (Eq.~\ref{eq:selection-objective}).
+
+\begin{algorithm}[H]
+\caption{HelixHash: Structural Signature Computation}
+\label{alg:helixhash}
+\begin{algorithmic}[1]
+\Require Genome $G = (f_1, \ldots, f_n)$, motif width $k$, sketch width $w$, LSH bands $B$
+\Ensure Strand sketch $\mathbf{s}$, LSH signature $\ell$, bond strength $C_{\text{bond}}$, strand consistency $C_{\text{strand}}$
+\State \textbf{// Step 1: Construct strands}
+\State $F \gets [f_1, f_2, \ldots, f_n]$ \Comment{Forward strand}
+\State $R \gets [\mathrm{rev}(f_n), \mathrm{rev}(f_{n-1}), \ldots, \mathrm{rev}(f_1)]$ \Comment{Reverse strand}
+\State \textbf{// Step 2: Extract motifs from both strands}
+\State $\mathcal{M}_F \gets \{(f_i, \ldots, f_{i+k-1}) : 1 \leq i \leq n - k + 1\}$
+\State $\mathcal{M}_R \gets \{(r_i, \ldots, r_{i+k-1}) : 1 \leq i \leq n - k + 1\}$ where $r_j = \mathrm{rev}(f_{n+1-j})$
+\State $\mathcal{M} \gets \mathcal{M}_F \cup \mathcal{M}_R$ \Comment{Union of both strands}
+\State \textbf{// Step 3: Build signed count sketch}
+\State Initialize $\mathbf{s} \gets \mathbf{0} \in \mathbb{Z}^w$
+\For{each motif $m \in \mathcal{M}$}
+  \State $\mathbf{t} \gets \mathrm{typeseq}(m)$
+  \State $\mathbf{s}[h(\mathbf{t})] \gets \mathbf{s}[h(\mathbf{t})] + g(\mathbf{t})$
+\EndFor
+\State \textbf{// Step 4: Compute LSH signature}
+\For{$j = 1$ to $B$}
+  \State $\ell[j] \gets \min_{\mathbf{t} \in \mathrm{typeseq}(\mathcal{M})} h_j(\mathbf{t})$
+\EndFor
+\State \textbf{// Step 5: Compute bond matrix superdiagonal}
+\For{$i = 1$ to $n - 1$}
+  \State $C_{\text{bond}} \mathrel{+}= 0.75 \cdot J(f_i, f_{i+1}) + 0.25 \cdot A(f_i, f_{i+1})$
+\EndFor
+\State $C_{\text{bond}} \gets C_{\text{bond}} / (n - 1)$
+\State \textbf{// Step 6: Strand consistency}
+\State $C_{\text{strand}} \gets \frac{1}{2}[\cos(\bar{F}, \bar{R}) + 1]$ where $\bar{F}, \bar{R}$ are mean-pooled strand representations
+\State \Return $\mathbf{s}, \ell, C_{\text{bond}}, C_{\text{strand}}$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{dogmadef}[Complexity of HelixHash]
+Algorithm~\ref{alg:helixhash} runs in $O(n \cdot k)$ time and $O(w + B)$ auxiliary space, where $n$ is the genome length, $k$ is the motif width, $w$ is the sketch width, and $B$ is the number of LSH bands. Since $k$, $w$, and $B$ are constants (typically $k = 6$, $w = 256$, $B = 12$), the algorithm is effectively $O(n)$ in genome length. This linear-time construction is critical for scalability: during evolutionary training, HelixHash must be recomputed for every candidate genome at every generation.
+\end{dogmadef}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Theoretical Properties}
+\label{sec:helixhash-theory}
+
+We establish two key theoretical results about HelixHash representations.
+
+\begin{theorem}[Sketch Approximation Guarantee]
+\label{thm:sketch-approx}
+Let $\phi_k(G_1)$ and $\phi_k(G_2)$ be the motif frequency spectra of two genomes, and let $\mathbf{s}_1, \mathbf{s}_2$ be their signed count sketches of width $w$. Then:
+\begin{equation}
+\mathbb{E}\left[\frac{\langle \mathbf{s}_1, \mathbf{s}_2 \rangle}{|\mathcal{M}_k(G_1)| \cdot |\mathcal{M}_k(G_2)|}\right] = \langle \phi_k(G_1), \phi_k(G_2) \rangle,
+\end{equation}
+with variance bounded by $O(1/w)$.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+This follows from the standard analysis of count sketches \citep{charikar2002}. The hash function $h$ distributes motif types uniformly across $w$ bins, and the sign function $g$ ensures that cross-terms cancel in expectation. The variance bound follows from pairwise independence of the hash family. The full proof follows from standard techniques in the sketching literature.
+\end{proof}
+
+\begin{theorem}[Bond Strength and Assembly Quality]
+\label{thm:bond-assembly}
+Let $G^* = (f_1, \ldots, f_n)$ be a ``well-assembled'' genome (one where consecutive fragments were originally adjacent) and let $G^{\pi}$ be a random permutation of the same fragments. Then in expectation:
+\begin{equation}
+\mathbb{E}[C_{\mathrm{bond}}(G^*)] > \mathbb{E}[C_{\mathrm{bond}}(G^{\pi})],
+\end{equation}
+with the gap increasing with the average motif sharing between genuinely adjacent fragments.
+\end{theorem}
+
+This result confirms that bond strength is a meaningful quality measure: well-organized genomes have higher bond strength than randomly shuffled ones, providing a useful signal for the evolutionary selection objective.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Connection to the DOGMA Pipeline}
+\label{sec:helixhash-pipeline}
+
+HelixHash connects to every major component of the DOGMA architecture:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Genome (Ch.~\ref{ch:dogma-architecture}):} The double-helix representation defines the structural format of the genome. Every genome maintained by the Evolutor has an associated HelixHash signature in the archive $\mathcal{A}_t$.
+  \item \textbf{Tera (Ch.~\ref{ch:tera}):} The Tera regime state uses HelixHash novelty scores to modulate mutation pressure. When novelty drops below a threshold, Tera increases mutation rates to restore diversity.
+  \item \textbf{Evolutionary Training (Ch.~\ref{ch:evolutionary-training}):} The selection objective (Eq.~\ref{eq:selection-objective}) is the primary interface between HelixHash and the evolutionary loop. HelixHash signatures determine which genomes survive to the next generation.
+  \item \textbf{Foundation Models:} The dual-stream embedding (Section~\ref{sec:helixhash-embedding}) provides helix-aware input representations for foundation model pretraining, discussed further in Chapter~\ref{ch:code-of-life}.
+\end{itemize}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Exercises}
+\label{sec:ch8-exercises}
+
+\begin{enumerate}[label=\textbf{8.\arabic*.}, leftmargin=2.5em]
+
+\item \textbf{[Fundamentals]} Compute the motif frequency spectrum $\phi_3(G)$ for a genome with type sequence $\mathsf{AATCGGATCG}$. How many distinct 3-motif type patterns appear? What is the most frequent pattern?
+
+\item \textbf{[Bond Matrix]} Given the hydrogen bond matrix $\mathbf{H}$ from Table~\ref{tab:bond-matrix}, compute the total hydrogen bond count for each of the following duplexes: (a)~$\mathsf{AAAA}$ paired with $\mathsf{TTTT}$; (b)~$\mathsf{GGGG}$ paired with $\mathsf{CCCC}$; (c)~$\mathsf{ACGT}$ paired with $\mathsf{TGCA}$. Which duplex is most thermodynamically stable and why?
+
+\item \textbf{[Nearest-Neighbor Model]} Using the SantaLucia parameters from Table~\ref{tab:nn-params}, compute $\Delta G^{\circ}_{\text{total}}$ for the sequence $\mathsf{GCGCGCGC}$. Compare your answer with the result from Example~\ref{ex:free-energy} for $\mathsf{ACGTACGT}$. Which sequence forms a more stable duplex?
+
+\item \textbf{[Analysis]} A genome of length $n = 1{,}000$ has its HelixHash computed with $k = 6$, $w = 256$, and $B = 12$. Calculate: (a) the number of overlapping motifs extracted from each strand; (b) the total sketch construction time in terms of hash evaluations; (c) the memory footprint of the LSH signature in bits.
+
+\item \textbf{[Design]} The bond matrix weighting uses $\alpha = 0.75$ for Jaccard overlap and $1 - \alpha = 0.25$ for boundary alignment. Design an experiment to determine whether this ratio is optimal. What metric would you use to evaluate different values of $\alpha$? Suggest at least three candidate values and predict their effects.
+
+\item \textbf{[Canonical Forms]} Enumerate all canonical 2-motif type sequences (i.e., one representative from each $\{\mathbf{t}, \mathrm{RC}(\mathbf{t})\}$ pair). How many are there? Show that this is always exactly half of $4^k$ for even $k$ (hint: there are no palindromic reverse complements for even $k > 0$).
+
+\item \textbf{[Coding]} Implement the signed count sketch (Definition~\ref{def:count-sketch}) in Python. Use \texttt{mmh3} (MurmurHash3) for $h$ and a separate MurmurHash with different seed for $g$ (mapping to $\{-1, +1\}$). Generate two random genomes of length 500 with 70\% shared fragments and verify that the sketch inner product approximates the true motif frequency inner product.
+
+\item \textbf{[Locality]} Consider two genomes $G_1$ and $G_2$ that differ only by a single point mutation at position $i$. How does the motif frequency spectrum $\phi_k(G_1)$ differ from $\phi_k(G_2)$? At most how many motif entries can change? Use this to argue that HelixHash is locality-preserving.
+
+\item \textbf{[Theory]} Prove that the strand alignment score $S_{\text{strand}}(G_1, G_2)$ (Eq.~\ref{eq:strand-alignment}) satisfies the property $S_{\text{strand}}(G, G) = 1$ for any genome $G$ whose complementation operator is exactly involutory ($\mathrm{rev}(\mathrm{rev}(f)) = f$ for all fragments $f$).
+
+\item \textbf{[Research]} The temporal novelty decay (Eq.~\ref{eq:temporal-novelty}) uses $\gamma = 0.9$. Investigate how different values of $\gamma$ affect evolutionary dynamics. At $\gamma = 0$, only the current generation matters; at $\gamma = 1$, all history is weighted equally. Derive the effective memory horizon $\tau_{\text{eff}} = 1 / (1 - \gamma)$ and discuss its implications for a 500-generation evolutionary run.
+
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Key Takeaways}
+
+\keytakeaway{
+\begin{itemize}[leftmargin=1.5em]
+  \item HelixHash represents every computational genome as a double helix with forward strand $F(G)$ (sense, 5\('\to\)3\('\)) and reverse strand $R(G)$ (antisense, 3\('\to\)5\('\)), enabling bidirectional structural analysis.
+  \item Watson--Crick complementarity ($\overline{\mathsf{A}} = \mathsf{T}$, $\overline{\mathsf{G}} = \mathsf{C}$) acts as an involutory hash function; canonical motif forms exploit this symmetry to halve the effective vocabulary.
+  \item The 4\texttimes 4 hydrogen bond matrix $\mathbf{H}$ (A--T: 2 bonds, G--C: 3 bonds) provides biologically grounded, sparse attention weights. SantaLucia nearest-neighbor parameters refine this to 16 stacking free-energy values.
+  \item Width-$k$ overlapping motifs (default $k = 6$) are the basic unit of structural analysis, analogous to k-mers in bioinformatics and n-grams in NLP.
+  \item Signed count sketches provide $O(n)$ construction of compact similarity-preserving summaries; 12-band LSH signatures enable fast clustering of genome populations.
+  \item Bond matrices capture inter-fragment coherence through 75\% Jaccard overlap + 25\% boundary alignment, yielding sparse structural maps that contrast with dense attention matrices.
+  \item Three novelty mechanisms---archive, cluster, and temporal ($\gamma = 0.9$ decay)---prevent evolutionary collapse and maintain structural diversity. Novelty detection classifies genomes as novel or seen using an adaptive threshold.
+  \item The helical encoding preserves both linear proximity and complementary (cross-strand) proximity, outperforming standard positional encodings for structured sequence data.
+  \item The dual-stream embedding architecture integrates HelixHash motif features with standard token embeddings for foundation model training.
+\end{itemize}
+}
+
+\section*{Suggested Reading}
+\begin{itemize}[leftmargin=1.5em]
+  \item \citet{charikar2002}: Similarity estimation via count sketches, the theoretical foundation for HelixHash sketches.
+  \item \citet{broder1997}: MinHash and locality-sensitive hashing, the basis for HelixHash's LSH clustering.
+  \item \citet{wood2014}: Kraken and k-mer methods in metagenomics, a bioinformatics parallel to motif extraction.
+  \item \citet{santalucia1998}: Unified nearest-neighbor thermodynamic parameters, the source of the 16 $\Delta G^{\circ}$ values used in HelixHash's stacking weights.
+  \item \citet{lehman2011}: Novelty search in evolutionary algorithms, the inspiration for archive-based novelty scoring.
+  \item Chapter~\ref{ch:dogma-architecture} of this book: the six-stage pipeline that HelixHash supports.
+  \item Chapter~\ref{ch:evolutionary-training} of this book: the evolutionary training loop where HelixHash's selection objective is applied.
+\end{itemize}

@@ -1,0 +1,178 @@
+\documentclass[11pt,openany]{book}
+\usepackage{dogma-book}
+
+\begin{document}
+\hypersetup{pageanchor=false}
+
+% ─── Title page ──────────────────────────────────────────────────────────────
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\color{dogmablue}\fontsize{32}{36}\selectfont\bfseries
+FROM DNA TO AGI\par}
+\vspace{0.6cm}
+{\color{dogmagold}\fontsize{22}{26}\selectfont\bfseries
+The DOGMA Revolution\par}
+\vspace{0.4cm}
+{\color{dogmateal}\large
+Biological Computation, Genomic Intelligence, and the\\
+Architecture of Artificial General Intelligence\par}
+\vspace{1.2cm}
+{\Large\bfseries First Edition\par}
+\vspace{0.8cm}
+{\large Wenyan Qin\par}
+\vfill
+%%\begin{tikzpicture}
+
+\begin{tikzpicture}[scale=0.9, every node/.style={font=\small}]
+  \draw[dogmateal, line width=1.1pt, decorate, decoration={coil,aspect=0.4,segment length=5mm,amplitude=4mm}] (-4.4,-2.4) -- (4.4,2.4);
+  \draw[dogmagold, line width=1.1pt, decorate, decoration={coil,aspect=0.4,segment length=5mm,amplitude=4mm}] (-4.4,2.4) -- (4.4,-2.4);
+  \foreach \x/\y/\a/\b in {-3.2/-1.75/A/T,-2.0/-1.05/C/G,-0.8/-0.45/T/A,0.4/0.15/G/C,1.6/0.85/A/T,2.8/1.55/C/G}{
+    \draw[gray!70] (\x-0.32,\y) -- (\x+0.32,\y);
+    \node[fill=white,inner sep=1pt] at (\x-0.55,\y) {\a};
+    \node[fill=white,inner sep=1pt] at (\x+0.55,\y) {\b};
+  }
+
+%%  \draw[dogmablue, line width=1.2pt, decorate, decoration={coil,aspect=0.45,segment length=4.8mm,amplitude=2.8mm}] (-5.4,1.3) -- (5.4,-1.3);
+%%  \draw[dogmateal, line width=1.2pt, decorate, decoration={coil,aspect=0.45,segment length=4.8mm,amplitude=2.8mm}] (-5.4,-1.3) -- (5.4,1.3);
+  \draw[dogmablue, line width=1.1pt] (-5.8,0) -- (5.8,0);
+  \foreach \x/\c in {-4.2/dogmablue,-2.1/dogmateal,0/dogmagold,2.1/dogmared,4.2/dogmablue} {
+    \fill[\c] (\x,0) circle (0.12);
+  }
+\end{tikzpicture}
+\vfill
+{\large March 2026\par}
+\end{titlepage}
+
+% ─── Copyright page ──────────────────────────────────────────────────────────
+\thispagestyle{empty}
+\vspace*{\fill}
+\noindent\textcopyright\ 2026 Wenyan Qin. All rights reserved.\\[6pt]
+\noindent First Edition, v1.1, March 2026.\\[6pt]
+\noindent This textbook was developed in conjunction with the \textsc{evo-trainer} open-source project and the DOGMA (DNA-Organized Genomic Model Architecture) research program.\\[12pt]
+\noindent\textit{Typeset in \LaTeX\ using Computer Modern and Latin Modern fonts.}
+\vspace*{\fill}
+\newpage
+
+% ─── Front matter ────────────────────────────────────────────────────────────
+\clearpage
+\frontmatter
+\hypersetup{pageanchor=true}
+
+\chapter*{Preface}
+\addcontentsline{toc}{chapter}{Preface}
+
+This book began with a simple but radical question: \emph{What if the path to artificial general intelligence runs not through ever-larger neural networks, but through the computational principles that nature already perfected in DNA?}
+
+For three and a half billion years, biological evolution has encoded, regulated, expressed, and evolved information using a system of breathtaking elegance. The Central Dogma of molecular biology---DNA $\to$ RNA $\to$ Protein---is not merely a chemical pipeline. It is, we argue, a \emph{computational architecture}: one that separates persistent state from transient expression, uses context-dependent regulation to control information flow, and evolves its own structure through mutation and selection.
+
+\textbf{DOGMA}---the DNA-Organized Genomic Model Architecture---is our attempt to translate these biological principles into a formal AI architecture. It is not a metaphor. It is a concrete computational framework where AI systems maintain persistent genomic state, regulate their behavior through context-dependent activation, transcribe selected information into task-specific representations, and realize outputs across multiple modalities. Language, in this view, is just one of many possible phenotypes.
+
+\paragraph{Who this book is for.} This textbook is designed for upper-level undergraduate and graduate students in computer science, computational biology, bioinformatics, and artificial intelligence. We assume familiarity with introductory calculus, linear algebra, basic probability, and elementary programming. No prior knowledge of molecular biology is required---Part~I builds all necessary biological foundations from scratch. Each concept is introduced step by step with worked examples, intuitive diagrams, and truth tables before proceeding to formal definitions. The book is structured to serve as the primary text for a two-semester course (undergraduate or graduate), though a focused one-semester course can be assembled from selected chapters (see the Reader's Roadmap).
+
+\paragraph{How this book is organized.} The book proceeds in six parts:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Part I: The Biological Computer} (Chapters 1--3) establishes DNA as an information system, surveys the history and state of the art of DNA computing, and reveals gene regulation as a sophisticated computational mechanism.
+  \item \textbf{Part II: The Intelligence Stack} (Chapters 4--6) builds the AI/ML foundations needed for the rest of the book, from neural networks through transformers and large language models to biological foundation models.
+  \item \textbf{Part III: The DOGMA Architecture} (Chapters 7--11) presents the core contribution: the six-stage DOGMA pipeline, HelixHash structural representation, Tera regime dynamics, TetraData structures, and the CodonForge DNA compiler.
+  \item \textbf{Part IV: Building the Evolutor} (Chapters 12--14) covers the evolutionary training loop, foundation models trained on genomic data, and the DOGMA-Supreme 224.7M parameter implementation.
+  \item \textbf{Part V: Toward AGI} (Chapters 15--17) addresses scaling laws, post-transformer architectures, paths to artificial general intelligence, and the ethics and safety of genomic AI.
+  \item \textbf{Part VI: Practicum} (Chapters 18--19) provides hands-on laboratory exercises and closes with a research-oriented epilogue.
+\end{itemize}
+
+\paragraph{On intellectual honesty.} Throughout this book, we distinguish carefully between what has been \emph{proven}, what has been \emph{demonstrated}, what is \emph{conjectured}, and what remains \emph{aspirational}. DOGMA is a research program, not a completed doctrine. We present it as one serious and promising path---not as the only path---toward more capable, more interpretable, and more biologically grounded AI systems.
+
+\paragraph{Acknowledgments.} The DOGMA architecture and the \textsc{evo-trainer} system emerged from a deep dialogue between computational biology, machine learning, and systems engineering. The author thanks the open-source community, the researchers whose work this book builds upon, and the students who will carry these ideas forward.
+
+\vspace{1em}
+\noindent\textit{Wenyan Qin}\\
+\noindent\textit{March 2026}
+
+% ─── Reader's roadmap ────────────────────────────────────────────────────────
+\chapter*{Reader's Roadmap}
+\addcontentsline{toc}{chapter}{Reader's Roadmap}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.18}
+\begin{tabularx}{0.95\textwidth}{>{\raggedleft\arraybackslash}p{0.8cm} >{\bfseries}l Y}
+\toprule
+\textbf{Ch.} & \textbf{Title} & \textbf{Key Topics} \\
+\midrule
+\multicolumn{3}{l}{\textit{\color{dogmablue}\textbf{Part I: The Biological Computer}}} \\
+1 & The Code of Life & DNA structure, Central Dogma, information density \\
+2 & DNA Computing & Adleman, strand displacement, CRNs, molecular logic \\
+3 & Gene Regulation as Computation & Regulatory circuits, epigenetics, biological logic gates \\
+\midrule
+\multicolumn{3}{l}{\textit{\color{dogmablue}\textbf{Part II: The Intelligence Stack}}} \\
+4 & Machine Learning Foundations & Neural networks, optimization, representation learning \\
+5 & Transformers and Large Language Models & Attention, GPT, scaling laws, emergent abilities \\
+6 & Biological Foundation Models & AlphaFold, ESM-2, Evo, Enformer, genomic LMs \\
+\midrule
+\multicolumn{3}{l}{\textit{\color{dogmablue}\textbf{Part III: The DOGMA Architecture}}} \\
+7 & DOGMA: The Six-Stage Pipeline & Genomic bases, regulation, synthesis, transcription, expression, realization \\
+8 & HelixHash & Double-helix representation, motifs, bond matrices, novelty \\
+9 & Tera: The Hidden Regime State & Multi-objective pressure, mutation families, meta-policy \\
+10 & TetraData Structure \& TetraMemory & 3D computation, tetrahedral meshes, structured memory \\
+11 & CodonForge: The DNA Compiler & Codon opcodes, gene programs, SDANS compilation \\
+\midrule
+\multicolumn{3}{l}{\textit{\color{dogmablue}\textbf{Part IV: Building the Evolutor}}} \\
+12 & The Evolutionary Training Loop & Prompt genomes, mutation, selection, distillation \\
+13 & Foundation Models on Genomic Data & FASTA corpora, curriculum learning, helix-aware training \\
+14 & DOGMA-Supreme: 224.7M Parameters & 4-path compute blocks, parameter budget, benchmarks \\
+\midrule
+\multicolumn{3}{l}{\textit{\color{dogmablue}\textbf{Part V: Toward AGI}}} \\
+15 & Scaling and Post-Transformer Architectures & Scaling laws, SSMs, hybrid architectures, DOGMA scaling \\
+16 & What Is AGI? Foundations and Paths & Definitions, biological arguments, DOGMA v3 roadmap \\
+17 & Ethics, Safety, and Responsibility & Dual-use, alignment, verifiability, governance \\
+\midrule
+\multicolumn{3}{l}{\textit{\color{dogmablue}\textbf{Part VI: Practicum}}} \\
+18 & Hands-On: Building Your First DOGMA System & 6 labs, capstone project \\
+19 & The Future We Are Building & Vision, open problems, research community \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\vspace{1em}
+\noindent\textbf{Suggested one-semester course:} Chapters 1, 2, 4, 5, 7, 8, 12, 14, 16, 18.\\
+\noindent\textbf{Full two-semester sequence:} All chapters in order, with Appendix A as prerequisite reading.
+
+% ─── Table of contents ───────────────────────────────────────────────────────
+\tableofcontents
+
+% ─── Main matter ─────────────────────────────────────────────────────────────
+\mainmatter
+
+\input{chapters/part1-ch01-dna-information}
+\input{chapters/part1-ch02-dna-computing}
+\input{chapters/part1-ch03-gene-regulation}
+\input{chapters/part2-ch04-ml-foundations}
+\input{chapters/part2-ch05-transformers-llms}
+\input{chapters/part2-ch06-bio-foundation-models}
+\input{chapters/part3-ch07-dogma-architecture}
+\input{chapters/part3-ch08-helixhash}
+\input{chapters/part3-ch09-tera}
+\input{chapters/part3-ch10-tetradata}
+\input{chapters/part3-ch11-codonforge}
+\input{chapters/part4-ch12-evolutionary-training}
+\input{chapters/part4-ch13-genomic-foundation-models}
+\input{chapters/part4-ch14-dogma-supreme}
+\input{chapters/part5-ch15-scaling-post-transformer}
+\input{chapters/part5-ch16-agi-paths}
+\input{chapters/part5-ch17-ethics-safety}
+\input{chapters/part6-ch18-labs}
+\input{chapters/part6-ch19-epilogue}
+
+% ─── Appendices ──────────────────────────────────────────────────────────────
+\appendix
+\input{appendices/appendix-a-math}
+\input{appendices/appendix-b-formal-spec}
+\input{appendices/appendix-c-glossary}
+
+% ─── Back matter ─────────────────────────────────────────────────────────────
+\backmatter
+\bibliography{references}
+
+\printindex
+
+\end{document}

@@ -1,0 +1,1122 @@
+% ===============================================================================
+% Chapter 9: Tera --- The Hidden Regime State (v1.1)
+% Part III: The DOGMA Architecture
+% ===============================================================================
+
+\chapter{Tera --- The Hidden Regime State}
+\label{ch:tera}
+
+\chapterepigraph{An organism does not optimize one thing. It optimizes its continued existence across a landscape of competing pressures---and it remembers which pressures mattered most.}{DOGMA Design Notes, 2025}
+
+\noindent
+In Chapter~\ref{ch:dogma-architecture}, we introduced the six-stage DOGMA pipeline and noted that the Evolutor maintains a persistent \emph{Tera regime state} that guides regulation and synthesis. In Chapter~\ref{ch:helixhash}, we saw how HelixHash encodes structural novelty. This chapter reveals the hidden engine beneath both: \textbf{Tera}, DOGMA's multi-objective evolutionary pressure system.
+
+Tera is to DOGMA what the epigenome is to the genome---a layer of dynamic, heritable state that modulates how the underlying structure is read, modified, and expressed. Just as epigenetic marks do not change DNA sequence but profoundly alter gene expression \citep{allis2016}, the Tera regime state does not change the genomic bases themselves but determines \emph{which mutation strategies are applied}, \emph{how aggressively exploration proceeds}, and \emph{what trade-offs the system prioritizes} at any given moment.
+
+This chapter is organized as follows. We begin with an intuitive explanation of what a regime state is and why it matters (Section~\ref{sec:what-is-regime}). We then formalize the multi-objective pressure system (Section~\ref{sec:multi-objective}), define the Tera regime state mathematically (Section~\ref{sec:tera-regime}), explore mutation families and how they are steered (Section~\ref{sec:mutation-families}), present the Tera state machine (Section~\ref{sec:tera-state-machine}), discuss meta-policy learning (Section~\ref{sec:meta-policy}), connect to biological evolution (Section~\ref{sec:bio-evolution}), and walk through a detailed worked example (Section~\ref{sec:tera-worked-example}). We conclude with the full Tera Double-Helix Complex (Section~\ref{sec:double-helix-complex}) and exercises.
+
+% -------------------------------------------------------------------------------
+\section{What Is a Regime State?}
+\label{sec:what-is-regime}
+% -------------------------------------------------------------------------------
+
+Before diving into formalism, let us build an intuitive understanding of what a ``regime state'' means.
+
+\subsection{Everyday Analogies}
+
+\begin{example}[Traffic Flow Regimes]
+Consider traffic on a highway. At low density, cars move freely at high speed---this is the \emph{free-flow regime}. As density increases, drivers slow down and form platoons---the \emph{synchronized flow regime}. Beyond a critical density, traffic jams form and propagate backward---the \emph{congested regime}. Each regime has its own dynamics: the rules governing how individual cars behave change depending on which regime the system is in. A driver who accelerates aggressively in free flow may need to brake constantly in congestion. The regime is a hidden variable that determines which behavioral strategy is optimal.
+\end{example}
+
+\begin{example}[Weather Systems]
+A weather system operates in distinct regimes: clear skies, scattered clouds, overcast, light rain, thunderstorms. Each regime has its own physics. In the clear-sky regime, solar heating dominates; in the thunderstorm regime, convective dynamics take over. Meteorologists do not model weather with a single equation---they identify the current regime and apply the appropriate physical model. The regime is not directly observed; it is \emph{inferred} from measurements of temperature, pressure, humidity, and wind speed.
+\end{example}
+
+\begin{example}[A Student's Study Strategy]
+Think about how you study for exams. Early in the semester, you might focus on understanding concepts (exploration). As exams approach, you shift to practice problems (precision). If you realize you are weak in one topic, you focus there (targeted repair). Your ``study regime'' changes based on feedback (grades, practice test scores) and time pressure. You do not use a single fixed strategy all semester---you adapt.
+\end{example}
+
+\begin{keyinsight}[The Core Idea of a Regime State]
+A \textbf{regime state} is a compact summary of which behavioral strategy a system should currently follow. It changes over time in response to feedback. It is ``hidden'' because it is not directly observed but inferred from noisy signals. In DOGMA, the regime state determines which evolutionary mutations are applied to the genome---it is the system's adaptive strategy selector.
+\end{keyinsight}
+
+\subsection{Why Does DOGMA Need a Regime State?}
+
+Consider what happens without one. Suppose DOGMA always applied the same mutation strategy---say, always trying to improve output precision. The system would become excellent at precise answers but might produce verbose, incoherent outputs that ignore context. Conversely, if it always explored novel configurations, it would be creative but unreliable.
+
+The regime state solves this by continuously monitoring multiple dimensions of performance and directing evolutionary effort where it is most needed. It is a \emph{dynamic priority system} that prevents the evolutionary search from getting stuck in any single optimization direction.
+
+% -------------------------------------------------------------------------------
+\section{The Problem of Multi-Objective Evolution}
+\label{sec:multi-objective}
+% -------------------------------------------------------------------------------
+
+\subsection{Why Single-Objective Optimization Fails}
+
+Most machine learning systems optimize a single scalar loss $\mathcal{L}(\theta)$. Even when practitioners combine multiple terms---accuracy, regularization, auxiliary losses---they reduce the result to a weighted sum:
+\begin{equation}
+\mathcal{L}_{\text{total}}(\theta) = \sum_{i=1}^{k} \lambda_i \mathcal{L}_i(\theta).
+\label{eq:scalar-loss}
+\end{equation}
+This scalarization is convenient but fundamentally limiting. The weights $\lambda_i$ are fixed hyperparameters chosen before training begins, embedding a \emph{static} preference over objectives. If the system encounters a regime where coherence matters more than efficiency, or where exploration should temporarily dominate exploitation, the fixed weights cannot adapt.
+
+To see why this is a problem, consider a concrete scenario. Suppose you train a language model with a combined loss: 70\% accuracy + 20\% coherence + 10\% efficiency. Early in training, the model produces incoherent text---coherence should receive more weight. Later, the model becomes coherent but verbose---efficiency should increase. With fixed weights, you cannot adapt to these shifting needs without restarting training.
+
+\begin{bioinsight}[Biological Multi-Objective Optimization]
+A bacterium simultaneously optimizes nutrient uptake, waste removal, membrane integrity, DNA repair, motility, and stress response. It does not reduce these to a single scalar. Instead, it maintains a \emph{regulatory network} that dynamically rebalances priorities based on environmental signals. When nutrients are scarce, metabolic pathways are upregulated; when DNA damage is detected, repair mechanisms take precedence. The ``weights'' are not fixed---they are functions of the organism's internal state and external context.
+\end{bioinsight}
+
+\subsection{The Three Core Pressures: Quality, Diversity, and Coherence}
+
+Before introducing all six Tera dimensions, let us focus on three fundamental pressures that illustrate how multi-objective balancing works.
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Quality pressure} pushes the system to produce correct, precise outputs. Left unchecked, quality pressure leads to overfitting: the system memorizes solutions to known problems but cannot generalize.
+
+  \item \textbf{Diversity pressure} pushes the system to explore new solution strategies. Left unchecked, diversity pressure leads to chaos: the system tries random configurations without converging on anything useful.
+
+  \item \textbf{Coherence pressure} pushes the system to maintain internal consistency. Left unchecked, coherence pressure leads to stagnation: the system refuses to change because any modification risks breaking existing structure.
+\end{enumerate}
+
+These three pressures exist in fundamental tension: quality wants precision, diversity wants exploration, and coherence wants stability. The Tera system must balance all three simultaneously.
+
+\begin{example}[Balancing Three Pressures: A Restaurant]
+\label{ex:restaurant}
+Imagine you are running a restaurant. Quality pressure is customer satisfaction with current dishes. Diversity pressure is the need to innovate the menu. Coherence pressure is the need to keep the kitchen running smoothly (staff know how to make the dishes, ingredients are available). If you only optimize quality, you never change the menu. If you only diversify, staff cannot keep up with constant changes. If you only maintain coherence, you serve the same dishes forever regardless of customer feedback.
+\end{example}
+
+\subsection{The Pareto Landscape}
+
+In multi-objective optimization, solutions that cannot be improved on one objective without degrading another lie on the \emph{Pareto front}. For $k$ objectives, this front is a $(k-1)$-dimensional surface in objective space.
+
+\begin{definition}[Pareto Dominance]
+A solution $\mathbf{x}$ \emph{dominates} solution $\mathbf{y}$ (written $\mathbf{x} \succ \mathbf{y}$) if and only if $f_i(\mathbf{x}) \leq f_i(\mathbf{y})$ for all objectives $i \in \{1, \ldots, k\}$ and $f_j(\mathbf{x}) < f_j(\mathbf{y})$ for at least one objective $j$.
+\end{definition}
+
+The challenge is not merely finding points on the Pareto front but \emph{navigating} it---moving to the region of the front that best matches current needs. Tera's contribution is to maintain a \emph{dynamic pressure vector} that steers the evolutionary search toward different regions of the Pareto front as conditions change---a biological thermostat for multi-objective evolution.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[scale=0.95]
+  % Pareto front illustration
+  \draw[-{Stealth}, thick] (0,0) -- (6,0) node[right] {Quality};
+  \draw[-{Stealth}, thick] (0,0) -- (0,5) node[above] {Diversity};
+
+  % Dominated region
+  \fill[dogmalight, opacity=0.4] (0.5,4.2) .. controls (1.5,3.8) and (3,2.5) .. (5,0.8) -- (5,0) -- (0,0) -- (0,4.2) -- cycle;
+
+  % Pareto front curve
+  \draw[dogmablue, very thick] (0.5,4.2) .. controls (1.5,3.8) and (3,2.5) .. (5,0.8);
+
+  % Points on front
+  \fill[dogmared] (0.8,4.05) circle (3pt) node[above right, font=\small] {$A$};
+  \fill[dogmablue] (2.2,3.1) circle (3pt) node[above right, font=\small] {$B$};
+  \fill[dogmateal] (4.2,1.3) circle (3pt) node[above right, font=\small] {$C$};
+
+  % Dominated point
+  \fill[dogmagray] (2.5,1.5) circle (3pt) node[right, font=\small] {$D$ (dominated)};
+
+  % Arrow from D showing domination
+  \draw[-{Stealth}, dogmagray, dashed] (2.5,1.5) -- (2.2,3.1);
+
+  % Labels
+  \node[font=\small, text=dogmablue, rotate=0] at (3.5,4.0) {Pareto front};
+  \node[font=\small, text=dogmagray] at (2.5,0.6) {Dominated region};
+
+  % Annotations
+  \node[font=\tiny, text=dogmared, align=center] at (0.8,4.8) {High diversity\\Low quality};
+  \node[font=\tiny, text=dogmateal, align=center] at (5.2,0.3) {High quality\\Low diversity};
+\end{tikzpicture}
+\caption{The Pareto front for two objectives (quality and diversity). Points $A$, $B$, and $C$ lie on the front: none dominates the others. Point $D$ is dominated by $B$ (worse on both objectives). The Tera system navigates along this front, moving toward $A$ when diversity is needed and toward $C$ when quality is paramount.}
+\label{fig:pareto-front}
+\end{figure}
+
+% -------------------------------------------------------------------------------
+\section{The Tera Regime State}
+\label{sec:tera-regime}
+% -------------------------------------------------------------------------------
+
+\subsection{The Six Pressure Dimensions}
+
+\begin{dogmadef}[Tera Regime State]
+The \textbf{Tera regime state} at time $t$ is a six-dimensional pressure vector:
+\begin{equation}
+\mathbf{R}_t = \bigl(p_t^{(\text{gnd})},\; p_t^{(\text{ext})},\; p_t^{(\text{sch})},\; p_t^{(\text{eff})},\; p_t^{(\text{exp})},\; p_t^{(\text{coh})}\bigr) \in [0, 1]^6,
+\label{eq:regime-vector}
+\end{equation}
+where each component quantifies the evolutionary pressure along one dimension of system performance.
+\end{dogmadef}
+
+Each pressure dimension captures a specific aspect of system behavior:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Grounding pressure} $p^{(\text{gnd})}$: Measures contextual fidelity---how well the system's outputs are anchored to provided context and factual grounding. High grounding pressure drives mutations that strengthen retrieval pathways and context integration. \emph{Think of this as:} ``Is the system paying attention to the information it was given?''
+
+  \item \textbf{Exactness pressure} $p^{(\text{ext})}$: Measures answer precision---the degree to which outputs match expected formats, values, and content. This pressure increases when evaluations reveal imprecise or partially correct responses. \emph{Think of this as:} ``Is the answer correct and precise?''
+
+  \item \textbf{Schema pressure} $p^{(\text{sch})}$: Measures structural compliance---adherence to required output schemas (JSON, XML, structured formats). When outputs fail schema validation, this pressure rises. \emph{Think of this as:} ``Does the output have the right structure?''
+
+  \item \textbf{Efficiency pressure} $p^{(\text{eff})}$: Measures resource economy---the ratio of output quality to computational cost. This pressure penalizes verbose, redundant, or computationally wasteful solutions. \emph{Think of this as:} ``Is the system being concise and efficient?''
+
+  \item \textbf{Exploration pressure} $p^{(\text{exp})}$: Measures novelty seeking---the system's tendency to explore new regions of solution space rather than exploit known strategies. This pressure increases when fitness plateaus. \emph{Think of this as:} ``Is the system stuck in a rut and needs to try something new?''
+
+  \item \textbf{Coherence pressure} $p^{(\text{coh})}$: Measures structural stability---the internal consistency of the genome and the logical coherence of outputs. This pressure counterbalances exploration, preventing the system from destabilizing productive configurations. \emph{Think of this as:} ``Is the system still internally consistent?''
+\end{enumerate}
+
+\subsection{Visualizing the Pressure Space}
+
+The six-dimensional pressure vector can be visualized as a radar chart (also called a spider plot), where each axis represents one pressure dimension. Different regime states produce different polygon shapes.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  % Hexagonal radar chart for 6-dimensional pressure space
+  \def\naxes{6}
+  \def\radius{3.2}
+
+  % Axis labels and angles
+  \foreach \i/\lab/\short in {
+    0/{Grounding}/{GND},
+    1/{Exactness}/{EXT},
+    2/{Schema}/{SCH},
+    3/{Efficiency}/{EFF},
+    4/{Exploration}/{EXP},
+    5/{Coherence}/{COH}
+  }{
+    \pgfmathsetmacro{\angle}{90 - \i * 360 / \naxes}
+    % Axis
+    \draw[dogmagray!50, thin] (0,0) -- (\angle:\radius);
+    % Label
+    \node[font=\small\bfseries, text=dogmablue] at (\angle:\radius+0.7) {\short};
+    \node[font=\tiny, text=dogmagray] at (\angle:\radius+1.2) {\lab};
+  }
+
+  % Grid polygons
+  \foreach \r in {0.2,0.4,0.6,0.8,1.0}{
+    \pgfmathsetmacro{\rr}{\r * \radius}
+    \draw[dogmagray!30, thin]
+      (90:\rr) -- (30:\rr) -- (-30:\rr) -- (-90:\rr) -- (-150:\rr) -- (150:\rr) -- cycle;
+  }
+
+  % Scale labels
+  \foreach \r/\lab in {0.2/0.2, 0.4/0.4, 0.6/0.6, 0.8/0.8, 1.0/1.0}{
+    \pgfmathsetmacro{\rr}{\r * \radius}
+    \node[font=\tiny, text=dogmagray, fill=white, inner sep=1pt] at (90:\rr) {\lab};
+  }
+
+  % Example regime state R_t (filled polygon)
+  % Values: GND=0.8, EXT=0.5, SCH=0.3, EFF=0.7, EXP=0.9, COH=0.6
+  \pgfmathsetmacro{\rA}{0.8 * \radius}
+  \pgfmathsetmacro{\rB}{0.5 * \radius}
+  \pgfmathsetmacro{\rC}{0.3 * \radius}
+  \pgfmathsetmacro{\rD}{0.7 * \radius}
+  \pgfmathsetmacro{\rE}{0.9 * \radius}
+  \pgfmathsetmacro{\rF}{0.6 * \radius}
+  \filldraw[dogmablue!20, draw=dogmablue, thick, fill opacity=0.35]
+    (90:\rA) -- (30:\rB) -- (-30:\rC) -- (-90:\rD) -- (-150:\rE) -- (150:\rF) -- cycle;
+
+  % Dots at vertices
+  \foreach \ang/\rv in {90/\rA, 30/\rB, -30/\rC, -90/\rD, -150/\rE, 150/\rF}{
+    \fill[dogmablue] (\ang:\rv) circle (2.5pt);
+  }
+
+  % Second regime state (dashed, for comparison)
+  \pgfmathsetmacro{\sA}{0.4 * \radius}
+  \pgfmathsetmacro{\sB}{0.9 * \radius}
+  \pgfmathsetmacro{\sC}{0.8 * \radius}
+  \pgfmathsetmacro{\sD}{0.3 * \radius}
+  \pgfmathsetmacro{\sE}{0.2 * \radius}
+  \pgfmathsetmacro{\sF}{0.7 * \radius}
+  \draw[dogmared, thick, dashed]
+    (90:\sA) -- (30:\sB) -- (-30:\sC) -- (-90:\sD) -- (-150:\sE) -- (150:\sF) -- cycle;
+
+  % Legend
+  \draw[dogmablue, thick] (4.5, 2.5) -- ++(0.6, 0) node[right, font=\small] {Exploration regime};
+  \draw[dogmared, thick, dashed] (4.5, 1.9) -- ++(0.6, 0) node[right, font=\small] {Precision regime};
+\end{tikzpicture}
+\caption{The six-dimensional Tera pressure space visualized as a radar chart. The solid blue polygon shows an exploration-dominant regime ($p^{(\text{exp})} = 0.9$); the dashed red polygon shows a precision-dominant regime ($p^{(\text{ext})} = 0.9$, $p^{(\text{sch})} = 0.8$). The Tera system dynamically transitions between such regimes based on evaluation history.}
+\label{fig:tera-pressure-space}
+\end{figure}
+
+\subsection{How Pressures Interact and Balance}
+
+The six pressures do not operate in isolation. They form natural alliances and tensions:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Precision alliance:} Grounding, exactness, and schema pressures often rise together. When the system produces incorrect outputs, all three dimensions suffer.
+  \item \textbf{Exploration--coherence tension:} Exploration and coherence pressures are natural antagonists. Exploration introduces change; coherence resists it. The balance between them determines how ``bold'' the system's mutations are.
+  \item \textbf{Efficiency--quality trade-off:} Making outputs more concise (efficiency) can sacrifice detail (exactness). The system must find the sweet spot.
+\end{itemize}
+
+\begin{implnote}[Pressure Correlation Monitoring]
+In the \textsc{evo-trainer} implementation, the system monitors the correlation matrix of the six pressure time series. Strong positive correlations (e.g., between grounding and exactness) indicate that these dimensions are coupled and may benefit from joint mutations. Strong negative correlations (e.g., exploration vs.\ coherence) indicate active tension that requires careful balancing.
+\end{implnote}
+
+\subsection{Exponential Memory Decay}
+\label{subsec:memory-decay}
+
+The regime state is not computed from a single evaluation but from a \emph{decaying window} of evaluation history. Each pressure component is updated using an exponential moving average (EMA):
+
+\begin{equation}
+p_t^{(d)} = (1 - \alpha)\, p_{t-1}^{(d)} + \alpha\, s_t^{(d)},
+\label{eq:pressure-ema}
+\end{equation}
+
+where $s_t^{(d)} \in [0,1]$ is the raw signal from the most recent evaluation along dimension $d$, and $\alpha \in (0,1)$ is the decay rate.
+
+\begin{example}[Understanding EMA Intuitively]
+Think of $\alpha$ as a ``forgetfulness'' parameter. If $\alpha = 1$, the system only remembers the most recent evaluation---it has no memory. If $\alpha = 0$, the system never updates---it is frozen. In between, $\alpha = 0.15$ means each new evaluation contributes 15\% of the new pressure value, while 85\% comes from the accumulated history. This is like a weighted average where recent grades count more than old grades, but old grades still matter.
+\end{example}
+
+Equivalently, the pressure at time $t$ is a weighted sum over all past signals:
+
+\begin{equation}
+p_t^{(d)} = \alpha \sum_{k=0}^{t-1} (1-\alpha)^k\, s_{t-k}^{(d)},
+\label{eq:pressure-decay}
+\end{equation}
+
+giving recent evaluations exponentially more influence than older ones. The effective memory horizon is $\tau_{\text{eff}} = 1/\alpha$ steps.
+
+\begin{implnote}[Choosing the Decay Rate]
+In the \textsc{evo-trainer} implementation, $\alpha = 0.15$ provides a memory horizon of approximately 6--7 evaluations. This balances responsiveness to changing conditions against stability in the face of noisy evaluations. For rapidly shifting task distributions, a higher $\alpha$ (shorter memory) may be appropriate; for stable training regimes, a lower $\alpha$ preserves longer-term trends.
+\end{implnote}
+
+\subsubsection{Worked Numerical Example: Pressure Update Over Time}
+
+Let us trace the grounding pressure through five time steps with $\alpha = 0.2$ and initial pressure $p_0^{(\text{gnd})} = 0.50$.
+
+Suppose the evaluation signals are: $s_1 = 0.80$, $s_2 = 0.90$, $s_3 = 0.70$, $s_4 = 0.30$, $s_5 = 0.40$.
+
+\begin{table}[H]
+\centering
+\caption{Worked example: pressure update with $\alpha = 0.2$, $p_0 = 0.50$.}
+\label{tab:pressure-example}
+\begin{tabularx}{\textwidth}{c c c Y c}
+\toprule
+\textbf{Step $t$} & \textbf{Signal $s_t$} & \textbf{Old $p_{t-1}$} & \textbf{Calculation} & \textbf{New $p_t$} \\
+\midrule
+1 & 0.80 & 0.50 & $0.8 \times 0.50 + 0.2 \times 0.80$ & 0.560 \\
+2 & 0.90 & 0.56 & $0.8 \times 0.56 + 0.2 \times 0.90$ & 0.628 \\
+3 & 0.70 & 0.628 & $0.8 \times 0.628 + 0.2 \times 0.70$ & 0.642 \\
+4 & 0.30 & 0.642 & $0.8 \times 0.642 + 0.2 \times 0.30$ & 0.574 \\
+5 & 0.40 & 0.574 & $0.8 \times 0.574 + 0.2 \times 0.40$ & 0.539 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Notice how the pressure responds to the signals but is smoothed. The high signals at $t=1,2$ push the pressure up gradually. The low signal at $t=4$ begins pulling it down, but the effect is gradual---the system does not overreact to a single bad evaluation.
+
+\subsection{Regime Detection from Evaluation History}
+
+Given the pressure vector $\mathbf{R}_t$, the system identifies a \emph{dominant regime} by finding the dimension under greatest pressure:
+
+\begin{equation}
+d^* = \arg\max_{d \in \{\text{gnd}, \text{ext}, \text{sch}, \text{eff}, \text{exp}, \text{coh}\}} p_t^{(d)}.
+\label{eq:dominant-regime}
+\end{equation}
+
+However, simple argmax regime detection is brittle. The Tera system uses a \emph{pressure gap} threshold $\delta$: the dominant regime is only asserted if $p_t^{(d^*)} - \bar{p}_t > \delta$, where $\bar{p}_t$ is the mean pressure. When no single dimension dominates, the system operates in a \emph{balanced regime} that distributes mutation effort proportionally across all dimensions.
+
+\begin{example}[Regime Detection with Gap Threshold]
+Suppose the current pressure vector is $\mathbf{R}_t = (0.6, 0.3, 0.2, 0.5, 0.8, 0.4)$ and $\delta = 0.15$. The mean pressure is $\bar{p}_t = (0.6 + 0.3 + 0.2 + 0.5 + 0.8 + 0.4)/6 = 0.467$. The maximum is $p^{(\text{exp})} = 0.8$, and the gap is $0.8 - 0.467 = 0.333 > 0.15$. So the system enters the \emph{exploration regime}.
+
+Now suppose $\mathbf{R}_t = (0.5, 0.45, 0.5, 0.48, 0.52, 0.47)$. The mean is $0.487$, the maximum is $0.52$, and the gap is $0.52 - 0.487 = 0.033 < 0.15$. No single dimension dominates, so the system operates in the \emph{balanced regime}.
+\end{example}
+
+\begin{keyinsight}[The Regime as Hidden State]
+The Tera regime state is ``hidden'' in the same sense as the hidden state of a hidden Markov model. It is not directly observed; it is \emph{inferred} from a sequence of noisy evaluation signals. The regime vector $\mathbf{R}_t$ is the system's best estimate of which evolutionary pressures currently demand attention. This is directly analogous to how biological organisms infer environmental state from noisy sensory signals and adjust their regulatory responses accordingly.
+\end{keyinsight}
+
+% -------------------------------------------------------------------------------
+\section{Mutation Families}
+\label{sec:mutation-families}
+% -------------------------------------------------------------------------------
+
+\subsection{What Are Mutation Families?}
+
+In biological evolution, mutations come in different types: point mutations change a single nucleotide, insertions add new genetic material, deletions remove it, and transposons move segments around. Each type of mutation has a different effect on the organism. DOGMA mirrors this with \textbf{mutation families}---groups of related mutation operators that each address a specific type of weakness.
+
+\begin{definition}[Mutation Family]
+A \textbf{mutation family} is a collection of related mutation operators that share a common purpose. Each family is associated with one pressure dimension and is activated when that dimension's pressure is high. Formally, family $d$ contains a set of operators $\mathcal{F}_d = \{\mu_d^{(1)}, \mu_d^{(2)}, \ldots, \mu_d^{(m_d)}\}$, where each operator $\mu_d^{(i)} : \mathcal{G} \times \mathcal{C} \to \mathcal{G}$ maps a genome and context to a modified genome.
+\end{definition}
+
+\subsection{The Six Mutation Families}
+
+\begin{table}[H]
+\centering
+\caption{Mutation families and their corresponding regime pressures.}
+\label{tab:mutation-families}
+\begin{tabularx}{\textwidth}{l l Y l}
+\toprule
+\textbf{Family} & \textbf{Pressure} & \textbf{Effect} & \textbf{Bio.\ Analogue} \\
+\midrule
+\texttt{context\_grounding} & $p^{(\text{gnd})}$ & Strengthen retrieval pathways and context anchoring & Promoter enhancement \\
+\texttt{exact\_answer} & $p^{(\text{ext})}$ & Sharpen output precision and format adherence & Codon optimization \\
+\texttt{strict\_json} & $p^{(\text{sch})}$ & Enforce structural output compliance & Reading frame correction \\
+\texttt{brevity} & $p^{(\text{eff})}$ & Reduce verbosity and computational waste & Intron splicing \\
+\texttt{structural\_explore} & $p^{(\text{exp})}$ & Introduce novel genomic configurations & Transposon insertion \\
+\texttt{bond\_repair} & $p^{(\text{coh})}$ & Restore internal consistency after mutations & DNA mismatch repair \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Let us examine each family in more detail:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Context grounding family.} When the system's outputs drift from provided context, this family strengthens the genomic regions responsible for context retrieval. Operators include: enhancing context-attention bonds, adding retrieval markers, and strengthening source-output linkages. Biologically, this is analogous to \emph{promoter enhancement}---making a gene more responsive to its regulatory signals.
+
+  \item \textbf{Exact answer family.} When outputs are imprecise, this family sharpens the genome's answer-generation regions. Operators include: narrowing output distributions, strengthening pattern-matching bases, and adding precision markers. The biological analogue is \emph{codon optimization}---selecting the specific nucleotide triplets that most efficiently encode a protein.
+
+  \item \textbf{Strict JSON family.} When outputs fail structural validation, this family repairs and reinforces schema-compliance regions. Operators include: inserting structural delimiters, repairing bracket-matching bonds, and adding format-enforcement bases. This is analogous to \emph{reading frame correction}---ensuring that the ribosome reads the mRNA in the correct triplet groupings.
+
+  \item \textbf{Brevity family.} When outputs are verbose, this family trims unnecessary genomic material. Operators include: removing redundant bases, compressing repetitive regions, and streamlining output pathways. The biological analogue is \emph{intron splicing}---removing non-coding sequences from mRNA before translation.
+
+  \item \textbf{Structural exploration family.} When fitness plateaus, this family introduces novel configurations. Operators include: inserting new base sequences, rearranging genomic regions, and creating novel bond patterns. This is analogous to \emph{transposon insertion}---mobile genetic elements that jump to new positions, potentially creating new gene functions.
+
+  \item \textbf{Bond repair family.} When mutations destabilize the genome's internal structure, this family restores consistency. Operators include: recalculating bond energies, repairing broken cross-references, and re-establishing complementary strand agreement. The biological analogue is \emph{DNA mismatch repair}---enzymatic systems that detect and correct base-pairing errors.
+\end{itemize}
+
+\subsection{Adaptive Selection of Mutation Strategies}
+
+At each synthesis step, the system selects a mutation family with probability proportional to the corresponding pressure component, using a softmax function. Let $\mathbf{w}_t$ be the mutation selection distribution:
+
+\begin{equation}
+w_t^{(d)} = \frac{\exp\bigl(\beta\, p_t^{(d)}\bigr)}{\sum_{d'} \exp\bigl(\beta\, p_t^{(d')}\bigr)},
+\label{eq:mutation-selection}
+\end{equation}
+
+where $\beta > 0$ is a temperature parameter controlling the sharpness of selection. As $\beta \to \infty$, only the highest-pressure family is selected; as $\beta \to 0$, all families are selected uniformly. In practice, $\beta$ is set to maintain a moderate selection entropy, ensuring that subdominant pressures are not entirely neglected.
+
+\begin{example}[Computing Mutation Selection Probabilities]
+\label{ex:mutation-selection}
+Suppose $\mathbf{R}_t = (0.6, 0.3, 0.2, 0.5, 0.8, 0.4)$ and $\beta = 3$. Then:
+\begin{align*}
+\exp(3 \times 0.6) &= 6.05, \quad \exp(3 \times 0.3) = 2.46, \quad \exp(3 \times 0.2) = 1.82, \\
+\exp(3 \times 0.5) &= 4.48, \quad \exp(3 \times 0.8) = 11.02, \quad \exp(3 \times 0.4) = 3.32.
+\end{align*}
+The sum is $6.05 + 2.46 + 1.82 + 4.48 + 11.02 + 3.32 = 29.15$. The selection probabilities are:
+
+\medskip
+\begin{center}
+\begin{tabular}{lcccccc}
+\toprule
+Family & GND & EXT & SCH & EFF & EXP & COH \\
+\midrule
+$w_t^{(d)}$ & 0.208 & 0.084 & 0.063 & 0.154 & \textbf{0.378} & 0.114 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+\noindent The exploration family has a 37.8\% chance of being selected---the highest---but all other families still have nonzero probability. This prevents the system from completely ignoring any dimension.
+\end{example}
+
+\begin{definition}[Mutation Operator]
+A \textbf{mutation operator} $\mu_d : \mathcal{G} \times \mathcal{C} \to \mathcal{G}$ maps a genome $G \in \mathcal{G}$ and context $C \in \mathcal{C}$ to a modified genome $G' = \mu_d(G, C)$, where $d$ indexes the mutation family. Each operator is specialized to address the weakness identified by its corresponding pressure dimension.
+\end{definition}
+
+\subsection{Within-Family Operator Selection}
+
+Each mutation family contains multiple operators of varying intensity. When a family is selected, the specific operator within that family is chosen based on the magnitude of the pressure:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Low pressure} ($p^{(d)} < 0.3$): Apply mild operators that make small, conservative changes.
+  \item \textbf{Medium pressure} ($0.3 \leq p^{(d)} < 0.7$): Apply moderate operators that make targeted adjustments.
+  \item \textbf{High pressure} ($p^{(d)} \geq 0.7$): Apply aggressive operators that make substantial restructuring changes.
+\end{itemize}
+
+This two-level selection---first choosing a family, then choosing an operator within that family---gives the Tera system fine-grained control over both the \emph{type} and \emph{intensity} of mutations.
+
+\subsection{The Pressure Thermostat}
+\label{subsec:thermostat}
+
+A critical design feature of Tera is \emph{automatic rebalancing}. When a mutation family succeeds---improving its corresponding evaluation metric---the associated pressure naturally decreases (since the evaluation signal $s_t^{(d)}$ improves). This creates a negative feedback loop:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item High pressure on dimension $d$ $\Rightarrow$ mutations from family $d$ are preferentially selected.
+  \item Successful mutations improve the metric $\Rightarrow$ evaluation signal $s_t^{(d)}$ decreases.
+  \item Decreased signal $\Rightarrow$ pressure $p_{t+1}^{(d)}$ decreases via Eq.~\eqref{eq:pressure-ema}.
+  \item Lower pressure $\Rightarrow$ other dimensions receive more mutation effort.
+\end{enumerate}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  node distance=2.5cm,
+  block/.style={rectangle, draw=dogmablue, fill=dogmalight, thick,
+    minimum width=2.8cm, minimum height=1cm, align=center, rounded corners=3pt,
+    font=\small},
+  arrow/.style={-{Stealth[length=6pt]}, thick, dogmablue}
+]
+  \node[block] (pressure) {High pressure\\on dim.\ $d$};
+  \node[block, right=2.5cm of pressure] (select) {Select family\\$d$ mutations};
+  \node[block, below=1.8cm of select] (improve) {Metric $d$\\improves};
+  \node[block, left=2.5cm of improve] (decrease) {Pressure $d$\\decreases};
+
+  \draw[arrow] (pressure) -- (select);
+  \draw[arrow] (select) -- (improve);
+  \draw[arrow] (improve) -- (decrease);
+  \draw[arrow] (decrease) -- (pressure) node[midway, left, font=\small, text=dogmared, align=center] {Negative\\feedback};
+
+  % Center label
+  \node[font=\small\bfseries, text=dogmateal, align=center] at ($(pressure)!0.5!(improve)$) {Thermostat\\Loop};
+\end{tikzpicture}
+\caption{The pressure thermostat creates a homeostatic negative feedback loop. When a dimension's pressure is high, it receives more mutation effort, which improves its metric, which reduces its pressure, freeing resources for other dimensions.}
+\label{fig:thermostat-loop}
+\end{figure}
+
+\begin{bioinsight}[Homeostatic Regulation]
+This negative feedback loop is directly analogous to homeostasis in biological systems. A thermostat does not heat and cool simultaneously; it senses the current temperature and applies the appropriate correction. Similarly, the Tera pressure thermostat senses which aspects of system performance are weakest and directs evolutionary effort accordingly. The result is a system that autonomously maintains balance across multiple competing objectives without manual tuning of loss weights.
+\end{bioinsight}
+
+The thermostat can be formalized as a dynamical system. Define the \emph{deficit} $\delta_t^{(d)} = 1 - f_t^{(d)}$, where $f_t^{(d)} \in [0,1]$ is the fitness on dimension $d$. Then the pressure update becomes:
+
+\begin{equation}
+p_{t+1}^{(d)} = (1-\alpha)\, p_t^{(d)} + \alpha\, \delta_t^{(d)}.
+\label{eq:thermostat}
+\end{equation}
+
+At equilibrium ($p_{t+1}^{(d)} = p_t^{(d)}$), we have $p_{\infty}^{(d)} = \delta_{\infty}^{(d)}$: pressure equals deficit. The system reaches equilibrium when mutation effort is distributed in proportion to remaining deficiencies---a provably optimal allocation under mild assumptions about mutation effectiveness.
+
+% -------------------------------------------------------------------------------
+\section{The Tera State Machine}
+\label{sec:tera-state-machine}
+% -------------------------------------------------------------------------------
+
+\subsection{Formal Definition}
+
+The Tera system can be modeled as a finite state machine that transitions between discrete regime modes based on the continuous pressure vector. This formalization helps us reason about the system's long-term behavior.
+
+\begin{dogmadef}[Tera State Machine]
+The Tera state machine is a tuple $\mathcal{T} = (S, s_0, \Sigma, \delta_T, \omega)$ where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $S = \{\textsc{Balanced}, \textsc{Grounding}, \textsc{Precision}, \textsc{Schema}, \textsc{Efficiency}, \textsc{Exploration}, \textsc{Coherence}, \textsc{Crisis}\}$ is the set of regime modes.
+  \item $s_0 = \textsc{Balanced}$ is the initial state.
+  \item $\Sigma = [0,1]^6$ is the input alphabet (evaluation signal vectors).
+  \item $\delta_T : S \times \Sigma \to S$ is the transition function.
+  \item $\omega : S \to \Delta(\mathcal{F})$ maps each state to a mutation family distribution.
+\end{itemize}
+\end{dogmadef}
+
+The eight regime modes are:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textsc{Balanced}: No single pressure dominates. All mutation families are applied with roughly equal probability. This is the default, ``healthy'' state.
+
+  \item \textsc{Grounding}--\textsc{Coherence}: One of the six single-pressure regimes. The system has detected a clear weakness on one dimension and focuses mutation effort there.
+
+  \item \textsc{Crisis}: Multiple pressures are simultaneously high (all above a threshold $\theta_c$). The system is failing on many dimensions and enters an emergency mode with aggressive, broad-spectrum mutations.
+\end{enumerate}
+
+\subsection{Transition Rules}
+
+The transition function $\delta_T$ is defined by the following rules, evaluated in order:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Crisis entry:} If $\min_d p_t^{(d)} > \theta_c$ (all pressures above crisis threshold, typically $\theta_c = 0.7$), transition to \textsc{Crisis} regardless of current state.
+
+  \item \textbf{Crisis exit:} If in \textsc{Crisis} and $\bar{p}_t < \theta_c - 0.1$ (mean pressure has dropped sufficiently), transition to \textsc{Balanced}.
+
+  \item \textbf{Regime entry:} If $p_t^{(d^*)} - \bar{p}_t > \delta$ (pressure gap exceeds threshold), transition to the regime corresponding to $d^*$.
+
+  \item \textbf{Regime exit:} If in a single-pressure regime and $p_t^{(d^*)} - \bar{p}_t \leq \delta$ (the gap has closed), transition to \textsc{Balanced}.
+
+  \item \textbf{Hysteresis:} To prevent rapid oscillation, a regime transition requires the condition to hold for $h$ consecutive steps (typically $h = 2$).
+\end{enumerate}
+
+\subsection{State Diagram}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  state/.style={circle, draw=dogmablue, thick, fill=dogmalight,
+    minimum size=1.5cm, font=\small\bfseries, align=center, inner sep=2pt},
+  crisis/.style={circle, draw=dogmared, thick, fill=dogmared!15,
+    minimum size=1.5cm, font=\small\bfseries, align=center, inner sep=2pt},
+  trans/.style={-{Stealth[length=5pt]}, thick, dogmagray},
+  crisis_trans/.style={-{Stealth[length=5pt]}, thick, dogmared, dashed},
+  every node/.append style={font=\tiny}
+]
+  % Balanced state (center)
+  \node[state, minimum size=2cm] (bal) at (0,0) {BAL};
+
+  % Six regime states around it
+  \node[state] (gnd) at (90:3.5) {GND};
+  \node[state] (ext) at (30:3.5) {EXT};
+  \node[state] (sch) at (-30:3.5) {SCH};
+  \node[state] (eff) at (-90:3.5) {EFF};
+  \node[state] (exp) at (-150:3.5) {EXP};
+  \node[state] (coh) at (150:3.5) {COH};
+
+  % Crisis state (below)
+  \node[crisis] (crisis) at (0,-5.5) {CRISIS};
+
+  % Balanced <-> each regime (bidirectional)
+  \foreach \s in {gnd, ext, sch, eff, exp, coh}{
+    \draw[trans] (bal) -- (\s);
+  }
+
+  % Add arrowheads back to balanced (on the return path)
+  \foreach \s in {gnd, ext, sch, eff, exp, coh}{
+    \draw[trans] (\s) -- (bal);
+  }
+
+  % Crisis connections (from any state)
+  \draw[crisis_trans] (bal) -- (crisis) node[midway, right, text=dogmared, font=\scriptsize] {all $p > \theta_c$};
+  \draw[crisis_trans, bend right=15] (gnd) to (crisis);
+  \draw[crisis_trans, bend right=15] (ext) to (crisis);
+  \draw[crisis_trans, bend left=15] (sch) to (crisis);
+  \draw[crisis_trans, bend left=10] (eff) to (crisis);
+  \draw[crisis_trans, bend right=15] (exp) to (crisis);
+  \draw[crisis_trans, bend left=15] (coh) to (crisis);
+
+  % Crisis back to balanced
+  \draw[trans, dogmateal, bend right=30] (crisis) to node[midway, left, text=dogmateal, font=\scriptsize] {$\bar{p} < \theta_c{-}0.1$} (bal);
+
+  % Edge labels for some transitions
+  \node[font=\scriptsize, text=dogmablue] at (55:2.1) {gap $> \delta$};
+  \node[font=\scriptsize, text=dogmablue] at (125:2.1) {gap $> \delta$};
+\end{tikzpicture}
+\caption{The Tera state machine. The system starts in the \textsc{Balanced} state (center) and transitions to a specific regime when one pressure dimension dominates. It enters \textsc{Crisis} when all pressures are simultaneously high. Transitions require hysteresis ($h$ consecutive steps meeting the condition) to prevent oscillation.}
+\label{fig:tera-state-machine}
+\end{figure}
+
+\subsection{Output Function: Mutation Distribution by State}
+
+Each state produces a different mutation family distribution:
+
+\begin{table}[H]
+\centering
+\caption{Mutation family selection weights $\omega(s)$ for each regime state. Higher values indicate stronger selection. The actual probabilities are computed via softmax (Eq.~\ref{eq:mutation-selection}).}
+\label{tab:regime-weights}
+\begin{tabularx}{\textwidth}{L{2.2cm} Y Y Y Y Y Y}
+\toprule
+\textbf{Regime} & \textbf{GND} & \textbf{EXT} & \textbf{SCH} & \textbf{EFF} & \textbf{EXP} & \textbf{COH} \\
+\midrule
+\textsc{Balanced} & 1.0 & 1.0 & 1.0 & 1.0 & 1.0 & 1.0 \\
+\textsc{Grounding} & \textbf{3.0} & 1.0 & 0.5 & 0.5 & 0.5 & 1.0 \\
+\textsc{Precision} & 1.0 & \textbf{3.0} & 1.5 & 0.5 & 0.3 & 1.0 \\
+\textsc{Schema} & 0.5 & 1.0 & \textbf{3.0} & 0.5 & 0.3 & 1.0 \\
+\textsc{Efficiency} & 0.5 & 0.5 & 0.5 & \textbf{3.0} & 0.5 & 0.8 \\
+\textsc{Exploration} & 0.5 & 0.3 & 0.3 & 0.5 & \textbf{3.0} & 1.5 \\
+\textsc{Coherence} & 1.0 & 1.0 & 1.0 & 0.8 & 0.3 & \textbf{3.0} \\
+\textsc{Crisis} & 2.0 & 2.0 & 2.0 & 1.0 & 2.5 & 2.5 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Notice the design choices: the \textsc{Exploration} regime boosts coherence alongside exploration (to keep the genome stable during restructuring), and the \textsc{Crisis} regime elevates exploration and coherence (to find new solutions while preventing collapse).
+
+% -------------------------------------------------------------------------------
+\section{Meta-Policy: Learning Which Mutations Work Best}
+\label{sec:meta-policy}
+% -------------------------------------------------------------------------------
+
+\subsection{The Problem of Starting from Scratch}
+
+Individual training runs are episodic: each run starts with an initial genome, evolves it over some number of generations, and produces a final evolved genome. Without cross-run memory, each run begins from scratch, unable to benefit from the regime dynamics learned in previous runs.
+
+Consider this analogy: if you had to prepare for the same type of exam multiple times, you would not start from scratch each time. You would remember which study strategies worked best: ``For math exams, I should start with practice problems early. For history exams, I need to focus on timeline memorization.'' This accumulated wisdom about \emph{which strategies work in which situations} is exactly what Tera's meta-policy captures.
+
+\subsection{Cross-Run Persistent Learning}
+
+Tera addresses this through a \textbf{meta-policy memory}---a persistent store that records regime trajectories and their outcomes across runs:
+
+\begin{equation}
+\mathcal{M} = \bigl\{(\mathbf{R}_0^{(j)}, \mathbf{R}_1^{(j)}, \ldots, \mathbf{R}_{T_j}^{(j)},\; \Delta F^{(j)})\bigr\}_{j=1}^{N},
+\label{eq:meta-memory}
+\end{equation}
+
+where $\mathbf{R}_t^{(j)}$ is the regime state at step $t$ of run $j$, $T_j$ is the length of run $j$, and $\Delta F^{(j)}$ is the overall fitness improvement achieved during that run.
+
+The meta-policy memory stores three types of information:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Regime trajectories:} The full sequence of regime states from each run, recording how pressures evolved over time.
+  \item \textbf{Transition success rates:} For each pair of regime modes $(s_i, s_j)$, the average fitness change when the system transitioned from $s_i$ to $s_j$.
+  \item \textbf{Mutation effectiveness:} For each mutation family in each regime mode, the average fitness improvement per application.
+\end{enumerate}
+
+\subsection{Shared Regime Priors}
+
+From the meta-policy memory, the system extracts \emph{regime priors}---initial pressure vectors that reflect the typical pressure landscape for a given class of tasks. When a new run begins, instead of initializing $\mathbf{R}_0$ uniformly, the system computes:
+
+\begin{equation}
+\mathbf{R}_0^{(\text{new})} = \frac{\sum_{j=1}^{N} \Delta F^{(j)} \cdot \mathbf{R}_0^{(j)}}{\sum_{j=1}^{N} \Delta F^{(j)}},
+\label{eq:regime-prior}
+\end{equation}
+
+a fitness-weighted average of initial regime states from successful prior runs. This gives the new run a ``warm start,'' directing early mutation effort toward dimensions that historically mattered most.
+
+\begin{example}[Warm Start in Practice]
+Suppose three prior runs yielded these results:
+\begin{center}
+\begin{tabular}{cccc}
+\toprule
+\textbf{Run} & $\mathbf{R}_0$ (initial) & $\Delta F$ \\
+\midrule
+1 & $(0.3, 0.8, 0.5, 0.2, 0.4, 0.6)$ & 0.15 \\
+2 & $(0.7, 0.3, 0.4, 0.6, 0.8, 0.3)$ & 0.25 \\
+3 & $(0.5, 0.6, 0.3, 0.4, 0.7, 0.5)$ & 0.10 \\
+\bottomrule
+\end{tabular}
+\end{center}
+The warm-start prior is:
+\[
+\mathbf{R}_0^{(\text{new})} = \frac{0.15 \cdot (0.3, 0.8, \ldots) + 0.25 \cdot (0.7, 0.3, \ldots) + 0.10 \cdot (0.5, 0.6, \ldots)}{0.15 + 0.25 + 0.10}.
+\]
+Run 2 (the most successful, $\Delta F = 0.25$) contributes the most to the prior. If run 2 succeeded by starting with high grounding and exploration pressures, the new run will also start by prioritizing those dimensions.
+\end{example}
+
+\subsection{Comparison to Meta-Learning}
+
+The meta-policy memory bears a structural resemblance to gradient-based meta-learning algorithms, particularly MAML (Model-Agnostic Meta-Learning) and Reptile.
+
+\begin{table}[H]
+\centering
+\caption{Comparison of Tera meta-policy memory with gradient-based meta-learning.}
+\label{tab:meta-comparison}
+\begin{tabularx}{\textwidth}{L{3cm} Y Y}
+\toprule
+\textbf{Property} & \textbf{MAML / Reptile} & \textbf{Tera Meta-Policy} \\
+\midrule
+What is learned & Initial model parameters $\theta_0$ & Initial regime state $\mathbf{R}_0$ \\
+Inner loop & Gradient descent on task loss & Evolutionary pressure-guided mutation \\
+Outer loop & Meta-gradient across tasks & Fitness-weighted regime averaging \\
+Dimensionality & $|\theta|$ (millions--billions) & 6 (pressure dimensions) \\
+Computational cost & Second-order gradients (MAML) & Negligible (vector averaging) \\
+Memory footprint & Full parameter checkpoints & 6-element vectors per run \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{keyinsight}[Low-Dimensional Meta-Learning]
+Tera's meta-policy operates in a six-dimensional space---orders of magnitude smaller than the parameter spaces of MAML or Reptile. This makes meta-learning computationally trivial while capturing the essential information: \emph{which pressures matter}. The insight is that one need not meta-learn the entire model; meta-learning the \emph{regulatory strategy} is sufficient when the model itself is evolved, not trained by gradient descent.
+\end{keyinsight}
+
+% -------------------------------------------------------------------------------
+\section{Connection to Biological Evolution}
+\label{sec:bio-evolution}
+% -------------------------------------------------------------------------------
+
+\subsection{Organisms Adapt to Environmental Pressures}
+
+The Tera regime system is not merely inspired by biology---it is a direct computational analogue of how organisms adapt to multi-pressure environments. Let us trace the parallels in detail.
+
+\begin{bioinsight}[The Lac Operon as a Regime Switch]
+The \emph{lac operon} in \emph{E.~coli} is a classic example of a biological regime switch. When glucose is abundant, the bacterium uses glucose metabolism (the ``glucose regime''). When glucose is scarce but lactose is present, the lac operon activates, switching the bacterium to lactose metabolism (the ``lactose regime''). The regime is determined by two environmental signals: glucose level and lactose level. The regime change alters which genes are expressed---exactly analogous to how Tera's regime state determines which mutation families are activated.
+\end{bioinsight}
+
+\begin{table}[H]
+\centering
+\caption{Mapping between biological regulatory concepts and Tera components.}
+\label{tab:bio-mapping}
+\begin{tabularx}{\textwidth}{L{3.5cm} Y Y}
+\toprule
+\textbf{Concept} & \textbf{Biological System} & \textbf{Tera System} \\
+\midrule
+Hidden state & Epigenetic marks, chromatin state & Regime vector $\mathbf{R}_t$ \\
+Environmental signal & Nutrient levels, temperature, pH & Evaluation signals $s_t^{(d)}$ \\
+State memory & Epigenetic inheritance & Exponential moving average \\
+Behavioral switch & Gene regulatory networks & State machine transitions \\
+Mutation type & Point mutation, transposon, recombination & Mutation families \\
+Cross-generation learning & Lamarckian-like epigenetic inheritance & Meta-policy memory \\
+Homeostasis & Feedback regulation (e.g., blood sugar) & Pressure thermostat \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Multi-Scale Adaptation}
+
+Biological organisms adapt at multiple timescales:
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Immediate} (seconds--minutes): Enzyme regulation, allosteric control. \emph{Tera analogue:} within-step mutation operator selection.
+  \item \textbf{Short-term} (hours--days): Gene expression changes, stress responses. \emph{Tera analogue:} pressure vector updates via EMA.
+  \item \textbf{Medium-term} (generations): Epigenetic inheritance, developmental plasticity. \emph{Tera analogue:} regime state transitions across multiple steps.
+  \item \textbf{Long-term} (many generations): Genetic evolution, speciation. \emph{Tera analogue:} meta-policy memory across runs.
+\end{enumerate}
+
+The Tera system captures this multi-scale structure: the pressure vector changes smoothly within a run (short-term), regime transitions represent qualitative shifts in strategy (medium-term), and meta-policy memory accumulates wisdom across runs (long-term).
+
+\begin{bioinsight}[The Waddington Landscape]
+Conrad Waddington's ``epigenetic landscape'' depicts cell fate as a ball rolling down a landscape of valleys and ridges. The valleys represent stable cell types (regimes), and the ridges represent barriers between them. Tera's regime state machine is a computational analogue: each regime mode is a valley (attractor state), and the transition rules define the ridges (barriers). The hysteresis parameter $h$ determines how deep the valleys are---higher hysteresis means deeper valleys and more stable regimes.
+\end{bioinsight}
+
+% -------------------------------------------------------------------------------
+\section{Pressure Landscape Visualization}
+\label{sec:pressure-landscape}
+% -------------------------------------------------------------------------------
+
+To understand how pressures evolve during a training run, it helps to visualize the pressure landscape as a time series.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[scale=0.9]
+  % Axes
+  \draw[-{Stealth}, thick] (0,0) -- (12,0) node[right] {Time step $t$};
+  \draw[-{Stealth}, thick] (0,0) -- (0,5.5) node[above] {Pressure};
+
+  % Y-axis labels
+  \foreach \y/\lab in {0/0, 1/0.2, 2/0.4, 3/0.6, 4/0.8, 5/1.0}{
+    \draw (0,\y) -- (-0.1,\y) node[left, font=\tiny] {\lab};
+  }
+
+  % X-axis labels
+  \foreach \x/\lab in {0/0, 2/2, 4/4, 6/6, 8/8, 10/10}{
+    \draw (\x,0) -- (\x,-0.1) node[below, font=\tiny] {\lab};
+  }
+
+  % Gap threshold line
+  \draw[dogmagray, dashed, thin] (0,3.5) -- (12,3.5) node[right, font=\tiny] {$\delta$ threshold};
+
+  % Exploration pressure (rises, then falls)
+  \draw[dogmablue, thick] (0,1.5) -- (1,2.0) -- (2,3.0) -- (3,4.0) -- (4,4.5)
+    -- (5,4.2) -- (6,3.5) -- (7,2.8) -- (8,2.0) -- (9,1.5) -- (10,1.2) -- (11,1.0);
+  \node[font=\tiny, text=dogmablue] at (4.5,5.0) {EXP};
+
+  % Coherence pressure (rises as exploration falls)
+  \draw[dogmateal, thick] (0,1.0) -- (1,1.2) -- (2,1.5) -- (3,2.0) -- (4,2.5)
+    -- (5,3.0) -- (6,3.5) -- (7,4.0) -- (8,3.8) -- (9,3.2) -- (10,2.5) -- (11,2.0);
+  \node[font=\tiny, text=dogmateal] at (7.5,4.5) {COH};
+
+  % Exactness pressure (stays moderate, rises late)
+  \draw[dogmared, thick] (0,1.0) -- (1,1.1) -- (2,1.3) -- (3,1.5) -- (4,1.8)
+    -- (5,2.0) -- (6,2.5) -- (7,2.8) -- (8,3.2) -- (9,3.8) -- (10,4.0) -- (11,3.5);
+  \node[font=\tiny, text=dogmared] at (10.5,4.5) {EXT};
+
+  % Regime annotations
+  \draw[dogmablue, thick, decorate, decoration={brace, amplitude=5pt}]
+    (2,-0.5) -- (5,-0.5) node[midway, below=6pt, font=\scriptsize, text=dogmablue] {EXP regime};
+  \draw[dogmateal, thick, decorate, decoration={brace, amplitude=5pt}]
+    (6,-0.5) -- (8,-0.5) node[midway, below=6pt, font=\scriptsize, text=dogmateal] {COH regime};
+  \draw[dogmared, thick, decorate, decoration={brace, amplitude=5pt}]
+    (9,-0.5) -- (11,-0.5) node[midway, below=6pt, font=\scriptsize, text=dogmared] {EXT regime};
+\end{tikzpicture}
+\caption{Pressure landscape over a training run showing three regime transitions. Initially, exploration pressure dominates (steps 2--5), driving the system to try new configurations. As exploration succeeds, coherence pressure rises (steps 6--8) to stabilize the new structures. Finally, exactness pressure dominates (steps 9--11) as the system refines precision. This sequence---explore, stabilize, refine---is a common pattern in DOGMA evolution.}
+\label{fig:pressure-landscape}
+\end{figure}
+
+% -------------------------------------------------------------------------------
+\section{Worked Example: Five Evolutionary Steps}
+\label{sec:tera-worked-example}
+% -------------------------------------------------------------------------------
+
+Let us walk through a complete example showing how the Tera system guides evolution over five steps. We use $\alpha = 0.2$, $\beta = 3$, $\delta = 0.15$, and initial regime state $\mathbf{R}_0 = (0.5, 0.5, 0.5, 0.5, 0.5, 0.5)$ (balanced).
+
+\subsection{Step 1: Discovery of a Grounding Problem}
+
+\textbf{Evaluation signals:} $\mathbf{s}_1 = (0.9, 0.3, 0.2, 0.4, 0.3, 0.3)$.
+
+The grounding signal is high (0.9), indicating the system is struggling with context fidelity.
+
+\textbf{Pressure update} (Eq.~\ref{eq:pressure-ema}):
+\[
+\mathbf{R}_1 = 0.8 \times (0.5, 0.5, 0.5, 0.5, 0.5, 0.5) + 0.2 \times (0.9, 0.3, 0.2, 0.4, 0.3, 0.3) = (0.58, 0.46, 0.44, 0.48, 0.46, 0.46).
+\]
+
+\textbf{Regime detection:} $\bar{p}_1 = 0.48$, $\max = 0.58$ (GND), gap $= 0.10 < 0.15$. Remains in \textsc{Balanced}.
+
+\textbf{Action:} All mutation families selected with roughly equal probability. The softmax distribution gives GND a slight edge ($\approx$20\% vs.\ 15--16\% for others).
+
+\subsection{Step 2: Grounding Problem Persists}
+
+\textbf{Evaluation signals:} $\mathbf{s}_2 = (0.95, 0.25, 0.2, 0.35, 0.2, 0.25)$.
+
+Grounding signal remains very high.
+
+\textbf{Pressure update:}
+\[
+\mathbf{R}_2 = 0.8 \times (0.58, 0.46, 0.44, 0.48, 0.46, 0.46) + 0.2 \times (0.95, 0.25, 0.2, 0.35, 0.2, 0.25) = (0.654, 0.418, 0.392, 0.454, 0.418, 0.418).
+\]
+
+\textbf{Regime detection:} $\bar{p}_2 = 0.459$, $\max = 0.654$ (GND), gap $= 0.195 > 0.15$. \textbf{Transition to \textsc{Grounding} regime!}
+
+\textbf{Action:} The \texttt{context\_grounding} family receives boosted selection weight (3.0 vs.\ 0.5--1.0 for others). The system applies context-strengthening mutations.
+
+\subsection{Step 3: Grounding Improves, Schema Problem Emerges}
+
+\textbf{Evaluation signals:} $\mathbf{s}_3 = (0.4, 0.3, 0.85, 0.3, 0.25, 0.3)$.
+
+Grounding improved (signal dropped to 0.4), but schema signal jumped to 0.85---the grounding mutations apparently disrupted output structure.
+
+\textbf{Pressure update:}
+\[
+\mathbf{R}_3 = 0.8 \times (0.654, 0.418, 0.392, 0.454, 0.418, 0.418) + 0.2 \times (0.4, 0.3, 0.85, 0.3, 0.25, 0.3) = (0.603, 0.394, 0.484, 0.423, 0.384, 0.394).
+\]
+
+\textbf{Regime detection:} $\bar{p}_3 = 0.447$, $\max = 0.603$ (GND), gap $= 0.156 > 0.15$. Remains in \textsc{Grounding} regime, but the gap is narrowing.
+
+\subsection{Step 4: Regime Transition to Schema}
+
+\textbf{Evaluation signals:} $\mathbf{s}_4 = (0.3, 0.35, 0.9, 0.3, 0.3, 0.35)$.
+
+Grounding has been mostly fixed (0.3), but schema problems persist (0.9).
+
+\textbf{Pressure update:}
+\[
+\mathbf{R}_4 = 0.8 \times (0.603, 0.394, 0.484, 0.423, 0.384, 0.394) + 0.2 \times (0.3, 0.35, 0.9, 0.3, 0.3, 0.35) = (0.542, 0.385, 0.567, 0.398, 0.367, 0.385).
+\]
+
+\textbf{Regime detection:} $\bar{p}_4 = 0.441$, $\max = 0.567$ (SCH), gap $= 0.126 < 0.15$. Gap is just below threshold---system remains in \textsc{Grounding} (with hysteresis).
+
+\subsection{Step 5: Schema Takes Over}
+
+\textbf{Evaluation signals:} $\mathbf{s}_5 = (0.2, 0.3, 0.95, 0.25, 0.2, 0.3)$.
+
+Grounding is fully resolved (0.2), schema is critical (0.95).
+
+\textbf{Pressure update:}
+\[
+\mathbf{R}_5 = 0.8 \times (0.542, 0.385, 0.567, 0.398, 0.367, 0.385) + 0.2 \times (0.2, 0.3, 0.95, 0.25, 0.2, 0.3) = (0.474, 0.368, 0.644, 0.368, 0.334, 0.368).
+\]
+
+\textbf{Regime detection:} $\bar{p}_5 = 0.426$, $\max = 0.644$ (SCH), gap $= 0.218 > 0.15$. \textbf{Transition to \textsc{Schema} regime!}
+
+\textbf{Action:} The \texttt{strict\_json} family now receives boosted selection weight, and the system focuses on repairing output structure.
+
+\begin{keyinsight}[Regime Cascades]
+This example illustrates a common pattern: fixing one problem can reveal or create another. The grounding mutations at step 2--3 improved context fidelity but disrupted output schema. The Tera system detected this and smoothly transitioned to address the new dominant weakness. This cascading behavior is a feature, not a bug---it reflects the reality that complex systems have interconnected failure modes.
+\end{keyinsight}
+
+\begin{table}[H]
+\centering
+\caption{Summary of the five-step worked example showing regime transitions.}
+\label{tab:worked-example-summary}
+\begin{tabularx}{\textwidth}{c L{2cm} c c Y}
+\toprule
+\textbf{Step} & \textbf{Regime} & \textbf{Max Press.} & \textbf{Gap} & \textbf{Key Event} \\
+\midrule
+1 & \textsc{Balanced} & GND: 0.58 & 0.10 & Grounding problem detected but below threshold \\
+2 & \textsc{Grounding} & GND: 0.654 & 0.195 & Gap exceeds $\delta$; grounding mutations activated \\
+3 & \textsc{Grounding} & GND: 0.603 & 0.156 & Grounding improving; schema emerging as issue \\
+4 & \textsc{Grounding} & SCH: 0.567 & 0.126 & Schema rising but gap below threshold \\
+5 & \textsc{Schema} & SCH: 0.644 & 0.218 & Schema mutations now dominant \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% -------------------------------------------------------------------------------
+\section{Extended Mutation Family Catalog}
+\label{sec:mutation-catalog}
+% -------------------------------------------------------------------------------
+
+Each mutation family contains operators of varying intensity. The following table catalogs the primary operators and their characteristics.
+
+\begin{table}[H]
+\centering
+\caption{Extended mutation operator catalog by family and intensity level.}
+\label{tab:mutation-catalog}
+\begin{tabularx}{\textwidth}{l l l Y}
+\toprule
+\textbf{Family} & \textbf{Intensity} & \textbf{Operator} & \textbf{Description} \\
+\midrule
+\multirow{3}{*}{\texttt{ctx\_gnd}} & Low & Bond strengthen & Increase weight of context-retrieval bonds \\
+& Medium & Path insert & Add new retrieval pathways between context and output \\
+& High & Anchor rebuild & Restructure context integration architecture \\
+\midrule
+\multirow{3}{*}{\texttt{exact\_ans}} & Low & Precision tune & Fine-adjust output distribution sharpness \\
+& Medium & Pattern graft & Insert pattern-matching base sequences \\
+& High & Answer rewrite & Rebuild answer-generation genomic region \\
+\midrule
+\multirow{3}{*}{\texttt{strict\_json}} & Low & Delimiter fix & Repair bracket/brace matching bonds \\
+& Medium & Schema insert & Add structural enforcement base sequences \\
+& High & Format rebuild & Complete restructuring of output formatting \\
+\midrule
+\multirow{3}{*}{\texttt{brevity}} & Low & Trim redundant & Remove obviously redundant base sequences \\
+& Medium & Compress region & Merge repetitive genomic regions \\
+& High & Pathway prune & Remove entire unnecessary processing pathways \\
+\midrule
+\multirow{3}{*}{\texttt{struct\_exp}} & Low & Local shuffle & Rearrange bases within a small region \\
+& Medium & Region insert & Add a novel base sequence from the archive \\
+& High & Major restructure & Large-scale rearrangement of genomic architecture \\
+\midrule
+\multirow{3}{*}{\texttt{bond\_rep}} & Low & Bond recalc & Recalculate bond energies for consistency \\
+& Medium & Strand sync & Resynchronize forward and reverse strands \\
+& High & Full repair & Complete structural integrity restoration \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% -------------------------------------------------------------------------------
+\section{The Tera Double-Helix Complex}
+\label{sec:double-helix-complex}
+% -------------------------------------------------------------------------------
+
+The regime state $\mathbf{R}_t$ is one component of a larger structure called the \textbf{Tera Double-Helix Complex}---the complete internal state of the Evolutor at time $t$.
+
+\begin{dogmadef}[Tera Double-Helix Complex]
+The full Evolutor state at time $t$ is the six-tuple:
+\begin{equation}
+X_t = \bigl(F_t,\; R_t,\; B_t,\; Q_t,\; H_t,\; C_t\bigr),
+\label{eq:tera-complex}
+\end{equation}
+where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $F_t \in \mathcal{G}$ is the \textbf{forward strand state}---the primary genomic sequence.
+  \item $R_t \in \mathcal{G}^*$ is the \textbf{reverse strand state}---a complementary representation that enables bidirectional processing and error detection.
+  \item $B_t \in \mathcal{B}^{n \times n}$ is the \textbf{typed bond field}---a sparse matrix of inter-base bonds with type annotations (hydrogen, covalent, stacking), encoding the secondary structure of the genome.
+  \item $Q_t \in \mathcal{T}$ is the \textbf{tetra structural complex}---a tetrahedral mesh over the genomic bases providing three-dimensional spatial organization (see Chapter~\ref{ch:helixhash}).
+  \item $H_t \in [0,1]^6$ is the \textbf{hidden latent regime state}---the Tera pressure vector $\mathbf{R}_t$ defined in Eq.~\eqref{eq:regime-vector}.
+  \item $C_t = (\mathcal{A}_t, \mathcal{L}_t)$ is the \textbf{archive and lineage context}---the HelixHash novelty archive $\mathcal{A}_t$ and the evolutionary lineage history $\mathcal{L}_t$.
+\end{itemize}
+\end{dogmadef}
+
+The double-helix metaphor is deliberate: the forward strand $F_t$ and reverse strand $R_t$ are complementary representations of the same underlying information, analogous to the Watson and Crick strands of biological DNA. The bond field $B_t$ records how these strands interact, while the tetra complex $Q_t$ provides the three-dimensional scaffold within which these interactions take place.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[scale=0.85]
+  % Double helix complex diagram
+  \def\boxw{3.2cm}
+  \def\boxh{1.2cm}
+
+  % Main components arranged vertically
+  \node[draw=dogmablue, fill=dogmalight, thick, rounded corners,
+    minimum width=\boxw, minimum height=\boxh, align=center, font=\small]
+    (fwd) at (0,4) {Forward Strand\\$F_t$};
+
+  \node[draw=dogmablue, fill=dogmalight, thick, rounded corners,
+    minimum width=\boxw, minimum height=\boxh, align=center, font=\small]
+    (rev) at (4,4) {Reverse Strand\\$R_t$};
+
+  \node[draw=dogmateal, fill=dogmamint, thick, rounded corners,
+    minimum width=\boxw, minimum height=\boxh, align=center, font=\small]
+    (bond) at (2,2) {Bond Field\\$B_t$};
+
+  \node[draw=dogmagold, fill=dogmawarm, thick, rounded corners,
+    minimum width=\boxw, minimum height=\boxh, align=center, font=\small]
+    (tetra) at (-2,0) {Tetra Complex\\$Q_t$};
+
+  \node[draw=dogmared, fill=dogmared!10, thick, rounded corners,
+    minimum width=\boxw, minimum height=\boxh, align=center, font=\small]
+    (regime) at (2,0) {Regime State\\$H_t$};
+
+  \node[draw=dogmagray, fill=dogmagray!10, thick, rounded corners,
+    minimum width=\boxw, minimum height=\boxh, align=center, font=\small]
+    (archive) at (6,0) {Archive/Lineage\\$C_t$};
+
+  % Connections
+  \draw[-{Stealth}, thick, dogmablue] (fwd) -- (bond);
+  \draw[-{Stealth}, thick, dogmablue] (rev) -- (bond);
+  \draw[{Stealth}-{Stealth}, thick, dogmablue, dashed] (fwd) -- (rev)
+    node[midway, above, font=\tiny] {complement};
+  \draw[-{Stealth}, thick, dogmateal] (bond) -- (tetra);
+  \draw[-{Stealth}, thick, dogmared] (regime) -- (fwd);
+  \draw[-{Stealth}, thick, dogmared] (regime) -- (rev);
+  \draw[-{Stealth}, thick, dogmagray] (archive) -- (regime);
+
+  % Surrounding box
+  \node[draw=dogmablue, very thick, rounded corners, dashed,
+    fit=(fwd)(rev)(bond)(tetra)(regime)(archive),
+    inner sep=12pt, label={[font=\small\bfseries, text=dogmablue]above:Tera Double-Helix Complex $X_t$}] {};
+\end{tikzpicture}
+\caption{The six components of the Tera Double-Helix Complex. The forward and reverse strands are complementary (dashed arrow). The bond field mediates their interaction. The regime state controls mutation strategy selection. The archive and lineage context provides historical information.}
+\label{fig:tera-complex}
+\end{figure}
+
+\begin{proposition}[State Completeness]
+The Tera Double-Helix Complex $X_t$ is a \emph{sufficient statistic} for the Evolutor's behavior: given $X_t$ and a context input $c_{t+1}$, the system's output and next state $X_{t+1}$ are fully determined (up to stochastic mutation choices). No external state is required.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Each component of $X_t$ contributes to a distinct aspect of the Evolutor's computation. The forward/reverse strands provide the genomic content for transcription. The bond field determines which regions interact during regulation. The tetra complex provides the spatial structure for local propagation. The regime state $H_t$ determines mutation strategy selection. The archive/lineage context provides novelty computation and fitness history. Since the six DOGMA stages (Chapter~\ref{ch:dogma-architecture}) depend only on these quantities and the incoming context, the state is complete.
+\end{proof}
+
+\subsection{Forward and Reverse Strand Dynamics}
+
+The forward and reverse strands evolve according to coupled dynamics:
+\begin{align}
+F_{t+1} &= \mu_{d^*}\bigl(F_t,\; c_{t+1}\bigr) + \eta_F(B_t, R_t), \label{eq:forward-update} \\
+R_{t+1} &= \text{Complement}\bigl(F_{t+1}\bigr) + \eta_R(B_t, F_{t+1}), \label{eq:reverse-update}
+\end{align}
+where $\mu_{d^*}$ is the mutation operator from the dominant regime family, $\text{Complement}(\cdot)$ computes the type-complementary strand, and $\eta_F, \eta_R$ are bond-mediated correction terms that enforce structural consistency. The correction terms act as a form of \emph{proofreading}---when the bond field indicates that a mutation has disrupted critical interactions, the correction terms partially restore them, analogous to DNA polymerase proofreading in biology.
+
+% -------------------------------------------------------------------------------
+\section{Toward Post-Transformer Architectures}
+\label{sec:post-transformer}
+% -------------------------------------------------------------------------------
+
+The Tera regime system, combined with the full Double-Helix Complex, suggests a radical architectural direction.
+
+\begin{keyinsight}[The Post-Transformer Thesis]
+Replace dense attention with regulated propagation over tetra-helix state space.
+\end{keyinsight}
+
+In a standard transformer, information flow between positions is mediated by dense attention: every position attends to every other position, computing $O(T^2)$ pairwise interactions. In DOGMA with the Tera regime, information flow is \emph{regulated}:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Spatial locality from the tetra complex.} Information propagates through the tetrahedral mesh $Q_t$, with each base interacting only with its local neighborhood. Long-range communication requires multiple propagation steps, analogous to signal transduction in gene regulatory networks (Chapter~\ref{ch:gene-regulation}).
+
+  \item \textbf{Selective activation from the regime state.} The regime vector $H_t$ determines which genomic regions are active, creating sparse activation patterns that reduce effective sequence length.
+
+  \item \textbf{Structural routing from the bond field.} The typed bond field $B_t$ provides learned ``wiring'' between distant regions, enabling long-range interactions without quadratic cost.
+\end{enumerate}
+
+The combined complexity is $O(T \cdot k \cdot d)$ per propagation step, where $k$ is the average neighborhood size in the tetra mesh---linear in sequence length $T$ rather than quadratic. This is not merely a computational optimization; it is a different \emph{computational paradigm}: one where structure determines interaction, rather than interaction being universal.
+
+\begin{implnote}[Comparison with State-Space Models]
+The regulated-propagation paradigm shares features with state-space models (SSMs) such as Mamba, which also achieve linear-time sequence processing. The key difference is that SSMs use a fixed state-transition structure, while DOGMA's propagation structure is \emph{evolved} and \emph{regime-dependent}. The tetra complex and bond field are not fixed matrices but dynamic, evolvable structures that change during training and even during inference. This gives DOGMA a form of \emph{architectural plasticity} absent from SSMs.
+\end{implnote}
+
+% -------------------------------------------------------------------------------
+\section{Exercises}
+\label{sec:ch9-exercises}
+% -------------------------------------------------------------------------------
+
+\begin{enumerate}[label=\textbf{9.\arabic*.}, leftmargin=2.5em]
+
+\item \textbf{[Conceptual]} In your own words, explain what a ``regime state'' is using an analogy from everyday life that was \emph{not} mentioned in this chapter. Your analogy should capture: (a) the idea of hidden state, (b) transitions between regimes, and (c) different behavior in different regimes.
+
+\item \textbf{[Fundamentals]} Consider a system with $\alpha = 0.2$ and initial pressure $p_0^{(\text{gnd})} = 0.5$. If the grounding evaluation signal is $s_t^{(\text{gnd})} = 0.9$ for all $t \geq 1$, compute $p_1^{(\text{gnd})}, p_2^{(\text{gnd})}, p_3^{(\text{gnd})}$ using Eq.~\eqref{eq:pressure-ema}. How many steps does it take for the pressure to reach $0.85$?
+
+\item \textbf{[Analysis]} Prove that the exponential moving average in Eq.~\eqref{eq:pressure-decay} assigns a total weight of $1 - (1-\alpha)^t$ to the most recent $t$ observations. What fraction of the total weight lies within the effective memory horizon $\tau_{\text{eff}} = 1/\alpha$?
+
+\item \textbf{[Computation]} Given the pressure vector $\mathbf{R} = (0.7, 0.4, 0.3, 0.5, 0.6, 0.35)$ and $\beta = 4$, compute the full mutation family selection distribution using Eq.~\eqref{eq:mutation-selection}. Which family has the highest selection probability? What is the entropy of the distribution?
+
+\item \textbf{[State Machine]} Draw the state machine transitions for a system that starts in \textsc{Balanced} and receives the following dominant pressure sequence: GND, GND, GND, SCH, SCH, (balanced), (balanced), EXP, EXP. Assume $\delta = 0.15$ and hysteresis $h = 2$. At each step, state the current regime mode and whether a transition occurs.
+
+\item \textbf{[Design]} Design a seventh pressure dimension that you believe is missing from the Tera regime state. Specify: (a) what it measures, (b) how it is computed from evaluation signals, (c) what mutation family it would drive, and (d) what biological process it is analogous to. Argue for or against its inclusion.
+
+\item \textbf{[Coding]} Implement the Tera pressure thermostat in Python. Your implementation should: (a) maintain a 6-dimensional pressure vector, (b) accept evaluation signals and update pressures via Eq.~\eqref{eq:pressure-ema}, (c) compute mutation family selection probabilities via Eq.~\eqref{eq:mutation-selection}, and (d) detect the dominant regime with a gap threshold $\delta = 0.1$. Test with a synthetic sequence of evaluation signals that transitions from a precision-dominant to an exploration-dominant regime.
+
+\item \textbf{[Theory]} Show that the pressure thermostat (Eq.~\eqref{eq:thermostat}) has a unique fixed point for any constant deficit vector $\boldsymbol{\delta}$. Analyze the convergence rate and show that it depends on $\alpha$ but not on the dimensionality of the pressure space.
+
+\item \textbf{[Biology]} The lac operon in \emph{E.~coli} can be modeled as a two-state regime system (glucose mode vs.\ lactose mode). Define this as a formal state machine in the style of Definition~\ref{sec:tera-state-machine}. What are the ``evaluation signals''? What are the ``mutation families'' (i.e., which genes are expressed in each regime)?
+
+\item \textbf{[Research]} Compare the Tera meta-policy memory (Eq.~\eqref{eq:meta-memory}) with the outer loop of Reptile. Both compute a form of averaged update across tasks. What are the theoretical advantages and disadvantages of operating in a 6-dimensional pressure space versus a high-dimensional parameter space? Under what conditions would the low-dimensional approach fail?
+
+\item \textbf{[Worked Example]} Extend the five-step worked example (Section~\ref{sec:tera-worked-example}) by five more steps. Invent evaluation signals that cause the system to enter \textsc{Crisis} mode at step 7 and recover to \textsc{Balanced} by step 10. Show all pressure calculations.
+
+\item \textbf{[Integration]} Explain how the Tera regime state interacts with the HelixHash novelty archive (Chapter~\ref{ch:helixhash}). Specifically: when the exploration pressure $p^{(\text{exp})}$ is high, how does the novelty archive influence which \texttt{structural\_explore} mutations are selected? How does the archive's novelty score feed back into the exploration pressure signal?
+
+\end{enumerate}
+
+% -------------------------------------------------------------------------------
+\section{Key Takeaways}
+% -------------------------------------------------------------------------------
+
+\keytakeaway{
+\begin{itemize}[leftmargin=1.5em]
+  \item A \textbf{regime state} is a hidden variable that determines which behavioral strategy a system should follow. It is inferred from noisy evaluation signals, not directly observed.
+  \item Single-objective optimization is insufficient for complex systems; biological organisms simultaneously optimize across many dimensions via dynamic regulatory networks.
+  \item The \textbf{Tera regime state} is a six-dimensional pressure vector $\mathbf{R}_t \in [0,1]^6$ capturing grounding, exactness, schema, efficiency, exploration, and coherence pressures.
+  \item \textbf{Exponential memory decay} (Eq.~\eqref{eq:pressure-ema}) gives recent evaluations more influence while preserving longer-term trends, with effective memory horizon $\tau_{\text{eff}} = 1/\alpha$.
+  \item Six \textbf{mutation families}---\texttt{context\_grounding}, \texttt{exact\_answer}, \texttt{strict\_json}, \texttt{brevity}, \texttt{structural\_explore}, \texttt{bond\_repair}---are adaptively selected via softmax over regime pressures.
+  \item The \textbf{pressure thermostat} creates a homeostatic negative feedback loop that automatically rebalances evolutionary effort across objectives. At equilibrium, pressure equals deficit.
+  \item The \textbf{Tera state machine} formalizes regime transitions with eight modes (Balanced + six single-pressure + Crisis), with hysteresis to prevent oscillation.
+  \item \textbf{Meta-policy memory} enables cross-run learning in a six-dimensional space---computationally trivial meta-learning of regulatory strategy via fitness-weighted averaging.
+  \item The full \textbf{Tera Double-Helix Complex} $X_t = (F_t, R_t, B_t, Q_t, H_t, C_t)$ is a sufficient statistic for Evolutor behavior.
+  \item Tera's design mirrors biological regulation at multiple timescales, from immediate enzyme control to long-term evolutionary adaptation.
+  \item Regulated propagation over tetra-helix state space is a candidate post-transformer architecture with linear-time complexity.
+\end{itemize}
+}
+
+\section*{Suggested Reading}
+\begin{itemize}[leftmargin=1.5em]
+  \item \citet{allis2016}: Epigenetics---the biological inspiration for Tera's hidden regulatory layer.
+  \item \citet{deb2002}: NSGA-II and multi-objective evolutionary algorithms, foundational to the Pareto perspective.
+  \item \citet{finn2017}: MAML---the gradient-based meta-learning algorithm compared with Tera's meta-policy memory.
+  \item \citet{gu2023mamba}: Mamba and state-space models, the closest existing architecture to DOGMA's regulated propagation.
+  \item Chapter~\ref{ch:dogma-architecture} of this book: the six-stage pipeline that Tera regulates.
+  \item Chapter~\ref{ch:evolutionary-training} of this book: the evolutionary training loop where Tera's mutation steering operates.
+\end{itemize}

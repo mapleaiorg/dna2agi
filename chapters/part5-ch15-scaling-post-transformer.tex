@@ -1,0 +1,706 @@
+% ═══════════════════════════════════════════════════════════════════════════════
+% Chapter 15: Scaling and Post-Transformer Architectures
+% Part V: Toward AGI
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\part{Toward AGI}
+
+\chapter{Scaling Laws and Post-Transformer Architectures}
+\label{ch:scaling-post-transformer}
+
+\chapterepigraph{There is no reason why intelligence should be proportional to model size. Efficiency is a form of intelligence.}{DOGMA Design Manifesto}
+
+\noindent
+The dominant paradigm in AI since 2020 has been simple: \emph{make the model bigger}. Scaling laws revealed smooth power-law relationships between model size, training compute, dataset size, and loss. These laws enabled precise predictions of model capability and drove the largest engineering projects in AI history---GPT-4, Gemini, Claude, and their successors consumed hundreds of millions of dollars in compute.
+
+But scaling alone cannot be the complete story. Quadratic attention costs, energy consumption, and the diminishing returns of brute-force scaling create pressure for \emph{architectural innovation}---new ways of organizing computation that achieve better capability per parameter. This chapter examines the scaling paradigm in detail, surveys the emerging post-transformer landscape (state space models, linear attention, mixture-of-experts), and situates DOGMA within this evolving ecosystem. We will see that DOGMA's biology-inspired structure offers a fundamentally different scaling axis: one that draws on the organizational principles that allowed biological genomes to scale from bacteria ($\sim$$10^6$ bases) to humans ($\sim$$3 \times 10^9$ bases) without quadratic complexity.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Neural Scaling Laws}
+\label{sec:scaling-laws}
+
+The empirical discovery of neural scaling laws transformed AI research from art into something closer to engineering. Before scaling laws, predicting the performance of a model at a given size was guesswork. After scaling laws, it became a calculation.
+
+\subsection{The Kaplan Scaling Laws}
+
+\citet{kaplan2020} established that cross-entropy loss $L$ on language modeling follows power-law scaling across three independent dimensions:
+
+\begin{equation}
+L(N) = \left(\frac{N_c}{N}\right)^{\alpha_N}, \quad L(D) = \left(\frac{D_c}{D}\right)^{\alpha_D}, \quad L(C) = \left(\frac{C_c}{C}\right)^{\alpha_C},
+\label{eq:scaling-laws}
+\end{equation}
+
+where the variables are defined as follows:
+\begin{itemize}[leftmargin=1.8em]
+  \item $N$ is the number of non-embedding parameters in the model.
+  \item $D$ is the number of training tokens (dataset size).
+  \item $C$ is the total compute budget measured in FLOPs.
+  \item $N_c$, $D_c$, $C_c$ are critical constants that depend on the architecture and data distribution.
+  \item $\alpha_N \approx 0.076$, $\alpha_D \approx 0.095$, $\alpha_C \approx 0.050$ are empirically determined exponents.
+\end{itemize}
+
+\begin{example}[Reading the Scaling Exponents]
+Consider the parameter scaling law $L(N) = (N_c / N)^{0.076}$. Suppose we double the model size from $N$ to $2N$. The new loss is:
+\[
+L(2N) = \left(\frac{N_c}{2N}\right)^{0.076} = \frac{1}{2^{0.076}} \cdot L(N) \approx 0.949 \cdot L(N).
+\]
+Doubling model size reduces loss by approximately 5.1\%. This seemingly modest improvement compounds: a $100\times$ increase in parameters yields $L(100N) \approx 0.71 \cdot L(N)$, a 29\% reduction. The power-law form means we never reach zero loss---each increment of capability costs exponentially more resources.
+\end{example}
+
+The key finding of \citet{kaplan2020} was that these power laws are \emph{smooth and predictable}. There are no sudden jumps or plateaus within an architecture family. This predictability enabled organizations to plan multi-hundred-million-dollar training runs with reasonable confidence in the outcome.
+
+\subsection{The Chinchilla Correction}
+
+\citet{hoffmann2022} revisited the Kaplan scaling laws and arrived at a different conclusion about the optimal allocation of a fixed compute budget $C$ between model size $N$ and dataset size $D$. Where Kaplan et al.\ recommended scaling parameters faster than data, the Chinchilla analysis found that \emph{model size and data should be scaled in roughly equal proportion}:
+
+\begin{equation}
+N_{\text{opt}} \propto C^{a}, \quad D_{\text{opt}} \propto C^{b}, \quad \text{with } a \approx b \approx 0.5.
+\label{eq:chinchilla}
+\end{equation}
+
+\begin{definition}[Compute-Optimal Training]
+A model is \emph{compute-optimal} if, for a given compute budget $C$, the model size $N$ and dataset size $D$ are chosen to minimize the loss $L(N, D)$ subject to the constraint $C \approx 6ND$ (the approximate FLOP cost of a single training epoch on $D$ tokens with an $N$-parameter model).
+\end{definition}
+
+The practical implication was dramatic. Many existing models---including the original Chinchilla paper's comparison target, Gopher (280B parameters)---were \emph{over-parameterized and under-trained}. A smaller model trained on more data (Chinchilla, 70B parameters) achieved the same or better performance at lower inference cost.
+
+\begin{table}[H]
+\centering
+\caption{Comparison of Kaplan vs.\ Chinchilla scaling recommendations.}
+\label{tab:kaplan-chinchilla}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.95\textwidth}{L{3.5cm} Y Y}
+\toprule
+\textbf{Aspect} & \textbf{Kaplan et al.\ (2020)} & \textbf{Chinchilla (2022)} \\
+\midrule
+Optimal $N$ scaling & $N \propto C^{0.73}$ & $N \propto C^{0.50}$ \\
+Optimal $D$ scaling & $D \propto C^{0.27}$ & $D \propto C^{0.50}$ \\
+Key insight & Scale parameters aggressively & Scale parameters and data equally \\
+Practical impact & Very large, undertrained models & Smaller, better-trained models \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Visualizing Scaling Laws}
+
+The power-law relationships of Equation~\ref{eq:scaling-laws} become linear on log-log axes, which is why log-log plots are the standard visualization for scaling behavior.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+  % Axes
+  \draw[-{Stealth[length=3mm]}, thick] (0,0) -- (10.5,0) node[right] {$\log N$ (parameters)};
+  \draw[-{Stealth[length=3mm]}, thick] (0,0) -- (0,7) node[above] {$\log L$ (loss)};
+
+  % Grid lines
+  \foreach \x in {1,2,...,10} {
+    \draw[gray!20] (\x,0) -- (\x,6.5);
+  }
+  \foreach \y in {1,2,...,6} {
+    \draw[gray!20] (0,\y) -- (10,\y);
+  }
+
+  % Transformer scaling line
+  \draw[dogmablue, very thick] (0.5,6) -- (9.5,3.2);
+  \node[dogmablue, font=\small\bfseries, rotate=-17] at (5,5.1) {Dense Transformer};
+
+  % Hypothetical DOGMA scaling line (better slope)
+  \draw[dogmared, very thick, dashed] (0.5,5.5) -- (9.5,2.0);
+  \node[dogmared, font=\small\bfseries, rotate=-21] at (5.5,3.6) {DOGMA (hypothesized)};
+
+  % Hypothetical SSM scaling line
+  \draw[dogmateal, very thick, dotted] (0.5,5.8) -- (9.5,2.8);
+  \node[dogmateal, font=\small\bfseries, rotate=-18] at (5.2,4.6) {State Space Model};
+
+  % Annotation
+  \draw[{Stealth[length=2mm]}-{Stealth[length=2mm]}, thick, dogmagold] (8.5,2.2) -- (8.5,3.0);
+  \node[dogmagold, font=\small, anchor=west] at (8.7,2.6) {Gap};
+
+  % Tick labels
+  \foreach \x/\lab in {1/$10^7$, 3/$10^8$, 5/$10^9$, 7/$10^{10}$, 9/$10^{11}$} {
+    \node[below, font=\scriptsize] at (\x,0) {\lab};
+  }
+  \foreach \y/\lab in {1/3.5, 2/3.0, 3/2.5, 4/2.0, 5/1.5, 6/1.0} {
+    \node[left, font=\scriptsize] at (0,\y) {\lab};
+  }
+\end{tikzpicture}
+\caption{Schematic log-log scaling plot. Dense transformers (solid blue) follow established power-law scaling. State space models (dotted teal) show competitive scaling with lower per-token cost. DOGMA (dashed red) is hypothesized to achieve better loss-per-parameter through biological structural priors. The gold arrow indicates the scaling efficiency gap at large model sizes.}
+\label{fig:scaling-plot}
+\end{figure}
+
+\subsection{Emergent Abilities}
+\label{sec:emergent-abilities}
+
+\citet{wei2022} documented \emph{emergent abilities}: capabilities that appear suddenly as models cross certain size thresholds. In-context learning, chain-of-thought reasoning, and instruction following all emerge at specific scale points---typically between $10^{10}$ and $10^{11}$ parameters.
+
+\begin{definition}[Emergent Ability]
+An ability is \emph{emergent} if it is not present in smaller models but appears in larger models. Formally, let $\mathcal{A}(N)$ denote the performance of a model of size $N$ on a specific task. The ability is emergent if $\mathcal{A}(N) \approx 0$ for $N < N^*$ and $\mathcal{A}(N) > \delta$ for $N > N^*$, where $N^*$ is the emergence threshold and $\delta$ is a meaningful performance level.
+\end{definition}
+
+Whether these abilities are truly discontinuous or merely appear so due to evaluation metrics remains debated \citep{schaeffer2023}. What is clear is that scale enables qualitatively different behaviors---and that architectural innovations (like DOGMA's structured genome) might enable similar capabilities at smaller scale by providing the structural scaffolding that dense models must discover from data alone.
+
+\begin{keyinsight}[Scaling Laws and Architecture]
+Scaling laws hold \emph{within an architecture family}. Changing the architecture changes the scaling exponents and constants---the slopes and intercepts of the log-log lines in Figure~\ref{fig:scaling-plot}. DOGMA's thesis is that biology-inspired structured architectures may achieve better scaling---higher capability per parameter---by introducing inductive biases that reduce the amount of structure the model must learn from data alone.
+\end{keyinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Limits of Dense Scaling}
+\label{sec:limits-scaling}
+
+Despite the impressive trajectory of scaling, several fundamental factors limit the indefinite scaling of dense transformer models. Understanding these limits is essential for appreciating why architectural innovation---not just bigger models---is the path forward.
+
+\subsection{Quadratic Attention Cost}
+
+Self-attention scales as $O(T^2)$ in sequence length $T$, where $T$ is the number of tokens in the input. For a single attention head with query, key, and value matrices $\mathbf{Q}, \mathbf{K}, \mathbf{V} \in \mathbb{R}^{T \times d}$:
+
+\begin{equation}
+\text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{softmax}\!\left(\frac{\mathbf{Q}\mathbf{K}^\top}{\sqrt{d}}\right)\mathbf{V},
+\label{eq:attention-cost}
+\end{equation}
+
+the matrix product $\mathbf{Q}\mathbf{K}^\top$ requires $O(T^2 d)$ operations and $O(T^2)$ memory. This creates a hard wall for long-context applications:
+
+\begin{example}[The Quadratic Wall]
+Consider processing a human genome ($T \approx 3 \times 10^9$ base pairs) with standard attention:
+\begin{itemize}[leftmargin=1.5em]
+  \item The attention matrix would have $(3 \times 10^9)^2 = 9 \times 10^{18}$ entries.
+  \item At 2 bytes per entry (FP16), this requires $\mathbf{18}$ \textbf{exabytes} of memory---more than the total global DRAM production in a year.
+  \item Even for a modest context window of $T = 10^6$ tokens, the attention matrix requires 2 terabytes.
+\end{itemize}
+The quadratic wall is not merely an inconvenience; it is a fundamental barrier to processing the long sequences that many real-world tasks demand.
+\end{example}
+
+\subsection{Energy and Environmental Cost}
+
+Training a frontier model consumes enormous energy. The training of GPT-4 is estimated to have required on the order of $10^{25}$ FLOPs, consuming megawatt-hours of electricity over several months. Each successive generation of frontier models approximately doubles or triples the energy requirement while yielding progressively smaller loss improvements (because the power-law exponent $\alpha_C \approx 0.05$ is small).
+
+\subsection{Data Exhaustion}
+
+High-quality text data is finite. Models are approaching the boundary of available internet text. \citet{villalobos2022} estimated that high-quality language data may be exhausted by 2026--2028 at current training scales. While synthetic data generation offers a partial solution, it introduces risks of model collapse---where models trained on their own outputs degrade in quality over generations.
+
+\subsection{Capability Plateaus}
+
+Certain capabilities have not shown the same smooth scaling as perplexity:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Robust reasoning:} Multi-step logical and mathematical reasoning improves with scale but remains fragile, especially on out-of-distribution problems.
+  \item \textbf{Planning:} Long-horizon planning and goal-directed behavior remain weak even in the largest models.
+  \item \textbf{Self-correction:} Models struggle to identify and correct their own errors without external scaffolding.
+  \item \textbf{Persistent learning:} No amount of scaling gives a transformer persistent memory across sessions.
+\end{itemize}
+
+These plateaus suggest that some capabilities require not just more computation but \emph{different computation}---architectural structures that provide the right inductive biases for reasoning, planning, and learning.
+
+\begin{remark}
+The limits of dense scaling do not imply that scaling is useless. Scaling has been the single most productive research strategy of the past five years. The point is that scaling alone is \emph{insufficient}---it must be complemented by architectural innovation to overcome the barriers enumerated above.
+\end{remark}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{State Space Models: From S4 to Mamba}
+\label{sec:ssm}
+
+State space models (SSMs) represent the most significant challenge to the transformer's dominance. They process sequences in $O(T)$ time by modeling sequence dependencies as linear dynamical systems, achieving competitive performance with transformers on many benchmarks while avoiding the quadratic attention bottleneck.
+
+\subsection{The Continuous-Time State Space}
+
+An SSM maps an input sequence $u(t) \in \mathbb{R}$ to an output sequence $y(t) \in \mathbb{R}$ through a latent state $x(t) \in \mathbb{R}^n$:
+
+\begin{equation}
+\dot{x}(t) = \mathbf{A} x(t) + \mathbf{B} u(t), \quad y(t) = \mathbf{C} x(t) + D u(t),
+\label{eq:ssm-continuous}
+\end{equation}
+
+where $\mathbf{A} \in \mathbb{R}^{n \times n}$ is the state transition matrix, $\mathbf{B} \in \mathbb{R}^{n \times 1}$ is the input matrix, $\mathbf{C} \in \mathbb{R}^{1 \times n}$ is the output matrix, and $D \in \mathbb{R}$ is a feedthrough scalar. To process discrete sequences (as in language modeling), we discretize using a step size $\Delta$:
+
+\begin{equation}
+\bar{\mathbf{A}} = \exp(\Delta \mathbf{A}), \quad \bar{\mathbf{B}} = (\Delta \mathbf{A})^{-1}(\bar{\mathbf{A}} - \mathbf{I}) \cdot \Delta \mathbf{B}.
+\label{eq:ssm-discrete}
+\end{equation}
+
+The discrete-time recurrence then becomes:
+
+\begin{equation}
+x_k = \bar{\mathbf{A}} x_{k-1} + \bar{\mathbf{B}} u_k, \quad y_k = \mathbf{C} x_k + D u_k.
+\label{eq:ssm-recurrence}
+\end{equation}
+
+\begin{keyinsight}[The SSM Dual View]
+The SSM admits two equivalent computational views:
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Recurrent view:} Process tokens one at a time using the recurrence in Equation~\ref{eq:ssm-recurrence}. Cost: $O(T \cdot n)$. Memory: $O(n)$. Ideal for inference.
+  \item \textbf{Convolutional view:} Unroll the recurrence into a convolution $y = K * u$ where $K_k = \mathbf{C} \bar{\mathbf{A}}^k \bar{\mathbf{B}}$. Compute via FFT in $O(T \log T)$. Ideal for training.
+\end{enumerate}
+This dual view gives SSMs both fast training (parallel convolution) and fast inference (sequential recurrence), a combination that transformers lack.
+\end{keyinsight}
+
+\subsection{S4: Structured State Spaces for Sequences}
+
+The Structured State Space for Sequences (S4) model \citep{gu2022s4} addressed a key challenge: how to parameterize the state matrix $\mathbf{A}$ so that the SSM can capture long-range dependencies. The solution was to initialize $\mathbf{A}$ using the \emph{HiPPO} (High-Order Polynomial Projection Operator) matrix, which is designed to optimally compress the history of the input sequence into the state vector:
+
+\begin{equation}
+A_{nk} = -\begin{cases}
+(2n+1)^{1/2}(2k+1)^{1/2} & \text{if } n > k, \\
+n+1 & \text{if } n = k, \\
+0 & \text{if } n < k.
+\end{cases}
+\label{eq:hippo}
+\end{equation}
+
+This initialization ensures that the state $x_k$ maintains a compressed polynomial approximation of the entire input history up to step $k$, enabling the model to capture dependencies across thousands of time steps.
+
+\subsection{Mamba: Selective State Spaces}
+\label{sec:mamba}
+
+Mamba \citep{gu2023mamba} introduced a crucial innovation: \emph{input-dependent} (selective) parameterization. In S4, the matrices $\mathbf{A}$, $\mathbf{B}$, $\mathbf{C}$ are fixed across all inputs. In Mamba, $\mathbf{B}$, $\mathbf{C}$, and the step size $\Delta$ are functions of the input:
+
+\begin{equation}
+\mathbf{B}_k = \text{Linear}_B(u_k), \quad \mathbf{C}_k = \text{Linear}_C(u_k), \quad \Delta_k = \text{softplus}\!\left(\text{Linear}_\Delta(u_k)\right).
+\label{eq:mamba-selective}
+\end{equation}
+
+This selectivity allows Mamba to perform content-based reasoning: the model can \emph{choose} which information to remember and which to forget at each time step, analogous to the gating mechanisms in LSTMs but operating through the SSM framework.
+
+\begin{example}[Step-by-Step Selective Scan]
+Consider processing three tokens $u_1, u_2, u_3$ through a Mamba layer with state dimension $n = 2$:
+
+\textbf{Step 1.} Compute input-dependent parameters for $u_1$:
+\[
+\mathbf{B}_1 = \text{Linear}_B(u_1), \quad \mathbf{C}_1 = \text{Linear}_C(u_1), \quad \Delta_1 = \text{softplus}(\text{Linear}_\Delta(u_1)).
+\]
+Discretize: $\bar{\mathbf{A}}_1 = \exp(\Delta_1 \mathbf{A})$, $\bar{\mathbf{B}}_1 = f(\Delta_1, \mathbf{A}) \cdot \mathbf{B}_1$.
+
+\textbf{Step 2.} Update state:
+\[
+x_1 = \bar{\mathbf{A}}_1 \cdot x_0 + \bar{\mathbf{B}}_1 \cdot u_1.
+\]
+Output: $y_1 = \mathbf{C}_1 \cdot x_1$.
+
+\textbf{Step 3.} Repeat for $u_2$: compute $\mathbf{B}_2, \mathbf{C}_2, \Delta_2$ from $u_2$; update $x_2 = \bar{\mathbf{A}}_2 x_1 + \bar{\mathbf{B}}_2 u_2$; output $y_2 = \mathbf{C}_2 x_2$.
+
+\textbf{Step 4.} Repeat for $u_3$: analogously.
+
+The critical feature is that $\Delta_k$ controls the ``forget rate.'' A large $\Delta_k$ means $\bar{\mathbf{A}}_k \approx \mathbf{0}$, effectively resetting the state (forgetting previous context). A small $\Delta_k$ means $\bar{\mathbf{A}}_k \approx \mathbf{I}$, preserving the state (remembering context). The model learns \emph{when} to forget through the input-dependent parameterization.
+\end{example}
+
+\subsection{The Hardware-Aware Scan Algorithm}
+
+A naive implementation of Mamba's selective scan is sequential (each state depends on the previous one), which would be slow on GPUs. Mamba solves this through a \emph{parallel scan} algorithm:
+
+\begin{proposition}[Parallel Scan Complexity]
+The selective scan over a sequence of length $T$ can be computed in $O(T \log T)$ work and $O(\log T)$ depth using the parallel scan (prefix sum) algorithm. On a GPU with $P$ processors, the wall-clock time is $O(T \log T / P + \log T)$.
+\end{proposition}
+
+The key insight is that the recurrence $x_k = \bar{\mathbf{A}}_k x_{k-1} + \bar{\mathbf{B}}_k u_k$ can be reformulated as an associative binary operation, enabling the use of Blelloch's parallel prefix sum algorithm. Mamba further optimizes this by keeping the state in GPU SRAM (fast on-chip memory) rather than HBM (slow off-chip memory), achieving up to $3\times$ speedup over standard implementations.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{RWKV and Linear Attention}
+\label{sec:rwkv}
+
+While Mamba replaces attention with state space recurrences, another family of models seeks to \emph{linearize} attention itself, retaining the transformer's conceptual framework while eliminating the quadratic cost.
+
+\subsection{The Quadratic Bottleneck in Attention}
+
+Standard attention computes:
+\begin{equation}
+\text{Attn}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{softmax}\!\left(\frac{\mathbf{Q}\mathbf{K}^\top}{\sqrt{d}}\right)\mathbf{V}.
+\end{equation}
+
+The $\text{softmax}$ over $\mathbf{Q}\mathbf{K}^\top \in \mathbb{R}^{T \times T}$ forces materialization of the full $T \times T$ matrix, giving $O(T^2)$ cost.
+
+\subsection{Linear Attention via Kernel Decomposition}
+
+Linear attention \citep{katharopoulos2020} replaces the softmax with a feature map $\phi$:
+\begin{equation}
+\text{LinAttn}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \frac{\phi(\mathbf{Q}) \left(\phi(\mathbf{K})^\top \mathbf{V}\right)}{\phi(\mathbf{Q}) \left(\phi(\mathbf{K})^\top \mathbf{1}\right)},
+\label{eq:linear-attention}
+\end{equation}
+
+where the key trick is the \emph{order of operations}: instead of computing $\phi(\mathbf{Q})\phi(\mathbf{K})^\top$ (which is $T \times T$), we first compute $\phi(\mathbf{K})^\top \mathbf{V}$ (which is $d \times d$), then multiply by $\phi(\mathbf{Q})$. This reduces the cost from $O(T^2 d)$ to $O(T d^2)$---linear in sequence length.
+
+\subsection{RWKV: Receptance Weighted Key Value}
+
+RWKV \citep{peng2023} combines ideas from transformers and RNNs into an architecture that can be trained like a transformer (parallelizable) but runs at inference like an RNN (constant memory per token). The core mechanism is the WKV (Weighted Key Value) operator:
+
+\begin{equation}
+\text{wkv}_t = \frac{\sum_{i=1}^{t-1} e^{-(t-1-i)w + k_i} v_i + e^{u + k_t} v_t}{\sum_{i=1}^{t-1} e^{-(t-1-i)w + k_i} + e^{u + k_t}},
+\label{eq:wkv}
+\end{equation}
+
+where $w$ is a learned channel-wise decay vector, $k_i$ and $v_i$ are key and value vectors at position $i$, and $u$ is a learned bonus for the current token.
+
+\begin{definition}[WKV Mechanism]
+The WKV operator computes a weighted average of all value vectors, where the weights decay exponentially with distance (controlled by $w$) and are modulated by key-query similarity (controlled by $k_i$). The parameter $u$ gives a ``bonus'' to the current token, ensuring that the model always has strong access to the present input.
+\end{definition}
+
+\begin{example}[WKV as Exponentially Decaying Attention]
+Consider a sequence of five tokens. At position $t=5$, the WKV operator assigns weights:
+\begin{align*}
+\text{Weight for } t=1 &\propto e^{-3w + k_1} \quad \text{(3 steps ago, strongly decayed)} \\
+\text{Weight for } t=2 &\propto e^{-2w + k_2} \quad \text{(2 steps ago)} \\
+\text{Weight for } t=3 &\propto e^{-w + k_3} \quad \text{(1 step ago)} \\
+\text{Weight for } t=4 &\propto e^{k_4} \quad \text{(previous token, no decay)} \\
+\text{Weight for } t=5 &\propto e^{u + k_5} \quad \text{(current token, with bonus)}
+\end{align*}
+The exponential decay creates a natural locality bias while the key values $k_i$ allow the model to ``boost'' attention to contextually important tokens regardless of distance.
+\end{example}
+
+The WKV operator can be computed recurrently in $O(1)$ per token using running accumulators, giving $O(T)$ total cost. During training, the parallel form uses chunkwise computation for GPU efficiency.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  block/.style={rectangle, draw, fill=dogmalight, minimum width=2cm, minimum height=0.8cm, font=\small},
+  arr/.style={-{Stealth[length=2.5mm]}, thick},
+  every node/.style={font=\small}
+]
+  % Input tokens
+  \node[block, fill=dogmamint] (inA) at (0, 0) {$u_1$};
+  \node[block, fill=dogmamint] (inB) at (2.5, 0) {$u_2$};
+  \node[block, fill=dogmamint] (inC) at (5, 0) {$u_3$};
+  \node[block, fill=dogmamint] (inD) at (7.5, 0) {$u_4$};
+
+  % State boxes
+  \node[block, fill=dogmawarm] (stateA) at (0, 1.8) {$x_k$};
+  \node[block, fill=dogmawarm] (stateB) at (2.5, 1.8) {$x_k$};
+  \node[block, fill=dogmawarm] (stateC) at (5, 1.8) {$x_k$};
+  \node[block, fill=dogmawarm] (stateD) at (7.5, 1.8) {$x_k$};
+
+  % Output
+  \node[block, fill=dogmalight] (outA) at (0, 3.6) {$y_1$};
+  \node[block, fill=dogmalight] (outB) at (2.5, 3.6) {$y_2$};
+  \node[block, fill=dogmalight] (outC) at (5, 3.6) {$y_3$};
+  \node[block, fill=dogmalight] (outD) at (7.5, 3.6) {$y_4$};
+
+  % Vertical arrows (input to state, state to output)
+  \foreach \n in {A, B, C, D} {
+    \draw[arr, dogmateal] (in\n) -- (state\n);
+    \draw[arr, dogmablue] (state\n) -- (out\n);
+  }
+
+  % Horizontal arrows (state to state)
+  \draw[arr, dogmared, very thick] (stateA) -- node[above, font=\scriptsize] {$\bar{\mathbf{A}}_2$} (stateB);
+  \draw[arr, dogmared, very thick] (stateB) -- node[above, font=\scriptsize] {$\bar{\mathbf{A}}_3$} (stateC);
+  \draw[arr, dogmared, very thick] (stateC) -- node[above, font=\scriptsize] {$\bar{\mathbf{A}}_4$} (stateD);
+
+  % Labels
+  \node[font=\scriptsize, dogmateal] at (-1.5, 0.9) {$\bar{\mathbf{B}}_k u_k$};
+  \node[font=\scriptsize, dogmablue] at (-1.5, 2.7) {$\mathbf{C}_k x_k$};
+\end{tikzpicture}
+\caption{The recurrent view of a state space model (or RWKV). Each input $u_k$ updates the hidden state $x_k$ through an input-dependent transition, and the output $y_k$ is a linear projection of the state. The state propagates left-to-right, giving $O(T)$ cost.}
+\label{fig:ssm-recurrent}
+\end{figure}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Mixture of Experts (MoE)}
+\label{sec:moe}
+
+Mixture of Experts (MoE) architectures attack the scaling problem from a different angle: instead of reducing the cost per token, they increase the total parameter count while keeping the \emph{active} parameter count constant. This is a form of \emph{conditional computation}---only a subset of the model is activated for any given input.
+
+\subsection{The MoE Architecture}
+
+In a standard MoE transformer, each feed-forward network (FFN) layer is replaced by $E$ parallel ``expert'' networks $\{f_1, \ldots, f_E\}$ and a gating (routing) function $G$:
+
+\begin{equation}
+\text{MoE}(x) = \sum_{i=1}^{E} G(x)_i \cdot f_i(x), \quad G(x) = \text{TopK}\!\left(\text{softmax}(W_g \cdot x), k\right),
+\label{eq:moe}
+\end{equation}
+
+where $\text{TopK}$ selects the $k$ experts with the highest gating scores and zeros out the rest. Typically $k = 1$ or $k = 2$, so only 1--2 of $E$ experts are active per token.
+
+\begin{definition}[Sparse Routing]
+\emph{Sparse routing} refers to the MoE gating mechanism where each input token is processed by only $k \ll E$ experts. The active compute per token is $O(k \cdot d_{\text{expert}})$ rather than $O(E \cdot d_{\text{expert}})$, enabling models with very large total parameter counts (e.g., 1.8 trillion for Mixtral $8 \times 7$B) to have tractable inference costs.
+\end{definition}
+
+\subsection{Expert Parallelism and Load Balancing}
+
+A key engineering challenge in MoE is \emph{load balancing}: ensuring that tokens are distributed roughly evenly across experts. Without load balancing, popular experts become bottlenecks while unpopular experts waste compute.
+
+The standard approach is to add an auxiliary loss that encourages balanced routing:
+\begin{equation}
+\mathcal{L}_{\text{balance}} = \alpha \cdot E \cdot \sum_{i=1}^{E} f_i \cdot P_i,
+\label{eq:load-balance}
+\end{equation}
+where $f_i$ is the fraction of tokens routed to expert $i$, $P_i$ is the mean gating probability for expert $i$, and $\alpha$ is a balancing coefficient. Minimizing $\mathcal{L}_{\text{balance}}$ pushes toward uniform routing ($f_i = P_i = 1/E$ for all $i$).
+
+\subsection{Expert Specialization}
+
+Despite the pressure toward balanced routing, experts tend to \emph{specialize}: some experts handle mathematical reasoning, others handle code, others handle natural language generation. This emergent specialization is reminiscent of cell differentiation in biology---a connection that DOGMA exploits architecturally.
+
+\begin{bioinsight}[MoE and Cell Differentiation]
+In biology, all cells contain the same genome but express different genes through regulatory mechanisms, producing neurons, muscle cells, and immune cells from the same genetic material. MoE achieves a similar effect: all experts share the same architecture but develop different ``specializations'' through training. The difference is that biological differentiation is driven by a rich regulatory network operating on a structured genome, while MoE specialization emerges from a simple gating function operating on a flat token representation. DOGMA's regulation stage provides the biological level of control over specialization.
+\end{bioinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{How DOGMA Scales}
+\label{sec:scaling-dogma}
+
+Having surveyed the post-transformer landscape, we now analyze DOGMA's scaling properties and argue that its biology-inspired structure provides a fundamentally different---and potentially superior---scaling paradigm.
+
+\subsection{The Four Scaling Axes of DOGMA}
+
+Dense transformers scale along essentially one axis: model size (number of parameters). DOGMA provides four distinct scaling axes, each inspired by how biological genomes scale:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Parameter scaling (Genome Size).} Like all architectures, DOGMA can scale by adding more genomic bases, increasing embedding dimension, or deepening the pipeline. This is analogous to genome size increase through DNA duplication.
+
+  \item \textbf{Structural scaling (Genomic Organization).} DOGMA can scale by adding new genomic \emph{regions}, new region types, or deeper regulatory hierarchies---without simply adding parameters uniformly. This is analogous to how biological genomes scale through gene duplication and neofunctionalization: new genes arise by copying existing ones, then diverge to acquire new functions.
+
+  \item \textbf{Regulatory scaling (Expression Complexity).} The regulation stage can increase in complexity independently of the genome size: more regulatory elements, more complex regulatory logic, deeper regulatory cascades. This mirrors the observation that the number of regulatory genes scales faster than the total gene count as organisms become more complex.
+
+  \item \textbf{Evolutionary scaling (Meta-Learning).} The meta-policy memory enables cumulative improvement across training runs. Each generation of evolved genomes starts from a better population, potentially yielding super-linear improvement curves across evolutionary cycles.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  axis/.style={very thick, -{Stealth[length=3mm]}},
+  label/.style={font=\small\bfseries},
+  desc/.style={font=\scriptsize, text width=3cm, align=center}
+]
+  % Central node
+  \node[circle, draw, fill=dogmawarm, minimum size=1.2cm, font=\small\bfseries] (center) at (0,0) {DOGMA};
+
+  % Four axes
+  \draw[axis, dogmablue] (center) -- ++(3,2) node[label, anchor=south west] {Parameter};
+  \node[desc, dogmablue] at (4.2,1.2) {More bases, higher $d$};
+
+  \draw[axis, dogmateal] (center) -- ++(3,-2) node[label, anchor=north west] {Structural};
+  \node[desc, dogmateal] at (4.2,-1.2) {New regions, hierarchies};
+
+  \draw[axis, dogmared] (center) -- ++(-3,2) node[label, anchor=south east] {Regulatory};
+  \node[desc, dogmared] at (-4.2,1.2) {Complex regulation};
+
+  \draw[axis, dogmagold] (center) -- ++(-3,-2) node[label, anchor=north east] {Evolutionary};
+  \node[desc, dogmagold] at (-4.2,-1.2) {Meta-learning, cumulative};
+
+  % Contrast with transformer
+  \node[rectangle, draw, dashed, fill=gray!10, minimum width=2cm, minimum height=0.6cm, font=\small] at (0,-4) {Transformer: 1 axis (parameter count)};
+\end{tikzpicture}
+\caption{DOGMA's four scaling axes compared to the transformer's single axis. Each DOGMA axis corresponds to a biological scaling mechanism.}
+\label{fig:four-axes}
+\end{figure}
+
+\subsection{Sample Efficiency Through Biological Priors}
+
+Biological inductive biases (typed bases, regulatory sparsity, tetrahedral locality) reduce the amount of data needed to learn structural relationships. A dense transformer must discover from data alone that certain parameters should behave as ``control signals'' and others as ``archival storage.'' DOGMA encodes these distinctions architecturally through the four base types (\textsf{A}, \textsf{T}, \textsf{C}, \textsf{G}).
+
+\begin{proposition}[Sample Efficiency Hypothesis]
+Let $L_{\text{DOGMA}}(D)$ and $L_{\text{Transformer}}(D)$ denote the loss achieved by DOGMA and a dense transformer, respectively, after training on $D$ tokens with the same compute budget. If DOGMA's structural priors correctly capture regularities present in the data, then:
+\begin{equation}
+L_{\text{DOGMA}}(D) \leq L_{\text{Transformer}}(\beta D) \quad \text{for some } \beta > 1,
+\end{equation}
+meaning DOGMA achieves comparable loss with $1/\beta$ of the data. The constant $\beta$ depends on how well the structural priors match the data distribution.
+\end{proposition}
+
+\subsection{Why Four-Path Diversity Helps Scaling}
+
+DOGMA's four base types create four parallel processing pathways through the architecture. Each type specializes in a different computational role:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.95\textwidth}{l l Y}
+\toprule
+\textbf{Base Type} & \textbf{Role} & \textbf{Scaling Benefit} \\
+\midrule
+\textsf{A} (Archival) & Long-term knowledge storage & Scales knowledge capacity without increasing active compute \\
+\textsf{T} (Transient) & Working memory & Scales context processing independently of storage \\
+\textsf{C} (Control) & Regulatory signals & Scales expression complexity without increasing parameters \\
+\textsf{G} (Generative) & Output synthesis & Scales generation quality independently of knowledge \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+This four-path diversity means that scaling one capability (e.g., knowledge storage) does not require scaling all capabilities proportionally, unlike a dense transformer where all parameters participate in every computation.
+
+\subsection{Complexity Analysis}
+
+DOGMA's computational cost per layer for a sequence of length $T$ is:
+
+\begin{equation}
+C_{\text{DOGMA}}(T) = O(T \cdot k \cdot d),
+\label{eq:dogma-complexity}
+\end{equation}
+
+where $k$ is the average number of active neighbors in the tetrahedral mesh (typically 4--8) and $d$ is the embedding dimension. For global information propagation across the sequence, $O(T^{1/3})$ propagation steps suffice due to the volumetric packing of the tetrahedral mesh, giving total cost:
+
+\begin{equation}
+C_{\text{DOGMA}}^{\text{total}}(T) = O(T^{4/3} \cdot k \cdot d).
+\end{equation}
+
+Compare this with the transformer and SSM costs:
+
+\begin{table}[H]
+\centering
+\caption{Asymptotic complexity comparison across architectures.}
+\label{tab:complexity}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.95\textwidth}{L{3.5cm} C{3cm} C{2.5cm} Y}
+\toprule
+\textbf{Architecture} & \textbf{Per-Layer Cost} & \textbf{Layers for Global} & \textbf{Total Cost} \\
+\midrule
+Dense Transformer & $O(T^2 d)$ & $O(1)$ & $O(T^2 d)$ \\
+Mamba / S4 & $O(T n)$ & $O(1)$ & $O(T n)$ \\
+Linear Attention & $O(T d^2)$ & $O(1)$ & $O(T d^2)$ \\
+RWKV & $O(T d)$ & $O(1)$ & $O(T d)$ \\
+\textbf{DOGMA} & $O(T k d)$ & $O(T^{1/3})$ & $O(T^{4/3} k d)$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{remark}
+DOGMA's $O(T^{4/3})$ scaling is worse than the $O(T)$ of Mamba or RWKV in the asymptotic limit. However, the constant factors and the benefits of structured state may compensate at practical sequence lengths. Furthermore, the $T^{1/3}$ propagation depth is a worst-case bound for unstructured genomes; well-organized genomes with hierarchical regulation may achieve global information flow in $O(\log T)$ depth using skip connections analogous to chromatin looping in biology.
+\end{remark}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Hybrid Architectures}
+\label{sec:hybrid}
+
+The most promising direction in post-transformer research may not be any single alternative but \emph{hybrid architectures} that combine the strengths of multiple approaches.
+
+\subsection{Attention + SSM Hybrids}
+
+Several recent architectures interleave attention layers with SSM layers:
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Jamba} uses a 1:7 ratio of attention to Mamba layers, providing the ``needle-in-a-haystack'' precision of attention at critical points while using Mamba's efficiency for the bulk of processing.
+  \item \textbf{Zamba} places attention layers at regular intervals in a Mamba backbone, using shared attention parameters across positions to minimize overhead.
+  \item \textbf{Griffin} combines gated linear recurrences with local attention windows, achieving strong performance on long-context tasks.
+\end{itemize}
+
+The design principle is consistent: use attention sparingly for tasks that genuinely require global pairwise comparison (retrieval, precise copying), and use linear-cost methods for everything else.
+
+\subsection{Attention + MoE Hybrids}
+
+Combining MoE with attention yields models like Mixtral and DeepSeek-V2, which achieve large effective parameter counts with tractable compute. The MoE component provides capacity scaling while attention provides the computational backbone.
+
+\subsection{Where DOGMA Fits in the Hybrid Landscape}
+
+DOGMA can be viewed as a hybrid architecture that combines:
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Structured state} (from SSMs): The genomic base store is a persistent structured state that evolves over time.
+  \item \textbf{Conditional computation} (from MoE): The regulation stage selectively activates genomic regions, creating sparse, input-dependent computation paths.
+  \item \textbf{Local interaction with global propagation} (from graph neural networks): The tetrahedral mesh provides local connectivity with hierarchical global information flow.
+  \item \textbf{Evolutionary search} (unique to DOGMA): The ability to modify the architecture itself through mutation and selection.
+\end{itemize}
+
+\begin{dogmadef}[DOGMA as a Natural Hybrid]
+DOGMA unifies the key innovations of the post-transformer landscape---structured state, conditional computation, and hierarchical processing---within a single biologically principled framework. Where other hybrids combine components through engineering decisions (``put attention every 7th layer''), DOGMA's hybrid structure emerges from the biological design pattern of genomic organization, where structured state, selective expression, and evolutionary modification are inherently integrated.
+\end{dogmadef}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Comprehensive Architecture Comparison}
+\label{sec:arch-comparison}
+
+Table~\ref{tab:arch-comparison} provides a detailed comparison of the architectures surveyed in this chapter.
+
+\begin{table}[H]
+\centering
+\caption{Comprehensive comparison of transformer, post-transformer, and DOGMA architectures.}
+\label{tab:arch-comparison}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{L{2.4cm} C{1.6cm} C{1.6cm} C{1.6cm} C{1.6cm} Y}
+\toprule
+\textbf{Property} & \textbf{Transformer} & \textbf{Mamba} & \textbf{RWKV} & \textbf{MoE} & \textbf{DOGMA} \\
+\midrule
+Sequence cost & $O(T^2)$ & $O(T)$ & $O(T)$ & $O(T^2/k)$ & $O(T^{4/3})$ \\
+Structured state & No & Yes (linear) & Yes (linear) & No & Yes (genomic) \\
+Evolvable & No & No & No & No & Yes \\
+Conditional comp. & No & Selective & Decay-gated & Expert routing & Regulation \\
+Long-range & Global & Via state & Via decay & Global & Hierarchical \\
+Interpretable & Attention maps & Limited & Limited & Expert routing & Genome audit \\
+Inference mem. & $O(T)$ & $O(n)$ & $O(d)$ & $O(T)$ & $O(|\mathcal{G}|)$ \\
+Bio-inspired & No & Partially & No & Partially & Fully \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{keyinsight}[No Free Lunch, But Better Trade-offs]
+No architecture dominates on all dimensions. Transformers provide unmatched global interaction but at quadratic cost. SSMs achieve linear cost but sacrifice direct global pairwise comparison. MoE scales parameters efficiently but adds routing complexity. DOGMA's contribution is a \emph{different set of trade-offs}: it accepts higher asymptotic cost than SSMs in exchange for structured, interpretable, evolvable state---properties that may matter more than raw token throughput on the path to general intelligence.
+\end{keyinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Worked Example: Comparing Architectures on a Long Sequence}
+\label{sec:scaling-worked-example}
+
+\begin{example}[Processing a 100K-Token Document]
+Suppose we want to process a scientific paper of $T = 100{,}000$ tokens. Let $d = 1024$ (embedding dimension), $n = 64$ (SSM state dimension), $k = 6$ (DOGMA mesh degree), $E = 8$ experts with top-2 routing.
+
+\textbf{Dense Transformer (per layer):}
+\[
+C_{\text{Trans}} = T^2 \cdot d = (10^5)^2 \times 1024 = 1.024 \times 10^{13} \text{ FLOPs}
+\]
+
+\textbf{Mamba (per layer):}
+\[
+C_{\text{Mamba}} = T \cdot n \cdot d = 10^5 \times 64 \times 1024 = 6.55 \times 10^9 \text{ FLOPs}
+\]
+
+\textbf{RWKV (per layer):}
+\[
+C_{\text{RWKV}} = T \cdot d^2 = 10^5 \times 1024^2 = 1.05 \times 10^{11} \text{ FLOPs}
+\]
+
+\textbf{MoE Transformer (per layer, top-2 of 8):}
+\[
+C_{\text{MoE}} = T^2 \cdot d + T \cdot 2 \cdot d_{\text{expert}} \approx 1.024 \times 10^{13} \text{ FLOPs (attention dominates)}
+\]
+
+\textbf{DOGMA (total, $T^{1/3} \approx 46$ layers):}
+\[
+C_{\text{DOGMA}} = T^{4/3} \cdot k \cdot d = (10^5)^{4/3} \times 6 \times 1024 \approx 2.9 \times 10^{10} \text{ FLOPs}
+\]
+
+DOGMA is approximately $350\times$ cheaper than a dense transformer and comparable to Mamba for this sequence length.
+\end{example}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Exercises}
+\label{sec:ch15-exercises}
+
+\begin{enumerate}[label=\textbf{15.\arabic*.}, leftmargin=2.5em]
+\item \textbf{[Computation]} Using Equation~\ref{eq:scaling-laws}, calculate how much compute is needed to halve the loss from a baseline. How does this compare across the three scaling dimensions ($N$, $D$, $C$)? Show your work.
+
+\item \textbf{[Analysis]} The Chinchilla scaling law (Equation~\ref{eq:chinchilla}) suggests $N_{\text{opt}} \propto C^{0.5}$. A lab has a budget of $10^{23}$ FLOPs. Using the approximation $C \approx 6ND$, compute the optimal model size and dataset size. If the lab doubles its budget, how should it allocate the additional compute?
+
+\item \textbf{[Design]} Propose three ways to ``scale'' a DOGMA architecture without simply increasing the parameter count of existing modules. For each, explain the biological analogue and predict how it would affect the scaling exponent.
+
+\item \textbf{[Step-by-Step]} Trace through Mamba's selective scan for a four-token sequence. Assume state dimension $n=2$ and provide explicit numerical values for $\mathbf{A}$, $\bar{\mathbf{B}}_k$, and $\mathbf{C}_k$. Show the state evolution $x_0 \to x_1 \to x_2 \to x_3 \to x_4$ and final outputs $y_1, \ldots, y_4$.
+
+\item \textbf{[Conceptual]} Compare MoE routing with DOGMA regulation. Both achieve conditional computation. What structural advantages does DOGMA's typed genomic organization provide over MoE's flat expert selection? When might MoE's simplicity be preferable?
+
+\item \textbf{[Research]} Read \citet{gu2023mamba}. How does Mamba's selective state space mechanism compare to DOGMA's regulation stage? Both achieve input-dependent computation---compare their mechanisms, inductive biases, and failure modes.
+
+\item \textbf{[Theory]} If DOGMA's TetraMemory achieves $O(T \cdot k)$ cost per layer and requires $O(T^{1/3})$ layers for global information flow, what is the total cost for processing a sequence of length $T$? Compare this with a transformer's $O(T^2 \cdot L)$ for $L$ layers. At what sequence length $T^*$ does DOGMA become cheaper than a 32-layer transformer?
+
+\item \textbf{[Coding]} Implement a minimal SSM layer in Python using PyTorch. Your implementation should support both the recurrent mode (sequential, $O(T \cdot n)$) and the convolutional mode (parallel, $O(T \log T)$ via FFT). Test on a synthetic sequence and verify that both modes produce the same output.
+
+\item \textbf{[Discussion]} The hybrid architecture trend (Section~\ref{sec:hybrid}) suggests that the future may not belong to any single architecture but to combinations. Design a hybrid that combines DOGMA's genomic regulation with Mamba's selective scan. Specify which stages use which mechanism and justify your design.
+
+\item \textbf{[Advanced]} Design an experiment to test the DOGMA scaling hypothesis: that structured architectures achieve better loss-per-parameter than dense transformers. Specify the model sizes (at least four sizes spanning two orders of magnitude), datasets, training procedures, and metrics you would use. Discuss potential confounds and how you would control for them.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Key Takeaways}
+
+\keytakeaway{
+\begin{itemize}[leftmargin=1.5em]
+  \item Neural scaling laws (Kaplan, Chinchilla) reveal power-law relationships between model size, data, compute, and loss. These laws hold within an architecture family---changing the architecture changes the scaling exponents.
+  \item Dense transformer scaling faces five fundamental limits: quadratic attention cost, energy consumption, data exhaustion, diminishing returns, and capability plateaus in reasoning, planning, and persistent learning.
+  \item State space models (S4, Mamba) achieve $O(T)$ sequence processing by modeling dependencies as linear dynamical systems with input-dependent (selective) parameterization. The dual recurrent/convolutional view enables both fast inference and fast training.
+  \item RWKV and linear attention linearize the attention mechanism, replacing the $T \times T$ attention matrix with $O(T d^2)$ or $O(Td)$ computation through kernel decomposition or exponentially decaying recurrence.
+  \item Mixture of Experts (MoE) scales total parameters while keeping active compute constant through sparse routing, achieving conditional computation analogous to (but less structured than) DOGMA's regulation.
+  \item DOGMA provides four scaling axes---parameter, structural, regulatory, and evolutionary---compared to the transformer's single axis of parameter count. The four base types create parallel processing pathways that can be scaled independently.
+  \item Hybrid architectures that combine attention, SSMs, MoE, and structured state are the most promising direction. DOGMA can be understood as a biologically principled hybrid that unifies structured state, conditional computation, and evolutionary self-modification.
+\end{itemize}
+}
+
+\section*{Suggested Reading}
+\begin{itemize}[leftmargin=1.5em]
+  \item \citet{kaplan2020}: Neural scaling laws---the foundational empirical study.
+  \item \citet{hoffmann2022}: Training compute-optimal large language models (Chinchilla).
+  \item \citet{wei2022}: Emergent abilities of large language models.
+  \item \citet{gu2022s4}: Efficiently modeling long sequences with structured state spaces.
+  \item \citet{gu2023mamba}: Mamba---selective state spaces with linear-time sequence modeling.
+  \item \citet{peng2023}: RWKV---reinventing RNNs for the transformer era.
+  \item \citet{katharopoulos2020}: Transformers are RNNs---fast autoregressive transformers with linear attention.
+  \item \citet{poli2023hyena}: Hyena---long convolution architectures.
+\end{itemize}

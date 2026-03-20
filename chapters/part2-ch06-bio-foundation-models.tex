@@ -1,0 +1,909 @@
+% ═══════════════════════════════════════════════════════════════════════════════
+% Chapter 6: Biological Foundation Models (v1.1 — expanded for undergraduates)
+% Part II: The Intelligence Stack
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\chapter{Biological Foundation Models}
+\label{ch:bio-foundation-models}
+
+\chapterepigraph{Biology is the most powerful technology ever created. DNA is software, protein is hardware, and cells are factories.}{Adapted from Arvind Gupta}
+
+\noindent
+In the previous chapters we learned how neural networks work (Chapter~\ref{ch:ml-foundations}) and how transformers power large language models (Chapter~\ref{ch:transformers-llms}). Those tools were built for human language---English sentences, code, and web text. But in the last five years, researchers have taken the \emph{same ideas} and pointed them at biology: at protein sequences, DNA sequences, and gene expression data. The results have been nothing short of revolutionary.
+
+Protein language models now predict how a chain of amino acids will fold into a three-dimensional shape. Diffusion models design entirely new proteins that have never existed in nature. DNA foundation models read hundreds of thousands of nucleotide letters and predict which genes will be turned on or off in a given cell type. These are not incremental improvements---they represent a qualitative shift in our ability to understand and engineer living systems.
+
+This chapter is your guided tour through the landscape of biological foundation models. We will start from first principles: what exactly is a ``foundation model,'' and why does the concept matter? Then we will walk through the major models one by one---AlphaFold, ESM-2, DNABERT, Nucleotide Transformer, Evo, and Enformer---explaining each at a level of detail that lets you understand \emph{how} they work, not just \emph{what} they do. Finally, we will see how DOGMA synthesizes lessons from all of these models into a unified architecture that goes beyond any single one.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{What Is a Foundation Model?}
+\label{sec:foundation-models-intro}
+
+Before we dive into specific biological models, let us be precise about what a \textbf{foundation model} is, because the term is used frequently but not always carefully.
+
+\subsection{Definition and Core Idea}
+
+A foundation model is a large model trained on broad, general-purpose data using self-supervised learning, and then \emph{adapted} (fine-tuned) for many different downstream tasks. The term was coined by the Stanford HAI group in 2021 to capture a specific pattern that had emerged across AI:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Pre-train} on a massive, unlabeled dataset using a self-supervised objective (e.g., predict masked tokens, predict the next word).
+  \item \textbf{Transfer} the learned representations to specific tasks by fine-tuning on smaller labeled datasets or by prompting.
+\end{enumerate}
+
+The key insight is that step~1 produces representations that are \emph{general}: they capture the statistical structure of the domain so thoroughly that they are useful for tasks the model was never explicitly trained on.
+
+\begin{keyinsight}[The Foundation Model Paradigm]
+A foundation model invests massive computation upfront to learn general-purpose representations, then amortizes that cost across many downstream tasks. This is economical because the cost of pre-training is paid once, while the benefits are reaped repeatedly. GPT-4 is a foundation model for language. AlphaFold is a foundation model for protein structure. ESM-2 is a foundation model for protein sequences.
+\end{keyinsight}
+
+\subsection{An Analogy: The Medical Student}
+
+If you find the concept abstract, consider this analogy. A medical student spends four years studying anatomy, biochemistry, physiology, pharmacology, and pathology. During those four years, the student is not training for any \emph{specific} patient. Instead, the student is building a broad foundation of knowledge about how the human body works. This is \textbf{pre-training}.
+
+After medical school, the student enters a residency in, say, cardiology. During residency, the student applies their broad foundation to the specific domain of heart disease, refining their skills on cardiac patients. This is \textbf{fine-tuning}.
+
+The foundation---four years of general medical education---makes the residency far more efficient than it would be if the student had tried to learn cardiology from scratch. Moreover, the same foundation supports residencies in \emph{any} specialty: neurology, oncology, surgery. One pre-training phase, many downstream specializations.
+
+Foundation models work the same way. ESM-2 ``studies'' millions of protein sequences (pre-training), learning general patterns about amino acid co-occurrence, conservation, and structure. Then it can be fine-tuned for specific tasks: predicting whether a mutation is harmful, classifying protein function, or estimating thermostability. The foundation makes all of these tasks easier.
+
+\subsection{Why Biology Is Special}
+
+Foundation models for biology differ from foundation models for language in one crucial way: \textbf{the training data was curated by evolution, not by humans}.
+
+When we train GPT-4 on internet text, the training data reflects human writing conventions, cultural biases, and arbitrary stylistic choices. When we train ESM-2 on protein sequences, the training data reflects 3.5 billion years of natural selection. Every protein in the database exists because it \emph{works}---it folds, it functions, it contributes to the survival of the organism that encodes it. Proteins that fail to fold are eliminated by evolution. This means that the statistical patterns in protein sequence databases are not arbitrary---they encode the laws of biophysics and the constraints of natural selection.
+
+\begin{bioinsight}[Evolution as Data Curator]
+The protein sequences in UniRef, the DNA sequences in GenBank, and the genomes in RefSeq are not random samples. They are the survivors of billions of years of testing against the fitness function of life itself. Training a model on these sequences is, in a precise sense, distilling the results of evolution's search into neural network weights.
+\end{bioinsight}
+
+\subsection{The Biological Modalities}
+
+Foundation models have been built for each of the major biological data types (or \textbf{modalities}):
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Protein sequences}: chains of amino acids (20-letter alphabet). Models: ESM-2, ProtTrans.
+  \item \textbf{Protein structures}: 3D coordinates of atoms. Models: AlphaFold2, ESMFold.
+  \item \textbf{DNA sequences}: chains of nucleotides (4-letter alphabet). Models: DNABERT, Nucleotide Transformer, Evo.
+  \item \textbf{Gene expression}: quantitative measurements of how much mRNA each gene produces. Models: Enformer, scGPT.
+  \item \textbf{Multi-modal}: models that bridge two or more modalities. DOGMA aims to be the ultimate multi-modal biological foundation model.
+\end{itemize}
+
+Each modality has its own challenges, its own data characteristics, and its own architectural requirements. The rest of this chapter walks through the most important models in each modality.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{AlphaFold: Solving Protein Structure Prediction}
+\label{sec:alphafold}
+
+\subsection{The Protein Folding Problem}
+
+Every protein in your body starts as a linear chain of amino acids---a string of chemical ``beads'' produced by the ribosome. Within milliseconds, this chain folds into a specific three-dimensional shape, and that shape determines what the protein \emph{does}. Hemoglobin's shape lets it carry oxygen. Antibodies' shapes let them recognize pathogens. Enzymes' shapes let them catalyze chemical reactions.
+
+The \textbf{protein folding problem} asks: given the amino acid sequence, can we predict the 3D structure? This problem had been one of the grand challenges in biology for over 50 years. Experimental methods (X-ray crystallography, cryo-EM, NMR) can determine structures, but they are slow and expensive---sometimes taking years per protein. Computational prediction methods had made steady but incremental progress for decades.
+
+Then, in 2020, AlphaFold2 \citep{jumper2021} effectively \emph{solved} the problem. At the CASP14 competition (the biennial ``Olympics'' of protein structure prediction), AlphaFold2 achieved median GDT-TS scores above 90---accuracy comparable to experimental methods---on proteins where previous computational methods scored in the 40s and 50s. It was the most dramatic advance in the history of the field.
+
+\subsection{AlphaFold2: The Pipeline Step by Step}
+
+Let us walk through exactly how AlphaFold2 works, from input to output. Understanding this pipeline in detail is important because many of its architectural ideas reappear throughout biological AI.
+
+\subsubsection{Step 1: Input --- The Amino Acid Sequence}
+
+AlphaFold2 takes a single amino acid sequence as input. For example, a small protein might be 150 amino acids long, written as a string like:
+\begin{center}
+\texttt{MKFLILLFNILCLFPVLAADNHGVSMNAS...}
+\end{center}
+Each letter represents one of the 20 standard amino acids (M = methionine, K = lysine, F = phenylalanine, etc.).
+
+\subsubsection{Step 2: Multiple Sequence Alignment (MSA) Construction}
+
+Before the neural network sees the sequence, AlphaFold2 searches large protein databases (UniRef, BFD, MGnify) for \textbf{homologous} sequences---proteins from other organisms that are evolutionarily related to the query. These are aligned to produce a \textbf{Multiple Sequence Alignment (MSA)}: a matrix where rows are different homologous sequences and columns are aligned positions.
+
+Why is the MSA so important? Because evolution provides a powerful signal about protein structure. If two positions in a protein tend to mutate together across evolution (they \textbf{co-evolve}), it often means those positions are physically close in 3D space. If position~23 is hydrophobic whenever position~87 is hydrophobic, and charged whenever position~87 is charged, then positions~23 and~87 are probably in contact. The MSA encodes millions of years of evolutionary experiments about which amino acid combinations work together.
+
+\begin{bioinsight}[Coevolution Reveals Contacts]
+When two residues are in physical contact within a folded protein, mutations at one position create selective pressure for compensatory mutations at the other. Over evolutionary time, this produces correlated patterns of variation in the MSA. AlphaFold2 exploits these correlations to infer which residues are spatially proximal---a crucial clue for predicting 3D structure.
+\end{bioinsight}
+
+\subsubsection{Step 3: Initial Representations}
+
+AlphaFold2 creates two initial representations from the MSA:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item The \textbf{MSA representation}: a tensor of shape $(N_{\mathrm{seq}} \times L \times d)$ where $N_{\mathrm{seq}}$ is the number of sequences, $L$ is the sequence length, and $d$ is the embedding dimension. Each entry represents one amino acid at one position in one sequence.
+  \item The \textbf{pair representation}: a tensor of shape $(L \times L \times d_{\mathrm{pair}})$. Entry $(i, j)$ represents the relationship between residue~$i$ and residue~$j$. Initially, this is populated with relative positional features and, optionally, template information from known structures of homologs.
+\end{itemize}
+
+\subsubsection{Step 4: The Evoformer --- Where the Magic Happens}
+
+The Evoformer is the heart of AlphaFold2. It is a specialized transformer block that jointly processes the MSA representation and the pair representation, with information flowing between them. AlphaFold2 stacks 48 Evoformer blocks.
+
+Each Evoformer block performs four key operations:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{MSA row-wise self-attention}: Each sequence in the MSA attends to other positions \emph{within the same sequence}. This captures intra-sequence patterns (e.g., local secondary structure preferences).
+
+  \item \textbf{MSA column-wise self-attention}: Each position in the alignment attends to the \emph{same position across different sequences}. This captures evolutionary variation at each position.
+
+  \item \textbf{Pair update from MSA (outer product mean)}: Information from the MSA is projected into the pair representation. Specifically, the outer product of MSA features at positions $i$ and $j$ is averaged over sequences, producing a pairwise signal that captures coevolutionary correlations.
+
+  \item \textbf{Pair self-attention (triangular updates)}: The pair representation is updated using a novel mechanism called \textbf{triangular attention}. The key idea: if residue $i$ is close to residue $j$, and residue $j$ is close to residue $k$, then information about the $(i,k)$ pair should be informed by residue $j$. This enforces a kind of ``triangle inequality'' in the predicted distance matrix.
+\end{enumerate}
+
+\begin{keyinsight}[The Evoformer's Dual-Track Design]
+The Evoformer maintains two parallel representations---one for evolutionary sequences (MSA), one for pairwise relationships---and exchanges information between them at every layer. This dual-track design is essential: evolutionary signals (from the MSA) inform structural predictions (in the pair representation), and structural predictions refine the interpretation of evolutionary signals. Neither track alone would suffice.
+\end{keyinsight}
+
+\subsubsection{Step 5: The Structure Module}
+
+After 48 Evoformer blocks, the pair representation encodes a rich model of inter-residue relationships. The \textbf{Structure Module} converts this into explicit 3D coordinates.
+
+The Structure Module operates on a set of \textbf{rigid frames}---one per residue. Each frame consists of a rotation matrix and a translation vector in 3D space, specifying the position and orientation of each residue's backbone. Starting from an initial set of frames (all at the origin), the module iteratively refines them using an \textbf{Invariant Point Attention} (IPA) mechanism that is equivariant under the SE(3) group of rotations and translations.
+
+\begin{dogmadef}[SE(3) Equivariance]
+A function $f$ is \emph{SE(3) equivariant} if rotating and translating the input produces correspondingly rotated and translated output:
+\begin{equation}
+f(R\mathbf{x} + \mathbf{t}) = Rf(\mathbf{x}) + \mathbf{t},
+\end{equation}
+where $R$ is a rotation matrix and $\mathbf{t}$ is a translation vector. For protein structure prediction, this means the predicted structure does not depend on the arbitrary choice of coordinate system---a physical requirement, since proteins in solution have no preferred orientation.
+\end{dogmadef}
+
+\subsubsection{Step 6: Recycling}
+
+AlphaFold2 runs the entire pipeline (Evoformer + Structure Module) three times, feeding the output of each pass back as input to the next. This \textbf{recycling} progressively refines the structure, analogous to how some iterative algorithms converge to a solution over multiple rounds.
+
+\subsubsection{Step 7: Output and Confidence}
+
+The final output is:
+\begin{itemize}[leftmargin=1.5em]
+  \item 3D coordinates for all backbone atoms (N, C$\alpha$, C, O) and side-chain atoms.
+  \item A per-residue confidence score called \textbf{pLDDT} (predicted Local Distance Difference Test), ranging from 0 to 100. Scores above 90 indicate very high confidence; scores below 50 suggest the region may be disordered or poorly predicted.
+  \item A \textbf{Predicted Aligned Error (PAE)} matrix, indicating the confidence in the relative position of each pair of residues.
+\end{itemize}
+
+\subsection{The AlphaFold2 Loss Function}
+
+The model is trained end-to-end with a composite loss:
+
+\begin{equation}
+\mathcal{L}_{\mathrm{AF2}} = \mathcal{L}_{\mathrm{FAPE}} + \lambda_{\mathrm{dist}} \mathcal{L}_{\mathrm{distogram}} + \lambda_{\mathrm{conf}} \mathcal{L}_{\mathrm{pLDDT}} + \lambda_{\mathrm{MSA}} \mathcal{L}_{\mathrm{MSA}}.
+\label{eq:alphafold-loss}
+\end{equation}
+
+The \textbf{FAPE} (Frame Aligned Point Error) loss measures the error in predicted atomic positions after aligning local reference frames. It is more informative than simple RMSD because it penalizes errors in local geometry even when the global superposition is poor. The distogram loss trains auxiliary heads that predict binned inter-residue distances. The pLDDT loss trains the confidence predictor. The MSA loss ensures the model correctly predicts masked residues in the MSA.
+
+\subsection{AlphaFold2 Architecture Diagram}
+
+The following diagram illustrates the complete AlphaFold2 pipeline:
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  node distance=0.6cm and 1.2cm,
+  box/.style={draw, rounded corners, minimum width=3cm, minimum height=0.9cm,
+    text centered, font=\small},
+  inputbox/.style={box, fill=dogmalight, draw=dogmablue},
+  procbox/.style={box, fill=dogmamint, draw=dogmateal},
+  outbox/.style={box, fill=dogmawarm, draw=dogmagold},
+  arrow/.style={-{Stealth[length=5pt]}, thick, dogmablue},
+  label/.style={font=\scriptsize\itshape, text=dogmagray},
+]
+
+% Input
+\node[inputbox] (seq) {Amino Acid Sequence};
+\node[inputbox, below=of seq] (msa) {MSA Construction};
+\node[label, right=0.2cm of msa] {Search UniRef, BFD};
+
+% Representations
+\node[procbox, below left=0.8cm and 0.2cm of msa] (msarep) {MSA Repr.};
+\node[procbox, below right=0.8cm and 0.2cm of msa] (pairrep) {Pair Repr.};
+
+% Evoformer
+\node[procbox, below=1.6cm of msa, minimum width=6.5cm, fill=dogmamint!60] (evo) {\textbf{Evoformer} ($\times 48$ blocks)};
+\node[label, below=0.05cm of evo] {Row attn + Col attn + Outer product + Triangle updates};
+
+% Structure module
+\node[procbox, below=1.2cm of evo, fill=dogmamint!40] (struct) {\textbf{Structure Module} (IPA)};
+\node[label, right=0.2cm of struct] {SE(3)-equivariant};
+
+% Recycling arrow
+\node[label, left=1.0cm of evo] (recycle) {Recycle $\times 3$};
+\draw[arrow, dogmateal, dashed] (struct.west) -- ++(-1.5,0) |- (evo.west);
+
+% Output
+\node[outbox, below=0.8cm of struct] (coords) {3D Coordinates};
+\node[outbox, right=1.2cm of coords] (conf) {pLDDT + PAE};
+
+% Arrows
+\draw[arrow] (seq) -- (msa);
+\draw[arrow] (msa) -- (msarep);
+\draw[arrow] (msa) -- (pairrep);
+\draw[arrow] (msarep) -- (evo);
+\draw[arrow] (pairrep) -- (evo);
+\draw[arrow] (evo) -- (struct);
+\draw[arrow] (struct) -- (coords);
+\draw[arrow] (struct) -- (conf);
+
+\end{tikzpicture}
+\caption{The AlphaFold2 pipeline. An amino acid sequence is used to construct a multiple sequence alignment (MSA). Two representations---MSA and pairwise---are jointly refined through 48 Evoformer blocks that exchange evolutionary and geometric information. The Structure Module converts pairwise features into 3D coordinates using SE(3)-equivariant attention. The entire pipeline is recycled three times.}
+\label{fig:alphafold-pipeline}
+\end{figure}
+
+\subsection{Why AlphaFold2 Uses ``Only'' 93M Parameters}
+
+A common question: GPT-3 has 175 billion parameters, GPT-4 likely has over a trillion, and even ESM-2 has 15 billion. Why does AlphaFold2 need only 93 million?
+
+The answer is \textbf{inductive bias}. AlphaFold2's architecture is exquisitely tailored to the physics of protein folding. SE(3) equivariance encodes rotational symmetry. Triangular attention encodes the triangle inequality of distances. The Evoformer's dual-track design encodes the relationship between evolutionary and structural information. These architectural choices dramatically reduce the hypothesis space---the model does not need to ``discover'' these constraints from data because they are built into the architecture.
+
+This is a profound lesson: \emph{the right architecture, informed by domain knowledge, can outperform brute-force scaling by orders of magnitude}. AlphaFold2 achieves superhuman accuracy on protein structure prediction with fewer parameters than a moderately sized language model.
+
+\begin{implnote}[AlphaFold2 in Practice]
+AlphaFold2 is available through several channels:
+\begin{itemize}[leftmargin=1.5em]
+  \item The \textbf{AlphaFold Protein Structure Database} (alphafold.ebi.ac.uk) contains pre-computed structures for over 200 million proteins, covering nearly every known protein sequence.
+  \item \textbf{ColabFold} provides a fast, accessible implementation that runs AlphaFold2 in a Google Colab notebook, using MMseqs2 for faster MSA construction.
+  \item \textbf{AlphaFold3} (2024) extends the approach to predict structures of protein-nucleic acid complexes, small molecule ligands, and post-translational modifications.
+\end{itemize}
+\end{implnote}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{ESM-2: The Language of Proteins}
+\label{sec:protein-lms}
+
+While AlphaFold2 focuses on predicting structure, the ESM (Evolutionary Scale Modeling) family of models takes a different approach: treat protein sequences as a \emph{language} and learn their statistical structure using the same techniques that power large language models for text.
+
+\subsection{Proteins as Language}
+
+The analogy between proteins and language is surprisingly deep:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item Human language has an alphabet of $\sim$26 letters (in English). Proteins have an alphabet of 20 amino acids.
+  \item Words have meaning that depends on context (``bank'' means different things in different sentences). Amino acids have functional roles that depend on their neighbors in 3D space.
+  \item Sentences have grammar---rules about which word orders are valid. Proteins have ``grammar''---rules about which amino acid sequences can fold into stable structures.
+  \item Languages evolve over time, with words changing meaning. Protein sequences evolve over time, with mutations accumulating under selective pressure.
+\end{itemize}
+
+If these parallels hold, then the same machine learning approach that works for language---train a large neural network to predict missing tokens in sequences---should work for proteins. This is exactly what ESM-2 does.
+
+\subsection{Training Objective: Masked Language Modeling}
+
+ESM-2 \citep{lin2023} is trained with a \textbf{masked language modeling (MLM)} objective, identical in spirit to BERT for text. Given a protein sequence $\mathbf{x} = (x_1, x_2, \ldots, x_L)$ where each $x_i$ is one of 20 standard amino acids:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item Randomly select 15\% of positions and replace them with a \texttt{[MASK]} token.
+  \item Feed the masked sequence through the transformer.
+  \item Train the model to predict the original amino acid at each masked position.
+\end{enumerate}
+
+Formally, the loss function is:
+
+\begin{equation}
+\mathcal{L}_{\mathrm{MLM}} = -\mathbb{E}_{\mathbf{x} \sim \mathcal{D}} \left[ \sum_{i \in \mathcal{M}} \log p_\theta(x_i \mid \mathbf{x}_{\backslash \mathcal{M}}) \right],
+\label{eq:esm-mlm}
+\end{equation}
+
+where $\mathcal{M}$ is the set of masked positions and $\mathbf{x}_{\backslash \mathcal{M}}$ is the sequence with those positions replaced by \texttt{[MASK]}.
+
+Why does this simple objective work so well? Because predicting a masked amino acid requires understanding the \emph{context}---the surrounding sequence that constrains what can appear at that position. If a position is buried in the protein's hydrophobic core, the model must predict a hydrophobic amino acid (like leucine, isoleucine, or valine). If a position is in an active site, the model must predict the specific catalytic residue. Over millions of training examples, the model learns a rich internal representation of protein structure and function.
+
+\subsection{Architecture and Scale}
+
+ESM-2 is a standard transformer encoder (the same architecture family as BERT), scaled up to several sizes:
+
+\begin{center}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Model} & \textbf{Layers} & \textbf{Hidden dim} & \textbf{Parameters} \\
+\midrule
+ESM-2 (8M) & 6 & 320 & 8M \\
+ESM-2 (35M) & 12 & 480 & 35M \\
+ESM-2 (150M) & 30 & 640 & 150M \\
+ESM-2 (650M) & 33 & 1280 & 650M \\
+ESM-2 (3B) & 36 & 2560 & 3B \\
+ESM-2 (15B) & 48 & 5120 & 15B \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The training data consists of protein sequences from \textbf{UniRef}, a comprehensive database of protein sequences clustered at various identity thresholds. The largest models are trained on UniRef50 (approximately 60 million cluster representatives) and UniRef90.
+
+\subsection{Emergent Properties: Structure from Sequence}
+
+The most remarkable finding about ESM-2 is what it learns \emph{without being told to learn it}. The model is trained only to predict masked amino acids. It receives no information about 3D structure. Yet its internal representations encode rich structural information.
+
+\begin{bioinsight}[Emergent Structure in Protein Embeddings]
+ESM-2's attention maps can be used to extract \textbf{contact maps}---predictions of which residue pairs are physically close in 3D space. The model learns that residues distant in sequence but proximal in 3D space attend to each other. This emergent discovery of the folding code from sequence statistics alone demonstrates that protein structure is, in a meaningful sense, encoded in evolutionary sequence distributions.
+\end{bioinsight}
+
+Specifically, researchers showed that:
+\begin{itemize}[leftmargin=1.5em]
+  \item ESM-2's attention heads specialize: some heads focus on local sequence patterns (secondary structure), others on long-range contacts (tertiary structure).
+  \item The quality of emergent contact prediction \emph{improves with model scale}---larger models learn more accurate structural representations.
+  \item ESMFold, a structure prediction model built directly on ESM-2 embeddings (without any MSA), achieves accuracy competitive with AlphaFold2 for many proteins.
+\end{itemize}
+
+\subsection{ESM-2 Architecture Overview}
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  node distance=0.5cm,
+  box/.style={draw, rounded corners, minimum width=4.5cm, minimum height=0.8cm,
+    text centered, font=\small},
+  inputbox/.style={box, fill=dogmalight, draw=dogmablue},
+  procbox/.style={box, fill=dogmamint, draw=dogmateal},
+  outbox/.style={box, fill=dogmawarm, draw=dogmagold},
+  arrow/.style={-{Stealth[length=5pt]}, thick, dogmablue},
+  label/.style={font=\scriptsize\itshape, text=dogmagray},
+]
+
+% Input
+\node[inputbox] (input) {Protein Sequence + \texttt{[MASK]}};
+\node[label, right=0.15cm of input] {$L$ amino acids};
+
+% Embedding
+\node[procbox, below=of input] (embed) {Token + Position Embedding};
+
+% Transformer layers
+\node[procbox, below=of embed, minimum height=2.2cm, fill=dogmamint!60] (transformer) {
+  \begin{tabular}{c}
+    \textbf{Transformer Encoder} \\[2pt]
+    Multi-Head Self-Attention \\
+    $\downarrow$ \\
+    Feed-Forward Network \\
+    $\downarrow$ \\
+    Layer Normalization \\[2pt]
+    {\scriptsize ($\times\,N$ layers)}
+  \end{tabular}
+};
+
+% Output heads
+\node[outbox, below left=0.8cm and -0.5cm of transformer] (mlm) {MLM Head};
+\node[outbox, below right=0.8cm and -0.5cm of transformer] (repr) {Embeddings};
+\node[label, below=0.05cm of mlm] {Predict masked AA};
+\node[label, below=0.05cm of repr] {Structure, function, etc.};
+
+% Arrows
+\draw[arrow] (input) -- (embed);
+\draw[arrow] (embed) -- (transformer);
+\draw[arrow] (transformer) -- (mlm);
+\draw[arrow] (transformer) -- (repr);
+
+\end{tikzpicture}
+\caption{ESM-2 architecture overview. Protein sequences with masked positions are embedded and processed through $N$ transformer encoder layers. The MLM head predicts masked amino acids (training). The learned embeddings (inference) encode structural and functional information useful for downstream tasks.}
+\label{fig:esm2-architecture}
+\end{figure}
+
+\subsection{What ESM-2 Encodes}
+
+Through extensive probing studies, researchers have catalogued what ESM-2's representations capture:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Secondary structure}: Whether each residue is in an alpha-helix, beta-sheet, or coil. Early layers capture this.
+  \item \textbf{Solvent accessibility}: Whether each residue is exposed to water (surface) or buried in the protein's interior (core). Middle layers encode this.
+  \item \textbf{Contact maps}: Which pairs of residues are physically close. Attention weights in later layers capture this.
+  \item \textbf{Functional sites}: Active sites, binding sites, and post-translational modification sites show distinctive patterns in the embedding space.
+  \item \textbf{Evolutionary conservation}: Highly conserved positions (functionally important) have different embedding distributions than variable positions.
+  \item \textbf{Protein family membership}: Proteins with similar functions cluster together in embedding space, even when their sequences are very different.
+\end{enumerate}
+
+\begin{dogmadef}[Evolutionary Plausibility as a Training Signal]
+In protein language models, the training distribution is curated by natural selection rather than by human annotators. The loss function in Equation~\ref{eq:esm-mlm} implicitly encodes biophysical constraints: folding stability, catalytic activity, binding specificity, and cellular fitness. This is a form of self-supervised learning where the ``supervisor'' is evolution itself. DOGMA generalizes this idea: the evolutionary training loop (Chapter~\ref{ch:dogma-architecture}) treats fitness-based selection as a first-class training mechanism alongside gradient descent.
+\end{dogmadef}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{DNABERT: Tokenizing and Learning from DNA}
+\label{sec:dnabert}
+
+Proteins are not the only biological sequences amenable to language modeling. DNA---the molecule that encodes proteins and all other genetic information---can also be treated as a language, albeit one with a much smaller alphabet (4 letters: A, C, G, T) and much longer ``sentences'' (genes can span thousands to millions of bases).
+
+\subsection{The Challenge of DNA Tokenization}
+
+When we apply language models to text, tokenization is relatively straightforward: we split text into words or subwords (using BPE or similar). For proteins, single amino acids are natural tokens. But what is the right token for DNA?
+
+Individual nucleotides (A, C, G, T) are too fine-grained: a vocabulary of only 4 tokens carries very little information per token, and meaningful biological units (codons, motifs, regulatory elements) span multiple nucleotides. On the other hand, very long tokens might miss important variation within them.
+
+DNABERT \citep{ji2021dnabert} adopts \textbf{$k$-mer tokenization}: the DNA sequence is converted to overlapping $k$-mers, typically with $k=6$. For example:
+\begin{center}
+\texttt{ATCGATCG} $\longrightarrow$ \texttt{ATCGAT} \quad \texttt{TCGATC} \quad \texttt{CGATCG}
+\end{center}
+
+This produces a vocabulary of $4^k$ possible tokens ($4^6 = 4{,}096$ for 6-mers). Each token captures local sequence context, and overlapping tokenization ensures that no information is lost at token boundaries.
+
+\begin{implnote}[Choosing $k$ for DNA Tokenization]
+The choice of $k$ involves a tradeoff:
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Small $k$ (e.g., 3)}: Small vocabulary ($4^3 = 64$), less information per token, but the model sees more tokens for the same sequence length. Codons are 3-mers, so $k=3$ aligns with the genetic code.
+  \item \textbf{Large $k$ (e.g., 8)}: Large vocabulary ($4^8 = 65{,}536$), more information per token, but many tokens will be rare, making training harder. Some regulatory motifs are 6--12 bases long.
+  \item \textbf{DNABERT's choice ($k=6$)}: A compromise that captures most transcription factor binding motifs (which are typically 6--12 bp) while keeping vocabulary manageable.
+\end{itemize}
+DNABERT-2 later moved to Byte Pair Encoding (BPE), learning a data-driven tokenization that adapts to the actual frequency of subsequences in genomic data.
+\end{implnote}
+
+\subsection{Pre-Training DNABERT}
+
+DNABERT uses the same masked language modeling approach as BERT and ESM-2:
+\begin{enumerate}[leftmargin=1.8em]
+  \item Convert a DNA sequence to overlapping $k$-mers.
+  \item Mask 15\% of the $k$-mer tokens.
+  \item Train the transformer to predict the masked tokens from context.
+\end{enumerate}
+
+The training data consists of the human reference genome, providing a comprehensive view of human genomic sequence. The context window is 512 $k$-mer tokens, corresponding to approximately 512 base pairs of DNA.
+
+\subsection{What DNABERT Can Predict}
+
+After pre-training, DNABERT's representations can be fine-tuned for diverse genomic tasks:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Promoter prediction}: Identifying the regulatory regions upstream of genes that control transcription initiation.
+  \item \textbf{Splice site prediction}: Finding the boundaries between exons and introns, where pre-mRNA is cut and rejoined.
+  \item \textbf{Transcription factor binding site prediction}: Predicting where specific regulatory proteins bind to DNA.
+  \item \textbf{Variant effect prediction}: Estimating whether a single-nucleotide variant (SNV) is likely to be deleterious.
+\end{itemize}
+
+On each of these tasks, DNABERT outperforms previous methods that used hand-engineered features, demonstrating that self-supervised pre-training captures meaningful genomic patterns.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Nucleotide Transformer: Scaling Across Species}
+\label{sec:nucleotide-transformer}
+
+DNABERT was trained on the human genome alone. The \textbf{Nucleotide Transformer} \citep{dalla2023nucleotide} asks: what happens if we train on genomes from across the tree of life?
+
+\subsection{Multi-Species Pre-Training}
+
+The Nucleotide Transformer is trained on reference genomes from \textbf{850 species}, spanning bacteria, archaea, plants, fungi, and animals. The total training dataset comprises approximately 3.2 billion nucleotides. The model is scaled to 2.5 billion parameters---an order of magnitude larger than DNABERT.
+
+The tokenization uses non-overlapping 6-mers with a vocabulary of 4,096 tokens plus special tokens. The context length is 6,144 tokens, corresponding to approximately 6 kilobases of DNA---an order of magnitude longer than DNABERT.
+
+\subsection{Cross-Species Transfer Learning}
+
+The most striking finding from the Nucleotide Transformer is that \textbf{cross-species pre-training consistently outperforms single-species models}, even for human-specific tasks. A model trained on 850 genomes predicts human promoters, splice sites, and enhancers better than a model trained only on the human genome.
+
+Why? Because the statistical regularities of genomic sequence are deeply conserved across evolution:
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Codon usage} patterns are shared across species that use the same genetic code.
+  \item \textbf{Splice site signals} (GT-AG at intron boundaries) are nearly universal in eukaryotes.
+  \item \textbf{Regulatory motif grammar}---the way transcription factor binding sites are organized relative to genes---shows deep evolutionary conservation.
+  \item \textbf{CpG islands}, GC-content variation, and other sequence composition features follow shared patterns.
+\end{itemize}
+
+Training on multi-species data forces the model to learn these \emph{universal} patterns rather than memorizing human-specific sequences.
+
+\begin{keyinsight}[Evolutionary Breadth Beats Depth]
+The Nucleotide Transformer demonstrates a powerful principle: for learning genomic representations, evolutionary breadth (many species) is more valuable than depth (many copies of one genome). This is because conserved patterns that appear across diverse species are likely to be functionally important, while species-specific patterns may be idiosyncratic noise. DOGMA incorporates this principle by training on evolutionarily diverse data (Chapter~\ref{ch:dogma-architecture}).
+\end{keyinsight}
+
+\subsection{Downstream Task Performance}
+
+The Nucleotide Transformer achieves state-of-the-art results on 18 genomic benchmark tasks, grouped into four categories:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Regulatory element prediction}: Promoters, enhancers, open chromatin regions.
+  \item \textbf{Splicing}: Donor and acceptor splice sites, exon boundaries.
+  \item \textbf{Epigenetic marks}: Histone modifications (H3K4me3, H3K27ac, etc.) from sequence alone.
+  \item \textbf{Variant effects}: Predicting functional impact of single-nucleotide variants using ClinVar and similar databases.
+\end{enumerate}
+
+On most of these tasks, the Nucleotide Transformer outperforms both DNABERT and task-specific models, demonstrating the value of scale and multi-species training.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Evo: Genome-Scale DNA Language Modeling}
+\label{sec:evo}
+
+DNABERT sees 512 bases of context. The Nucleotide Transformer sees 6,000 bases. But real genomes are organized at scales of tens of thousands to millions of bases. A single operon in a bacterium might span 10 kilobases. A mammalian gene with its regulatory elements can span megabases. To model biology at the scale it actually operates, we need models with much longer context windows.
+
+\textbf{Evo} \citep{nguyen2024} is a 7-billion-parameter DNA foundation model trained on 300 billion nucleotide tokens from prokaryotic and phage genomes, with a context window of 131,072 bases. It is, as of its publication, the longest-context genomic model ever trained.
+
+\subsection{The Context Length Challenge}
+
+Why is context length so hard? Standard transformer self-attention computes interactions between \emph{all} pairs of tokens, which costs $O(T^2)$ in computation and memory, where $T$ is the sequence length. For $T = 131{,}072$, this would require computing $131{,}072^2 \approx 17$ \emph{billion} attention scores per layer---completely infeasible.
+
+Evo solves this problem by replacing standard attention with an architecture called \textbf{StripedHyena}, which interleaves two types of layers:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Gated convolutions}: Efficient local processing with linear complexity in sequence length.
+  \item \textbf{Data-controlled state space layers}: A variant of the Mamba/S4 family that maintains a compressed hidden state, propagated recurrently with input-dependent gating.
+\end{enumerate}
+
+\subsection{State Space Models for DNA}
+
+The state space layers in Evo follow the discrete-time state space model formulation:
+
+\begin{equation}
+\mathbf{h}_t = \overline{\mathbf{A}} \, \mathbf{h}_{t-1} + \overline{\mathbf{B}} \, x_t, \qquad \mathbf{y}_t = \mathbf{C} \, \mathbf{h}_t,
+\label{eq:ssm-evo}
+\end{equation}
+
+where $\mathbf{h}_t$ is a hidden state vector, $x_t$ is the input at position $t$, and $\overline{\mathbf{A}}, \overline{\mathbf{B}}, \mathbf{C}$ are learned matrices. The key innovation is that $\overline{\mathbf{A}}$ and $\overline{\mathbf{B}}$ are \textbf{input-dependent} (data-controlled), allowing the model to selectively retain or forget information based on what it is reading. When the model encounters a promoter, it might ``open the gate'' to retain regulatory information. When reading through a non-functional intergenic region, it might ``close the gate'' and discard details.
+
+This is analogous to chromatin state in biology: not all regions of the genome are equally ``accessible'' to the cell's transcription machinery at any given time. Open chromatin marks active regions; closed chromatin silences inactive ones. Evo's data-controlled state transitions implement a computational version of this selective accessibility.
+
+\begin{bioinsight}[Chromatin-Like Memory in Evo]
+Evo's state space layers implement selective memory: the model learns to retain information about functionally important regions (promoters, regulatory elements, start codons) while compressing or discarding less important sequence (repetitive DNA, intergenic filler). This is strikingly parallel to how chromatin modifications control genomic accessibility in biological cells.
+\end{bioinsight}
+
+\subsection{Single-Nucleotide Resolution}
+
+Unlike models that downsample DNA (Enformer compresses 196 kb by a factor of 128), Evo operates at \textbf{single-nucleotide resolution} across its entire 131 kb context. Every individual base (A, C, G, or T) is a token. This is computationally demanding but biologically important: a single-nucleotide change can be the difference between a functional and a non-functional protein, between health and disease.
+
+\subsection{Genome-Scale Generation}
+
+Evo is trained with a \textbf{next-token prediction} (autoregressive) objective, which means it can also \emph{generate} DNA sequences. Given a prompt (an initial DNA sequence), Evo can extend it to produce novel sequences of 100 kilobases or more.
+
+Generated sequences exhibit remarkable biological realism:
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Realistic codon usage}: The frequency of synonymous codons matches natural genomes.
+  \item \textbf{Proper gene organization}: Generated sequences contain plausible open reading frames with start and stop codons.
+  \item \textbf{Regulatory motif placement}: Promoter-like sequences appear upstream of predicted genes.
+  \item \textbf{Operon structure}: Multi-gene clusters are organized coherently.
+\end{itemize}
+
+\begin{keyinsight}[Single-Nucleotide Resolution at Genome Scale]
+Evo operates at single-nucleotide resolution across 131 kb contexts. This is the computational equivalent of reading and writing DNA at the level of individual bases while maintaining coherent structure across entire gene clusters. The combination of fine-grained resolution with long-range context is precisely what DOGMA aims to achieve: individual genomic bases with region-level organizational structure (Chapter~\ref{ch:dogma-architecture}).
+\end{keyinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Enformer: From DNA Sequence to Gene Expression}
+\label{sec:enformer}
+
+All of the models we have discussed so far learn from sequence alone. But the ultimate readout of a genome is not the sequence itself---it is the \textbf{gene expression pattern}: which genes are turned on, in which cell types, and at what levels. \textbf{Enformer} \citep{avsec2021} bridges this gap, predicting quantitative gene expression directly from DNA sequence.
+
+\subsection{The Gene Expression Prediction Task}
+
+Enformer takes as input a \textbf{196,608 base pair} (approximately 196 kb) DNA sequence centered on a gene of interest. Its output is a vector of predicted expression values across:
+\begin{itemize}[leftmargin=1.5em]
+  \item 5,313 genomic tracks for human (including RNA-seq, ATAC-seq, ChIP-seq, CAGE).
+  \item 1,643 genomic tracks for mouse.
+\end{itemize}
+
+Each track corresponds to a different assay in a different cell type. For example, one track might represent H3K27ac ChIP-seq in liver cells (marking active enhancers in liver), while another represents CAGE-seq in brain cells (measuring mRNA start sites in brain). The model predicts all of these simultaneously from sequence alone.
+
+\subsection{Architecture: Convolution Then Attention}
+
+Enformer uses a hybrid architecture that combines the strengths of convolutional neural networks and transformers:
+
+\begin{equation}
+\hat{\mathbf{y}} = f_{\mathrm{head}}\Bigl(f_{\mathrm{transformer}}\bigl(f_{\mathrm{conv}}(\mathbf{x}_{\mathrm{DNA}})\bigr)\Bigr),
+\label{eq:enformer}
+\end{equation}
+
+where the pipeline consists of three stages:
+
+\subsubsection{Stage 1: Convolutional Stem}
+
+The 196,608 bp input is first one-hot encoded (4 channels for A, C, G, T) and then passed through a series of convolutional blocks with residual connections and pooling. These convolutions serve two purposes:
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Feature extraction}: Local motifs (transcription factor binding sites, splice signals, CpG dinucleotides) are detected by convolutional filters.
+  \item \textbf{Downsampling}: The sequence is progressively reduced in length by a factor of 128, from 196,608 positions to 1,536 positions. Each of the 1,536 resulting ``tokens'' represents 128 bp of DNA and has a 1,536-dimensional feature vector.
+\end{itemize}
+
+\subsubsection{Stage 2: Transformer}
+
+The 1,536 downsampled tokens are processed by 11 transformer layers with standard multi-head self-attention. At this compressed scale, the transformer can model interactions spanning the entire 196 kb input---including enhancer-promoter interactions that can span 100 kb or more.
+
+\subsubsection{Stage 3: Prediction Head}
+
+The transformer output is passed through a pointwise linear layer that predicts the expression value for each of the thousands of genomic tracks at each output position. The output resolution is 128 bp (matching the downsampling factor).
+
+\subsection{Long-Range Regulatory Interactions}
+
+The most important biological insight from Enformer is its ability to capture \textbf{enhancer--promoter interactions} across distances of up to 100 kilobases.
+
+In eukaryotic gene regulation, a gene's expression is controlled not just by its promoter (the region immediately upstream of the gene) but also by \textbf{enhancers}---regulatory DNA elements that can be located tens or hundreds of kilobases away. Enhancers are activated by transcription factors that bind to specific sequence motifs, and they communicate with promoters through 3D chromatin looping.
+
+\begin{bioinsight}[Enformer Discovers Regulatory Grammar]
+Enformer's attention maps reveal that the model learns to focus on known regulatory elements---promoters, enhancers, CTCF binding sites (which organize chromatin loops), and insulator elements---even though it receives no explicit annotation of these elements during training. The model discovers the \emph{regulatory grammar} of the genome from the data alone, much as ESM-2 discovers protein contact maps from sequence statistics.
+\end{bioinsight}
+
+\subsection{Limitations}
+
+Despite its achievements, Enformer has important limitations that motivate the development of more powerful models:
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Context length}: 196 kb captures most enhancer-promoter interactions but misses very long-range regulatory elements (some enhancers act from $>$1 Mb away).
+  \item \textbf{Downsampling}: The 128 bp output resolution means single-nucleotide variants are not directly modeled at the output level.
+  \item \textbf{Training data}: Enformer is trained on cell-type-specific experimental data, which limits its ability to generalize to unseen cell types or conditions.
+  \item \textbf{Sequence only}: Enformer predicts expression from sequence but does not model how expression changes in response to perturbations (mutations, drug treatments).
+\end{itemize}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Generative Protein Design: RFdiffusion}
+\label{sec:protein-design}
+
+The models above are primarily about \emph{understanding}: predicting structure from sequence (AlphaFold2), learning representations (ESM-2), or predicting gene expression (Enformer). But there is a second revolution happening in parallel: \textbf{generative protein design}---creating entirely new proteins that have never existed in nature.
+
+\subsection{From Prediction to Design}
+
+Structure prediction answers: ``given a sequence, what structure does it adopt?'' Protein design inverts this: ``given a desired structure or function, what sequence achieves it?'' This inversion is enormously valuable for medicine, industry, and basic science.
+
+\subsection{RFdiffusion}
+
+RFdiffusion \citep{watson2023rfdiffusion} applies denoising diffusion to protein backbone generation. Starting from random noise in SE(3) space (random positions and orientations for each residue), the model iteratively denoises to produce physically plausible protein backbones:
+
+\begin{equation}
+p_\theta(\mathbf{x}_{t-1} \mid \mathbf{x}_t) = \mathcal{N}\bigl(\mathbf{x}_{t-1}; \mu_\theta(\mathbf{x}_t, t),\, \sigma_t^2 \mathbf{I}\bigr),
+\label{eq:rfdiffusion}
+\end{equation}
+
+where $\mathbf{x}_t$ represents noised backbone frames and the denoising network $\mu_\theta$ is built on the RoseTTAFold architecture. The model can be conditioned on partial structures, binding motifs, or symmetry constraints.
+
+\begin{implnote}[Conditioning Strategies in RFdiffusion]
+RFdiffusion supports multiple conditioning modes:
+\begin{itemize}[leftmargin=1.5em]
+  \item \emph{Unconditional generation}: Novel folds sampled from the learned distribution.
+  \item \emph{Motif scaffolding}: Designing proteins that present a specific functional motif in the correct geometry.
+  \item \emph{Symmetric oligomers}: Generating multi-chain assemblies with specified point-group symmetry.
+  \item \emph{Binder design}: Creating proteins that bind to a specified target surface.
+\end{itemize}
+These conditioning mechanisms parallel DOGMA's regulatory control: different ``contexts'' (conditioning signals) activate different generative pathways from the same underlying model, just as different transcription factors activate different genes from the same genome.
+\end{implnote}
+
+\subsection{The Inverse Folding Pipeline}
+
+RFdiffusion generates backbones (structures), but functional proteins require \emph{sequences}. The complete design pipeline is:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{RFdiffusion}: Generate a novel protein backbone (3D structure).
+  \item \textbf{ProteinMPNN}: Design amino acid sequences that will fold into the generated backbone (``inverse folding''), maximizing $p(\mathbf{s} \mid \mathbf{x}_{\mathrm{backbone}})$.
+  \item \textbf{AlphaFold2}: Validate that the designed sequences are predicted to fold into the intended structure.
+  \item \textbf{Experimental testing}: Synthesize the DNA encoding the designed protein, express it in cells, and test whether it actually folds and functions.
+\end{enumerate}
+
+This computational-experimental loop---design \emph{in silico}, validate \emph{in vitro}---represents a paradigm shift. Unlike text generation, where quality is judged subjectively, protein design produces physical objects whose quality is judged by the laws of physics.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Comparison of Biological Foundation Models}
+\label{sec:comparison-table}
+
+Having surveyed the major biological foundation models individually, let us now compare them side by side. Table~\ref{tab:bio-fm-comparison} summarizes the key properties of each model.
+
+\begin{table}[ht]
+\centering
+\caption{Comprehensive comparison of major biological foundation models.}
+\label{tab:bio-fm-comparison}
+\begin{tabularx}{\textwidth}{L{2.0cm} L{1.5cm} L{1.5cm} L{2.0cm} L{1.8cm} Y}
+\toprule
+\textbf{Model} & \textbf{Modality} & \textbf{Params} & \textbf{Training Data} & \textbf{Context} & \textbf{Key Task / Innovation} \\
+\midrule
+ESM-2 & Protein seq. & 15B & UniRef (65M seqs) & 1,024 aa & Masked LM; emergent structure from evolution \\[4pt]
+AlphaFold2 & Protein struct. & 93M & PDB + UniRef & Full chain & SE(3)-equivariant Evoformer + structure module \\[4pt]
+RFdiffusion & Protein struct. & $\sim$260M & PDB structures & Full chain & Denoising diffusion on SE(3) frames for design \\[4pt]
+DNABERT & DNA seq. & 110M & Human genome & 512 $k$-mers & $k$-mer tokenization + BERT-style MLM \\[4pt]
+Nucleotide Trans. & DNA seq. & 2.5B & 850 genomes & 6 kb & Multi-species training; cross-species transfer \\[4pt]
+Evo & DNA seq. & 7B & 300B nt tokens (prokaryotes) & 131 kb & StripedHyena SSM; genome-scale generation \\[4pt]
+Enformer & DNA $\to$ expr. & $\sim$250M & CAGE, ATAC, ChIP-seq & 196 kb & Conv + transformer for expression prediction \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Several patterns emerge from this comparison:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Modality specialization}: Each model targets a single biological modality. No model spans from DNA to protein to expression.
+  \item \textbf{Scale variation}: Parameter counts range from 93M (AlphaFold2) to 15B (ESM-2), with context lengths from 512 tokens (DNABERT) to 196 kb (Enformer). Architectural efficiency matters as much as raw scale.
+  \item \textbf{Training data diversity}: The most powerful models (Nucleotide Transformer, Evo) benefit from multi-species training, leveraging evolutionary diversity.
+  \item \textbf{Self-supervised learning}: Every model uses a self-supervised objective (masked prediction, next-token prediction, denoising). Labeled data is used only for fine-tuning or evaluation.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{What Biology Teaches AI}
+\label{sec:bio-teaches-ai}
+
+The biological foundation models surveyed above are often presented as ``applications of ML to biology.'' This framing, while not incorrect, obscures a deeper truth: biology is not just a domain for ML---it is a \emph{source of architectural innovation}. The following principles, discovered or reinforced by biological foundation models, have implications far beyond biology.
+
+\subsection{Symmetry as Architectural Prior}
+
+AlphaFold2's SE(3) equivariance is not an arbitrary design choice---it encodes a fundamental symmetry of physics. Proteins in a test tube do not have preferred orientations; therefore, a structure prediction model should produce the same output regardless of the reference frame. More generally, identifying and encoding the \emph{symmetries of the problem} into the architecture is one of the most powerful forms of inductive bias.
+
+\begin{dogmadef}[Symmetry-Aware Architecture Design]
+A model architecture is \emph{symmetry-aware} if its computational structure respects the symmetry group $G$ of the underlying problem. For structure prediction, $G = \mathrm{SE}(3)$. For sequence modeling, $G$ includes translational equivariance (a motif has the same meaning regardless of its absolute position). For DOGMA, the relevant symmetries include: (1) permutation invariance across genomic regions that do not interact, (2) equivariance of regulatory logic under base-type relabeling within compatibility classes, and (3) conservation of functional semantics under evolutionary drift.
+\end{dogmadef}
+
+\subsection{Multi-Scale Structure}
+
+Biological sequences exhibit structure at every scale: individual residues form secondary structures, secondary structures pack into domains, domains assemble into multi-domain proteins, and proteins organize into complexes. At the DNA level: nucleotides form codons, codons form genes, genes form operons, operons form chromosomal domains, and domains organize into chromosomes.
+
+Enformer's hierarchical convolution-transformer architecture and Evo's state space layers both reflect this multi-scale organization. The lesson for AI architecture design is clear: systems that process hierarchically organized data should have \emph{hierarchically organized computation}.
+
+\subsection{Evolutionary Conservation as a Learning Signal}
+
+The most striking feature of protein and DNA language models is that they learn biologically meaningful representations from \emph{evolutionary statistics alone}. ESM-2 discovers protein contacts; Enformer discovers regulatory elements; the Nucleotide Transformer discovers conservation patterns. In each case, the training data is not labeled by humans---it is labeled by evolution.
+
+\begin{bioinsight}[Evolution as the Ultimate Self-Supervised Learner]
+Natural selection is, formally, an optimization process that evaluates candidate solutions (organisms) against a fitness function (survival and reproduction) and retains the best solutions (differential reproduction). The set of extant sequences is the output of this optimization process after billions of iterations. Training a language model on this dataset is, in a precise sense, distilling the results of evolution's search into neural network parameters. DOGMA's evolutionary training loop (Chapter~\ref{ch:dogma-architecture}) makes this connection explicit: it uses selection pressure as a training signal alongside gradient-based optimization.
+\end{bioinsight}
+
+\subsection{The Generative Turn}
+
+The progression from ESM-2 (understanding) to RFdiffusion (design) mirrors the broader trajectory of AI from discriminative to generative models. But in biology, the generative turn carries special significance: generating a novel protein sequence is generating a \emph{physical object} that can be synthesized, expressed, and tested. The feedback loop between computation and experiment---predict, design, synthesize, test, iterate---has no parallel in text-based AI. DOGMA's staged pipeline (regulate, transcribe, express, realize) is designed to support exactly this kind of grounded, multi-step generative process.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{How DOGMA Differs: An Explicit Comparison}
+\label{sec:dogma-comparison}
+
+Now that we have surveyed the landscape of biological foundation models, let us be precise about how DOGMA differs from each of them. This is not a critique of existing models---each has achieved extraordinary things within its domain. Rather, it is an argument for why a unified approach is needed.
+
+\subsection{DOGMA vs.\ AlphaFold2}
+
+AlphaFold2 is a \emph{structure prediction} model: it maps protein sequences to 3D coordinates. It does not generate new proteins, it does not model gene regulation, and it does not connect protein structure back to the DNA sequence that encodes it. DOGMA's genomic state contains the information from which proteins emerge through a multi-stage pipeline: DNA $\to$ regulation $\to$ transcription $\to$ translation $\to$ folding $\to$ function. Structure is one output among many, not the sole objective.
+
+\subsection{DOGMA vs.\ ESM-2}
+
+ESM-2 learns rich protein representations from evolutionary sequence data. But it operates on proteins in isolation---each protein is processed independently, with no model of how that protein was produced, how it interacts with other proteins, or how its expression is regulated. DOGMA treats each protein as part of a larger system: encoded in a genome, regulated by cellular context, and functioning within a network of interactions.
+
+\subsection{DOGMA vs.\ DNABERT / Nucleotide Transformer}
+
+DNABERT and the Nucleotide Transformer learn representations of DNA sequence, but they do not model what happens \emph{after} the DNA is read: transcription, translation, protein folding, and downstream function. They predict genomic features (promoters, splice sites) but not the emergent phenotype that arises from the coordinated action of all genes. DOGMA's pipeline follows the central dogma---from DNA through RNA to protein to function---modeling each stage explicitly.
+
+\subsection{DOGMA vs.\ Evo}
+
+Evo is the closest existing model to DOGMA in spirit: it operates at genome scale, models DNA at single-nucleotide resolution, and can generate novel genomic sequences. But Evo stops at DNA. It does not model transcription, translation, or protein function. It generates DNA sequences but does not predict what those sequences \emph{do} at the phenotypic level. DOGMA extends the Evo paradigm downstream: from DNA generation through expression and realization.
+
+\subsection{DOGMA vs.\ Enformer}
+
+Enformer predicts gene expression from DNA sequence---a crucial link in the central dogma. But it predicts expression as a static quantity, without modeling the feedback loops that make gene regulation dynamic: proteins regulate the expression of other genes, which produce proteins that regulate still other genes. DOGMA models this regulatory feedback explicitly through its evolutionary training loop.
+
+\begin{table}[ht]
+\centering
+\caption{Feature comparison: existing biological foundation models vs.\ DOGMA.}
+\label{tab:dogma-vs-others}
+\begin{tabularx}{\textwidth}{L{2.8cm} C{1.2cm} C{1.2cm} C{1.2cm} C{1.2cm} C{1.2cm} C{1.2cm}}
+\toprule
+\textbf{Capability} & \textbf{AF2} & \textbf{ESM-2} & \textbf{DNABERT} & \textbf{Evo} & \textbf{Enformer} & \textbf{DOGMA} \\
+\midrule
+DNA representation       & -- & -- & \checkmark & \checkmark & \checkmark & \checkmark \\
+Protein representation   & \checkmark & \checkmark & -- & -- & -- & \checkmark \\
+Gene expression pred.    & -- & -- & -- & -- & \checkmark & \checkmark \\
+Structure prediction     & \checkmark & partial & -- & -- & -- & \checkmark \\
+Generative (design)      & -- & -- & -- & \checkmark & -- & \checkmark \\
+Multi-modal integration  & -- & -- & -- & -- & -- & \checkmark \\
+Regulatory feedback      & -- & -- & -- & -- & -- & \checkmark \\
+Evolutionary training    & -- & -- & -- & -- & -- & \checkmark \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Missing Piece: Why Current Models Are Domain-Specific}
+\label{sec:missing-piece}
+
+\subsection{The Fragmentation Problem}
+
+Consider the state of biological AI today. If you want to predict a protein's structure, you use AlphaFold2. If you want to learn protein representations, you use ESM-2. If you want to predict gene expression, you use Enformer. If you want to generate DNA, you use Evo. If you want to design a new protein, you use RFdiffusion + ProteinMPNN.
+
+Each of these models is excellent at its specific task. But none of them models the complete biological pipeline from DNA to function. They are fragments of a much larger picture, and they do not communicate with each other.
+
+This fragmentation has practical consequences:
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{No feedback loops}: In real biology, proteins regulate gene expression, which changes protein production, which changes regulation. Current models cannot capture these feedback loops because they are disconnected.
+  \item \textbf{No cross-modal reasoning}: A mutation in a DNA regulatory element affects gene expression, which affects protein levels, which affects cellular function. No current model can trace this causal chain end-to-end.
+  \item \textbf{Redundant training}: Each model learns its own representations from scratch, even when the underlying biology is shared. ESM-2 and AlphaFold2 both learn about protein structure, but from different starting points and with no shared representations.
+\end{itemize}
+
+\subsection{The Central Dogma as Unifying Principle}
+
+In biology, the central dogma provides a natural unifying framework: DNA $\to$ RNA $\to$ Protein. This is not just a slogan---it is the actual information flow that connects all biological modalities. Every protein was transcribed from an mRNA, which was transcribed from a DNA gene, which is regulated by other proteins and RNAs in a complex network.
+
+DOGMA takes this biological principle and makes it an \emph{architectural} principle. Instead of building separate models for DNA, RNA, and protein, DOGMA builds a single system that follows the information flow of the central dogma:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Genome} (DNA): The stored program, analogous to a codebase.
+  \item \textbf{Regulation}: Context-dependent activation, analogous to conditional compilation.
+  \item \textbf{Transcription}: Converting selected genomic regions to working copies (RNA), analogous to reading source code.
+  \item \textbf{Translation/Expression}: Converting RNA instructions to functional outputs (proteins), analogous to compiling and running code.
+  \item \textbf{Realization}: The functional output in the real world, analogous to the running program's behavior.
+\end{enumerate}
+
+\begin{keyinsight}[DOGMA's Unification Thesis]
+Every existing biological foundation model captures one step of the central dogma. DOGMA captures them all in a single, end-to-end architecture. This is not merely an engineering convenience---it enables fundamentally new capabilities: reasoning about how DNA changes propagate through regulation, transcription, and expression to affect function; designing novel genomic programs that produce desired functional outputs; and modeling the evolutionary dynamics that shape all of these processes simultaneously.
+\end{keyinsight}
+
+\subsection{Why Unification Is Hard}
+
+If unification is so valuable, why has no one done it before? Because the technical challenges are formidable:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Scale mismatch}: DNA sequences are millions of bases long, but proteins are typically hundreds of amino acids. A unified model must handle both scales.
+  \item \textbf{Modality mismatch}: DNA is sequential (1D), protein structure is geometric (3D), gene expression is quantitative (continuous). A unified model must handle all data types.
+  \item \textbf{Training data heterogeneity}: Protein structure data (PDB) contains $\sim$200{,}000 structures. Protein sequences (UniRef) contain $\sim$300 million. Genomes (RefSeq) contain thousands. The data volumes and characteristics are very different.
+  \item \textbf{Loss function design}: How do you combine losses for sequence prediction, structure prediction, and expression prediction in a single training objective without one task dominating the others?
+\end{itemize}
+
+Chapter~\ref{ch:dogma-architecture} describes how DOGMA addresses each of these challenges. The biological foundation models in this chapter provide the building blocks; DOGMA provides the architectural framework that integrates them.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Convergence with DOGMA}
+\label{sec:convergence-dogma}
+
+The biological foundation models surveyed in this chapter are not isolated achievements. They form a converging body of evidence for three principles that DOGMA takes as axiomatic.
+
+\subsection{The Genome as Structured Program}
+
+Standard language models treat their input as a flat token sequence. Biological foundation models reveal that biological sequences are \emph{programs}: they encode instructions for building structures (proteins), controlling expression (regulatory DNA), and orchestrating development (gene regulatory networks). DOGMA's genomic state is not a token buffer---it is a structured program with typed regions, regulatory logic, and compositional semantics, as formalized in Chapter~\ref{ch:dogma-architecture}.
+
+\subsection{Regulation as Conditional Computation}
+
+Enformer demonstrates that gene expression is determined not by the coding sequence alone but by the surrounding regulatory context: enhancers, silencers, insulators, and chromatin state. This is \emph{conditional computation}---the same gene produces different amounts of protein in different cellular contexts. DOGMA's regulatory layer implements the same principle: context-dependent activation of genomic regions enables the system to exhibit different behaviors from the same underlying genome.
+
+\begin{keyinsight}[From Biological Regulation to Computational Regulation]
+In biology, a single genome encodes hundreds of distinct cell types through differential gene regulation. In DOGMA, a single genomic state encodes diverse task-specific behaviors through regulatory activation patterns. The parallel is not metaphorical: both systems use context signals to selectively activate subsets of a shared information store, achieving combinatorial expressiveness from a fixed substrate.
+\end{keyinsight}
+
+\subsection{Evolution as Optimization}
+
+Protein language models succeed because evolution has pre-optimized their training data. AlphaFold2 succeeds because evolutionary covariation encodes structural constraints. Evo succeeds because evolutionary conservation patterns at genome scale reflect functional organization. In each case, evolution is not just background context---it is an active computational force that shapes the distribution models learn from.
+
+DOGMA closes the loop: rather than merely learning from the products of evolution, it \emph{incorporates evolution as an optimization mechanism}. The evolutionary training loop treats the genomic state as a population of candidate solutions, applies mutation and selection alongside gradient updates, and uses fitness-based criteria that go beyond differentiable loss functions. This synthesis of evolutionary and gradient-based optimization, informed by the lessons of biological foundation models, is DOGMA's central methodological contribution.
+
+\begin{implnote}[From Inspiration to Implementation]
+Translating biological principles into DOGMA requires careful formalization. Key correspondences:
+\begin{itemize}[leftmargin=1.5em]
+  \item ESM-2's masked prediction $\longrightarrow$ DOGMA's genomic base prediction during synthesis.
+  \item AlphaFold2's dual-track processing $\longrightarrow$ DOGMA's separation of genomic state and regulatory context.
+  \item RFdiffusion's conditional generation $\longrightarrow$ DOGMA's context-conditioned transcription.
+  \item Enformer's multi-scale architecture $\longrightarrow$ DOGMA's hierarchical region structure.
+  \item Evo's long-range state space layers $\longrightarrow$ DOGMA's ParallelScan path for efficient genomic processing.
+\end{itemize}
+These are not analogies---they are design derivations. Each DOGMA component has a specific biological foundation model as its conceptual ancestor.
+\end{implnote}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Exercises}
+\label{sec:ch6-exercises}
+
+\begin{enumerate}[label=\textbf{6.\arabic*.}, leftmargin=2.5em]
+
+\item \textbf{[Conceptual --- Foundation Models]} In your own words, explain the difference between ``pre-training'' and ``fine-tuning'' in the foundation model paradigm. Use the medical student analogy from Section~\ref{sec:foundation-models-intro} to illustrate your answer. Why is pre-training more computationally expensive than fine-tuning?
+
+\item \textbf{[Conceptual --- AlphaFold2]} AlphaFold2 uses a Multiple Sequence Alignment (MSA) as input rather than just the query sequence alone. Explain \emph{why} the MSA provides additional information beyond the query sequence. What biological phenomenon does the MSA capture, and how does the Evoformer exploit it?
+
+\item \textbf{[Conceptual --- ESM-2]} ESM-2 is trained only to predict masked amino acids, yet it learns to predict protein 3D contacts. Explain how this is possible. What property of evolutionary sequence data makes structure information ``leak'' into the masked language modeling objective?
+
+\item \textbf{[Conceptual --- DNA Tokenization]} Compare and contrast $k$-mer tokenization (DNABERT) with Byte Pair Encoding (DNABERT-2) for DNA sequences. What are the advantages and disadvantages of each approach? Consider vocabulary size, information per token, and biological interpretability.
+
+\item \textbf{[Analysis --- Parameter Efficiency]} AlphaFold2 uses 93M parameters to solve structure prediction; ESM-2 uses 15B parameters for protein language modeling. Why does AlphaFold2 need so many fewer parameters? Frame your answer in terms of inductive biases and the bias-variance tradeoff from Chapter~\ref{ch:ml-foundations}.
+
+\item \textbf{[Analysis --- Context Length]} The context lengths of DNA foundation models have grown dramatically: DNABERT (512 bp), Nucleotide Transformer (6 kb), Evo (131 kb), Enformer (196 kb). For each jump in context length, identify one biological phenomenon that the longer context enables the model to capture. Why is quadratic attention prohibitive at these scales?
+
+\item \textbf{[Analysis --- Cross-Species Training]} The Nucleotide Transformer achieves better performance on human genomic tasks when trained on 850 genomes than when trained on the human genome alone. Propose a hypothesis for why this occurs, and suggest an experiment to test your hypothesis.
+
+\item \textbf{[Coding]} Implement a simple $k$-mer language model for DNA sequences. Train it on a small bacterial genome (e.g., \emph{E.~coli}) using next-$k$-mer prediction. Measure perplexity as a function of context length. At what context length does the model begin to capture codon structure (period-3 patterns)?
+
+\item \textbf{[Design]} Propose an architecture for a ``regulatory transformer'' that predicts enhancer--promoter contact probability from DNA sequence. Specify: (a) the tokenization strategy, (b) the positional encoding scheme (noting that absolute positions are less meaningful than relative distances for regulatory interactions), (c) how you would encode strand orientation, and (d) training data sources.
+
+\item \textbf{[Synthesis --- DOGMA]} Examine Table~\ref{tab:dogma-vs-others}. For each capability listed (DNA representation, protein representation, gene expression prediction, etc.), explain why a unified model that handles \emph{all} capabilities simultaneously would be more powerful than separate models that each handle one. Give a concrete biological example where cross-modal reasoning is essential.
+
+\item \textbf{[Research]} Read \citet{nguyen2024} on Evo. The model is trained on prokaryotic genomes but evaluated on its ability to generate functional genetic elements. Discuss the extent to which this transfer is expected given the evolutionary conservation principles described in Section~\ref{sec:bio-teaches-ai}. What classes of eukaryotic regulatory elements would you expect Evo to model poorly, and why?
+
+\item \textbf{[Synthesis --- DOGMA-Lite]} Design a ``DOGMA-Lite'' system that combines three ideas from this chapter: (a) ESM-2-style evolutionary pre-training for learning genomic base representations, (b) Enformer-style multi-scale processing for capturing regulatory context, and (c) Evo-style state space layers for efficient long-range dependencies. Sketch the architecture, specify the training objectives, and describe how it maps onto DOGMA's six-stage pipeline from Chapter~\ref{ch:dogma-architecture}.
+
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Key Takeaways}
+
+\keytakeaway{
+\begin{itemize}[leftmargin=1.5em]
+  \item A \textbf{foundation model} is a large model pre-trained on broad data with self-supervised learning, then adapted to many downstream tasks. The cost of pre-training is paid once; the benefits are amortized across applications.
+  \item \textbf{AlphaFold2} solved protein structure prediction by combining evolutionary information (MSA) with physics-informed architecture (SE(3) equivariance, Evoformer dual-track, triangular attention)---achieving superhuman accuracy with only 93M parameters \citep{jumper2021}.
+  \item \textbf{ESM-2} learns protein representations via masked language modeling on 65 million evolutionary sequences, discovering emergent structural information (contact maps, secondary structure) without any structural supervision \citep{lin2023}.
+  \item \textbf{DNABERT} and the \textbf{Nucleotide Transformer} apply language modeling to DNA, with $k$-mer tokenization and multi-species training. Cross-species pre-training outperforms single-species models, demonstrating that evolutionary breadth beats depth \citep{ji2021dnabert, dalla2023nucleotide}.
+  \item \textbf{Evo} achieves genome-scale DNA modeling (131 kb context) at single-nucleotide resolution using sub-quadratic state space layers (StripedHyena), enabling generation of biologically realistic multi-gene sequences \citep{nguyen2024}.
+  \item \textbf{Enformer} predicts quantitative gene expression from 196 kb of DNA sequence, capturing long-range enhancer--promoter interactions and discovering regulatory grammar without explicit annotation \citep{avsec2021}.
+  \item \textbf{RFdiffusion} enables generative protein design through denoising diffusion, creating proteins that can be experimentally validated \citep{watson2023rfdiffusion}.
+  \item Current biological foundation models are \textbf{domain-specific}: each excels at one modality (protein sequence, protein structure, DNA, expression) but none spans the complete central dogma from DNA to function.
+  \item \textbf{DOGMA} synthesizes principles from all of these models---genome as structured program, regulation as conditional computation, evolution as optimization---into a unified architecture that follows the central dogma end-to-end.
+\end{itemize}
+}
+
+\section*{Suggested Reading}
+\begin{itemize}[leftmargin=1.5em]
+  \item \citet{lin2023}: ESM-2 and evolutionary-scale protein language modeling.
+  \item \citet{jumper2021}: AlphaFold2---the full architecture and CASP14 results.
+  \item \citet{watson2023rfdiffusion}: RFdiffusion for generative protein design.
+  \item \citet{avsec2021}: Enformer---predicting gene expression from DNA sequence.
+  \item \citet{nguyen2024}: Evo---genome-scale foundation modeling with StripedHyena.
+  \item \citet{ji2021dnabert}: DNABERT---pre-trained bidirectional encoder for DNA.
+  \item \citet{dalla2023nucleotide}: Nucleotide Transformer---multi-species genomic pre-training.
+  \item \citet{bronstein2021}: Geometric deep learning---the theoretical framework behind symmetry-aware architectures.
+  \item Bommasani et~al.\ (2021): ``On the Opportunities and Risks of Foundation Models''---the Stanford HAI report that coined the term.
+\end{itemize}

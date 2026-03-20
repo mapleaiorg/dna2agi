@@ -1,0 +1,1631 @@
+% ═══════════════════════════════════════════════════════════════════════════════
+% Chapter 10: TetraData Structure and TetraMemory
+% Part III: The DOGMA Architecture
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\chapter{TetraData Structure and TetraMemory}
+\label{ch:tetradata}
+
+\chapterepigraph{The tetrahedron is the simplest possible solid. Any geometry must begin here.}{After Buckminster Fuller}
+
+\noindent
+Computer graphics has long relied on \emph{triangles} as the fundamental rendering primitive.
+Triangle meshes approximate surfaces efficiently and map naturally to GPU hardware.
+But triangles are inherently \emph{two-dimensional}: they describe surfaces, not volumes.
+For a computational architecture inspired by three-dimensional molecular biology---where
+proteins fold into globular structures, DNA coils into superhelical conformations, and
+tetrahedral carbon bonds define organic chemistry---a volumetric primitive is needed.
+
+This chapter introduces the \textbf{TetraData Structure} (TDS): a computational framework
+built on \emph{tetrahedra} rather than triangles. We begin with a patient, step-by-step
+construction that builds a tetrahedron one vertex at a time, then show how tetrahedra
+link together into chains that map directly onto DNA sequences. We then develop
+\textbf{TetraMemory}, a structured memory system that replaces self-attention in DOGMA
+with local tetrahedral interactions that compose into global computation.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Building a Tetrahedron from Scratch}
+\label{sec:building-tetra}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+Before defining the TetraData Structure formally, let us build our fundamental
+primitive---the tetrahedron---one vertex at a time. This construction will reveal
+\emph{why} the tetrahedron is the minimal solid that carries volume and chirality,
+and why no simpler primitive will do.
+
+% ─── Step 0: A Single Vertex ─────────────────────────────────────────────────
+\subsection{Step 0: A Single Vertex (0D)}
+\label{sec:step0-vertex}
+
+We begin with nothing: an empty space. We place a single point $v_0$ and assign
+it a value (say, a DNA base, a token embedding, or simply a label).
+
+\begin{center}
+\begin{tikzpicture}[scale=1.2]
+  % Single vertex
+  \fill[dogmablue] (0,0) circle (4pt);
+  \node[above=6pt, font=\bfseries\small, color=dogmablue] at (0,0) {$v_0$};
+
+  % Annotations
+  \node[below=20pt, font=\small, align=center] at (0,0) {
+    Vertices: 1 \quad Edges: 0 \quad Faces: 0 \quad Volume: 0
+  };
+
+  % Dimension label
+  \node[right=30pt, font=\itshape\small, color=dogmagray] at (0,0) {0-dimensional};
+\end{tikzpicture}
+\end{center}
+
+A single vertex is a 0-dimensional object. It can store a value---but it encodes
+no \emph{relationships}. There is no notion of distance, connection, area, or volume.
+In a sequence model, a single vertex is a single token in isolation, with no
+context whatsoever.
+
+\begin{remark}
+In graph theory terms, we have the graph $K_1$: one vertex, zero edges. The
+adjacency matrix is the $1 \times 1$ zero matrix. This is the least informative
+data structure possible.
+\end{remark}
+
+% ─── Step 1: Two Vertices ────────────────────────────────────────────────────
+\subsection{Step 1: Add a Second Vertex (1D --- an Edge)}
+\label{sec:step1-edge}
+
+Now add a second vertex $v_1$ and connect it to $v_0$ with an edge $e_{01}$.
+
+\begin{center}
+\begin{tikzpicture}[scale=1.2]
+  % Two vertices with edge
+  \fill[dogmablue] (0,0) circle (4pt);
+  \fill[dogmablue] (3,0) circle (4pt);
+  \draw[thick, dogmablue] (0,0) -- (3,0);
+
+  \node[above=6pt, font=\bfseries\small, color=dogmablue] at (0,0) {$v_0$};
+  \node[above=6pt, font=\bfseries\small, color=dogmablue] at (3,0) {$v_1$};
+  \node[below=4pt, font=\small, color=dogmateal] at (1.5,0) {$e_{01}$};
+
+  % Annotations
+  \node[below=20pt, font=\small, align=center] at (1.5,0) {
+    Vertices: 2 \quad Edges: 1 \quad Faces: 0 \quad Volume: 0
+  };
+
+  \node[right=15pt, font=\itshape\small, color=dogmagray] at (3,0) {1-dimensional};
+\end{tikzpicture}
+\end{center}
+
+An edge is a 1-dimensional object. It encodes exactly one relationship: the
+pairwise interaction between $v_0$ and $v_1$. The edge can carry a weight
+$w_{01} \in \mathbb{R}$ representing the strength or character of that interaction.
+
+In the language of neural networks, this is a single attention weight: how much
+does token $v_0$ attend to token $v_1$? One edge captures one pairwise interaction.
+This is the graph $K_2$: the complete graph on 2 vertices.
+
+\begin{remark}
+An edge has no \emph{area}, no \emph{volume}, and no \emph{handedness}. You
+cannot distinguish a ``left-handed'' line segment from a ``right-handed'' one.
+An edge is symmetric under reflection.
+\end{remark}
+
+% ─── Step 2: Three Vertices ──────────────────────────────────────────────────
+\subsection{Step 2: Add a Third Vertex (2D --- a Triangle)}
+\label{sec:step2-triangle}
+
+Add a third vertex $v_2$ and connect it to both existing vertices. We now have
+three vertices and three edges forming a triangle.
+
+\begin{center}
+\begin{tikzpicture}[scale=1.4]
+  % Triangle
+  \coordinate (v0) at (0,0);
+  \coordinate (v1) at (3,0);
+  \coordinate (v2) at (1.5,2.2);
+
+  % Fill
+  \fill[dogmalight, opacity=0.5] (v0) -- (v1) -- (v2) -- cycle;
+
+  % Edges
+  \draw[thick, dogmablue] (v0) -- (v1);
+  \draw[thick, dogmablue] (v1) -- (v2);
+  \draw[thick, dogmablue] (v2) -- (v0);
+
+  % Vertices
+  \fill[dogmablue] (v0) circle (4pt);
+  \fill[dogmablue] (v1) circle (4pt);
+  \fill[dogmablue] (v2) circle (4pt);
+
+  % Labels
+  \node[below left=3pt, font=\bfseries\small, color=dogmablue] at (v0) {$v_0$};
+  \node[below right=3pt, font=\bfseries\small, color=dogmablue] at (v1) {$v_1$};
+  \node[above=5pt, font=\bfseries\small, color=dogmablue] at (v2) {$v_2$};
+
+  % Edge labels
+  \node[below=3pt, font=\small, color=dogmateal] at (1.5,0) {$e_{01}$};
+  \node[right=3pt, font=\small, color=dogmateal] at ($(v1)!0.5!(v2)$) {$e_{12}$};
+  \node[left=3pt, font=\small, color=dogmateal] at ($(v0)!0.5!(v2)$) {$e_{02}$};
+
+  % Annotations
+  \node[below=25pt, font=\small, align=center] at (1.5,0) {
+    Vertices: 3 \quad Edges: 3 \quad Faces: 1 \quad Volume: 0
+  };
+
+  \node[right=15pt, font=\itshape\small, color=dogmagray] at (v1) {2-dimensional};
+\end{tikzpicture}
+\end{center}
+
+A triangle is a 2-dimensional object. It has \emph{area} but no \emph{volume}.
+Three edges encode all $\binom{3}{2} = 3$ pairwise interactions among the three
+vertices, forming the complete graph $K_3$.
+
+This is the primitive used in computer graphics: triangle meshes tile surfaces.
+GPUs are optimized for rasterizing triangles. But triangles have two critical
+limitations for our purposes:
+
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{No volume.} A triangle is flat. It cannot enclose space.
+        It describes a boundary, not an interior.
+  \item \textbf{No chirality.} A triangle in 2D can be reflected into its
+        mirror image by a rotation. In 3D, a triangle embedded in a plane
+        does have two ``sides,'' but this orientation is not an intrinsic
+        property---it depends on the choice of normal direction.
+\end{enumerate}
+
+\begin{bioinsight}[Why Triangles Are Not Enough]
+In molecular biology, chirality is not optional---it is essential.
+All naturally occurring amino acids are L-amino acids (left-handed).
+DNA's double helix is always right-handed (B-form).
+Enzymes distinguish between mirror-image molecules with exquisite specificity.
+A computational primitive that cannot represent chirality is fundamentally
+incapable of encoding molecular structure faithfully.
+A triangle mesh can approximate the \emph{surface} of a protein, but it
+cannot capture the \emph{handed} internal packing that determines function.
+\end{bioinsight}
+
+% ─── Step 3: Four Vertices ───────────────────────────────────────────────────
+\subsection{Step 3: Add a Fourth Vertex (3D --- the Tetrahedron!)}
+\label{sec:step3-tetrahedron}
+
+Now the crucial step. Add a fourth vertex $v_3$ that is \emph{not in the plane}
+of the first three, and connect it to all existing vertices. We obtain a
+tetrahedron: the simplest possible solid.
+
+\begin{center}
+\begin{tikzpicture}[scale=1.6]
+  % Vertices of the tetrahedron (3D projection)
+  \coordinate (v0) at (0,0);
+  \coordinate (v1) at (3.5,0);
+  \coordinate (v2) at (1.75,1.8);
+  \coordinate (v3) at (1.2,0.7);  % interior-ish vertex for 3D effect
+
+  % Back faces (lighter)
+  \fill[dogmamint, opacity=0.3] (v0) -- (v1) -- (v3) -- cycle;
+  \fill[dogmalight, opacity=0.3] (v0) -- (v2) -- (v3) -- cycle;
+
+  % Front face
+  \fill[dogmalight, opacity=0.5] (v0) -- (v1) -- (v2) -- cycle;
+  \fill[dogmamint, opacity=0.4] (v1) -- (v2) -- (v3) -- cycle;
+
+  % Back edges (dashed)
+  \draw[thick, dogmateal, dashed] (v0) -- (v3);
+  \draw[thick, dogmateal, dashed] (v1) -- (v3);
+
+  % Front edges (solid)
+  \draw[thick, dogmablue] (v0) -- (v1);
+  \draw[thick, dogmablue] (v1) -- (v2);
+  \draw[thick, dogmablue] (v2) -- (v0);
+  \draw[thick, dogmablue] (v2) -- (v3);
+
+  % Vertices
+  \fill[dogmablue] (v0) circle (4pt);
+  \fill[dogmablue] (v1) circle (4pt);
+  \fill[dogmablue] (v2) circle (4pt);
+  \fill[dogmateal] (v3) circle (4pt);
+
+  % Labels
+  \node[below left=3pt, font=\bfseries\small, color=dogmablue] at (v0) {$v_0$};
+  \node[below right=3pt, font=\bfseries\small, color=dogmablue] at (v1) {$v_1$};
+  \node[above=5pt, font=\bfseries\small, color=dogmablue] at (v2) {$v_2$};
+  \node[below=5pt, font=\bfseries\small, color=dogmateal] at (v3) {$v_3$};
+
+  % Edge count annotation
+  \node[below=25pt, font=\small, align=center] at (1.75,0) {
+    Vertices: 4 \quad Edges: 6 \quad Faces: 4 \quad Volume: $>0$
+  };
+
+  \node[right=10pt, font=\itshape\small, color=dogmagray] at (v1) {3-dimensional!};
+
+  % Chirality indicator
+  \draw[-{Stealth}, thick, dogmared, opacity=0.6] (1.6,0.9) arc[start angle=180, end angle=60, radius=0.3];
+  \node[right=2pt, font=\scriptsize, color=dogmared] at (1.9,1.1) {$\chi$};
+\end{tikzpicture}
+\end{center}
+
+A tetrahedron is the \emph{first} object in our construction that possesses:
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{Volume:} It encloses a region of 3D space. The signed volume is
+        computed from the $3 \times 3$ determinant of the edge vectors.
+  \item \textbf{Chirality:} The sign of the determinant ($+1$ or $-1$) defines
+        a handedness that cannot be changed by any rotation---only by reflection.
+  \item \textbf{Complete pairwise interactions:} Six edges encode all
+        $\binom{4}{2} = 6$ pairwise relationships. This is the complete graph $K_4$.
+  \item \textbf{Four faces:} Each face is a triangle that can serve as an
+        interface for connecting to another tetrahedron.
+\end{itemize}
+
+\begin{definition}[Tetrahedron]
+\label{def:tetradata-tetrahedron}
+A \emph{tetrahedron} $\mathcal{T}$ in $\mathbb{R}^3$ is the convex hull of four non-coplanar points $\mathbf{v}_0, \mathbf{v}_1, \mathbf{v}_2, \mathbf{v}_3$:
+\begin{equation}
+\mathcal{T} = \left\{ \sum_{i=0}^{3} \lambda_i \mathbf{v}_i \;\middle|\; \lambda_i \geq 0, \; \sum_{i=0}^{3} \lambda_i = 1 \right\}.
+\end{equation}
+The \emph{signed volume} is:
+\begin{equation}
+V_{\text{signed}}(\mathcal{T}) = \frac{1}{6} \det \begin{pmatrix} \mathbf{v}_1 - \mathbf{v}_0 & \mathbf{v}_2 - \mathbf{v}_0 & \mathbf{v}_3 - \mathbf{v}_0 \end{pmatrix},
+\label{eq:signed-volume}
+\end{equation}
+and the \emph{chirality} is:
+\begin{equation}
+\chi(\mathcal{T}) = \operatorname{sign}\!\big(V_{\text{signed}}(\mathcal{T})\big) \in \{+1, -1\}.
+\end{equation}
+\end{definition}
+
+\begin{keyinsight}[The Tetrahedron Is the Minimal Solid]
+In all of Euclidean geometry, the tetrahedron is the \emph{simplest} object that
+simultaneously possesses volume and chirality. You cannot build a solid with
+fewer than 4 vertices. This is not a design choice---it is a mathematical
+necessity. Just as the triangle is the minimal polygon, the tetrahedron is
+the minimal polyhedron.
+
+DOGMA's choice of the tetrahedron as its fundamental primitive is therefore
+not arbitrary: it is the minimal structure that can encode 3D geometry,
+handedness, and complete pairwise interactions among a set of elements.
+\end{keyinsight}
+
+% ─── Step-by-step summary figure ──────────────────────────────────────────────
+\subsection{The Construction at a Glance}
+
+The following figure summarizes the four steps side by side, highlighting what
+each new vertex contributes:
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[scale=0.95]
+  % ── Step 0: single vertex ──
+  \begin{scope}[shift={(0,0)}]
+    \fill[dogmablue] (0,0) circle (3pt);
+    \node[above=5pt, font=\scriptsize\bfseries] at (0,0) {$v_0$};
+    \node[below=12pt, font=\scriptsize, align=center] at (0,0) {
+      \textbf{Step 0} \\ $V{=}1$, $E{=}0$ \\ 0D
+    };
+  \end{scope}
+
+  % Arrow
+  \draw[-{Stealth}, thick, dogmagray] (0.6,0) -- (1.8,0);
+
+  % ── Step 1: edge ──
+  \begin{scope}[shift={(2.5,0)}]
+    \fill[dogmablue] (0,0) circle (3pt);
+    \fill[dogmablue] (1.2,0) circle (3pt);
+    \draw[thick, dogmablue] (0,0) -- (1.2,0);
+    \node[above=5pt, font=\scriptsize\bfseries] at (0,0) {$v_0$};
+    \node[above=5pt, font=\scriptsize\bfseries] at (1.2,0) {$v_1$};
+    \node[below=12pt, font=\scriptsize, align=center] at (0.6,0) {
+      \textbf{Step 1} \\ $V{=}2$, $E{=}1$ \\ 1D
+    };
+  \end{scope}
+
+  % Arrow
+  \draw[-{Stealth}, thick, dogmagray] (4.3,0) -- (5.5,0);
+
+  % ── Step 2: triangle ──
+  \begin{scope}[shift={(6.2,0)}]
+    \coordinate (a) at (0,0);
+    \coordinate (b) at (1.4,0);
+    \coordinate (c) at (0.7,1.0);
+    \fill[dogmalight, opacity=0.5] (a) -- (b) -- (c) -- cycle;
+    \draw[thick, dogmablue] (a) -- (b) -- (c) -- cycle;
+    \fill[dogmablue] (a) circle (3pt);
+    \fill[dogmablue] (b) circle (3pt);
+    \fill[dogmablue] (c) circle (3pt);
+    \node[below left=1pt, font=\scriptsize\bfseries] at (a) {$v_0$};
+    \node[below right=1pt, font=\scriptsize\bfseries] at (b) {$v_1$};
+    \node[above=3pt, font=\scriptsize\bfseries] at (c) {$v_2$};
+    \node[below=12pt, font=\scriptsize, align=center] at (0.7,0) {
+      \textbf{Step 2} \\ $V{=}3$, $E{=}3$ \\ 2D (triangle)
+    };
+  \end{scope}
+
+  % Arrow
+  \draw[-{Stealth}, thick, dogmagray] (8.2,0) -- (9.4,0);
+
+  % ── Step 3: tetrahedron ──
+  \begin{scope}[shift={(10.1,0)}]
+    \coordinate (a) at (0,0);
+    \coordinate (b) at (1.6,0);
+    \coordinate (c) at (0.8,1.1);
+    \coordinate (d) at (0.5,0.4);
+    \fill[dogmamint, opacity=0.3] (a) -- (b) -- (d) -- cycle;
+    \fill[dogmalight, opacity=0.5] (a) -- (b) -- (c) -- cycle;
+    \fill[dogmamint, opacity=0.4] (b) -- (c) -- (d) -- cycle;
+    \draw[thick, dogmablue] (a) -- (b) -- (c) -- cycle;
+    \draw[thick, dogmateal, dashed] (a) -- (d);
+    \draw[thick, dogmateal, dashed] (b) -- (d);
+    \draw[thick, dogmablue] (c) -- (d);
+    \fill[dogmablue] (a) circle (3pt);
+    \fill[dogmablue] (b) circle (3pt);
+    \fill[dogmablue] (c) circle (3pt);
+    \fill[dogmateal] (d) circle (3pt);
+    \node[below left=1pt, font=\scriptsize\bfseries] at (a) {$v_0$};
+    \node[below right=1pt, font=\scriptsize\bfseries] at (b) {$v_1$};
+    \node[above=3pt, font=\scriptsize\bfseries] at (c) {$v_2$};
+    \node[below=2pt, font=\scriptsize\bfseries, color=dogmateal] at (d) {$v_3$};
+    \node[below=12pt, font=\scriptsize, align=center] at (0.8,0) {
+      \textbf{Step 3} \\ $V{=}4$, $E{=}6$ \\ 3D (tetrahedron!)
+    };
+  \end{scope}
+\end{tikzpicture}
+\caption{Building a tetrahedron one vertex at a time. Each step adds a new
+dimension: a vertex (0D), an edge (1D), a triangle (2D), and finally a
+tetrahedron (3D). The tetrahedron is the first object with volume and chirality.}
+\label{fig:tetra-construction}
+\end{figure}
+
+\begin{example}[Counting Combinatorics]
+At each step $k$ (adding vertex $v_k$ to the existing structure), the new
+vertex connects to all $k$ existing vertices, adding exactly $k$ new edges:
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{ccccl}
+\toprule
+\textbf{Step} & \textbf{Vertices} & \textbf{New edges} & \textbf{Total edges} & \textbf{Graph} \\
+\midrule
+0 & 1 & 0 & 0 & $K_1$ \\
+1 & 2 & 1 & 1 & $K_2$ \\
+2 & 3 & 2 & 3 & $K_3$ \\
+3 & 4 & 3 & 6 & $K_4$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+In general, the complete graph $K_n$ has $\binom{n}{2} = \frac{n(n-1)}{2}$ edges.
+For $K_4$, this gives $\binom{4}{2} = 6$ edges---exactly the six edges of a
+tetrahedron.
+\end{example}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Why Tetrahedra? --- A Deeper Look}
+\label{sec:why-tetra}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+With the construction complete, we can appreciate why DOGMA chooses the
+tetrahedron over simpler primitives.
+
+\subsection{Tetrahedra vs.\ Triangles: A Detailed Comparison}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.95\textwidth}{L{3cm} L{4cm} Y}
+\toprule
+\textbf{Property} & \textbf{Triangle Mesh} & \textbf{Tetrahedral Mesh (TDS)} \\
+\midrule
+Dimension & 2D surface in 3D & 3D volume \\
+Vertices per element & 3 & 4 \\
+Edges per element & 3 ($K_3$) & 6 ($K_4$) --- $2\times$ more interactions \\
+Faces per element & 1 & 4 triangular faces \\
+Interior & None (boundary only) & Enclosed volume \\
+Chirality & None & $\pm 1$ handedness \\
+Adjacency & Edge-sharing & Face-sharing (richer interface) \\
+DNA mapping & --- & 4 vertices $\leftrightarrow$ \{A, C, G, T\} \\
+DOF per element & 9 (positions only) & 36 (positions + edges + bases + vol + chir) \\
+Info.\ density & 3 edges & 6 edges --- $4\times$ information density\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The last row deserves emphasis. A triangle encodes 3 pairwise interactions.
+A tetrahedron encodes 6. But the tetrahedron has only one more vertex.
+In terms of pairwise interactions per vertex, the triangle achieves
+$3/3 = 1$ edge per vertex, while the tetrahedron achieves $6/4 = 1.5$ edges per
+vertex---a 50\% improvement in information density.
+
+\subsection{The Biological Justification}
+
+The biological case for tetrahedra is compelling:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Carbon chemistry:} The carbon atom---the backbone of all organic
+        molecules---forms four bonds arranged tetrahedrally ($sp^3$ hybridization).
+        Methane (CH$_4$) is a perfect tetrahedron. Protein backbone geometry is
+        fundamentally tetrahedral at each $C_\alpha$ center.
+
+  \item \textbf{DNA base count:} DNA uses exactly four bases---A, C, G, T. A
+        tetrahedron has exactly four vertices. This numerical coincidence becomes
+        the foundation of DOGMA's data structure: each vertex of a tetrahedron
+        is assigned one DNA base.
+
+  \item \textbf{DNA base stacking:} Adjacent base pairs in the double helix create
+        local geometries that are naturally described by tetrahedral coordinates.
+
+  \item \textbf{Protein structure:} Alpha-carbon ($C_\alpha$) geometry in protein
+        backbones forms tetrahedral arrangements that are native to TDS
+        representation.
+
+  \item \textbf{Chirality in biology:} All naturally occurring amino acids are
+        L-amino acids; DNA forms a right-handed helix. Chirality is
+        \emph{information} that must be preserved, and only volumetric
+        primitives (3D and above) can encode it.
+\end{itemize}
+
+\begin{bioinsight}[Four Bases, Four Vertices]
+The fact that DNA uses exactly four nucleotide bases is one of the most
+fundamental constraints in molecular biology. This four-fold alphabet maps
+perfectly onto the four vertices of a tetrahedron. This is not merely a
+convenient analogy: it is the mathematical foundation of the TetraData
+Structure. Each vertex carries a base type, and the six edges encode all
+pairwise interactions among those bases---including the Watson--Crick pairings
+(A--T and G--C) as geometrically distinguished edges.
+\end{bioinsight}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Linking Tetrahedra --- The LinkedTetraChain}
+\label{sec:linked-tetra-chain}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+A single tetrahedron encodes the interactions among four elements. But real
+sequences are longer than four tokens. How do we handle sequences of arbitrary
+length? The answer is \emph{linking}: we chain tetrahedra together by sharing
+triangular faces, exactly as the PowerPoint construction shows.
+
+\subsection{Adding Vertex 4: The Second Tetrahedron}
+\label{sec:add-v4}
+
+We continue the construction from Section~\ref{sec:building-tetra}. Having
+built the first tetrahedron $\mathcal{T}_1 = (v_0, v_1, v_2, v_3)$, we now add
+vertex $v_4$ and connect it to the three most recent vertices: $v_1, v_2, v_3$.
+This creates a \emph{second} tetrahedron:
+\[
+  \mathcal{T}_2 = (v_1, v_2, v_3, v_4).
+\]
+
+The two tetrahedra share the triangular face $(v_1, v_2, v_3)$. The new vertex
+$v_4$ adds exactly 3 new edges: $e_{14}, e_{24}, e_{34}$.
+
+\begin{center}
+\begin{tikzpicture}[scale=1.4]
+  % First tetrahedron vertices
+  \coordinate (v0) at (-1.5, 0);
+  \coordinate (v1) at (0, -0.8);
+  \coordinate (v2) at (1.2, 0.8);
+  \coordinate (v3) at (0.3, 0.1);
+
+  % Second tetrahedron: new vertex v4
+  \coordinate (v4) at (2.8, -0.3);
+
+  % T1 faces
+  \fill[dogmalight, opacity=0.3] (v0) -- (v1) -- (v2) -- cycle;
+  \fill[dogmalight, opacity=0.2] (v0) -- (v1) -- (v3) -- cycle;
+
+  % Shared face (highlighted)
+  \fill[dogmawarm, opacity=0.4] (v1) -- (v2) -- (v3) -- cycle;
+
+  % T2 faces
+  \fill[dogmamint, opacity=0.3] (v1) -- (v2) -- (v4) -- cycle;
+  \fill[dogmamint, opacity=0.2] (v2) -- (v3) -- (v4) -- cycle;
+
+  % T1 edges
+  \draw[thick, dogmablue] (v0) -- (v1);
+  \draw[thick, dogmablue] (v0) -- (v2);
+  \draw[thick, dogmablue, dashed] (v0) -- (v3);
+  \draw[thick, dogmablue] (v1) -- (v2);
+  \draw[thick, dogmablue] (v1) -- (v3);
+  \draw[thick, dogmablue] (v2) -- (v3);
+
+  % T2 edges (new)
+  \draw[very thick, dogmateal] (v1) -- (v4);
+  \draw[very thick, dogmateal] (v2) -- (v4);
+  \draw[very thick, dogmateal] (v3) -- (v4);
+
+  % Vertices
+  \fill[dogmablue] (v0) circle (3pt);
+  \fill[dogmablue] (v1) circle (3pt);
+  \fill[dogmablue] (v2) circle (3pt);
+  \fill[dogmablue] (v3) circle (3pt);
+  \fill[dogmateal] (v4) circle (4pt);
+
+  % Labels
+  \node[left=4pt, font=\bfseries\small, color=dogmablue] at (v0) {$v_0$};
+  \node[below=4pt, font=\bfseries\small, color=dogmablue] at (v1) {$v_1$};
+  \node[above=4pt, font=\bfseries\small, color=dogmablue] at (v2) {$v_2$};
+  \node[below=4pt, font=\bfseries\small, color=dogmablue] at (v3) {$v_3$};
+  \node[right=4pt, font=\bfseries\small, color=dogmateal] at (v4) {$v_4$};
+
+  % Tetrahedron labels
+  \node[font=\small\itshape, color=dogmablue] at (-0.5, 0.4) {$\mathcal{T}_1$};
+  \node[font=\small\itshape, color=dogmateal] at (2.0, 0.4) {$\mathcal{T}_2$};
+
+  % Shared face annotation
+  \draw[thick, dogmared, opacity=0.6, decorate, decoration={brace, amplitude=5pt, mirror}]
+    ($(v1)+(0,-0.15)$) -- ($(v3)+(0.1,0.15)$);
+  \node[below=8pt, font=\scriptsize, color=dogmared] at (0.4, -0.5) {shared face};
+\end{tikzpicture}
+\end{center}
+
+\begin{remark}
+The shared face $(v_1, v_2, v_3)$ contains three edges and three vertices that
+belong to \emph{both} tetrahedra. This is a much richer interface than the
+edge-sharing used by triangle meshes: a shared face transmits three pairwise
+relationships, while a shared edge transmits only one.
+\end{remark}
+
+\subsection{Adding Vertex 5: The Third Tetrahedron}
+
+Continuing the pattern, vertex $v_5$ connects to $v_2, v_3, v_4$, creating:
+\[
+  \mathcal{T}_3 = (v_2, v_3, v_4, v_5),
+\]
+which shares face $(v_2, v_3, v_4)$ with $\mathcal{T}_2$.
+
+\subsection{The General Pattern: LinkedTetraChain}
+
+The pattern is now clear. At each step, a new vertex $v_{k+3}$ connects to the
+three most recent vertices $(v_k, v_{k+1}, v_{k+2})$, forming tetrahedron:
+\[
+  \mathcal{T}_{k+1} = (v_k, v_{k+1}, v_{k+2}, v_{k+3}),
+\]
+which shares face $(v_k, v_{k+1}, v_{k+2})$ with the previous tetrahedron
+$\mathcal{T}_k = (v_{k-1}, v_k, v_{k+1}, v_{k+2})$.
+
+\begin{definition}[LinkedTetraChain]
+\label{def:linked-tetra-chain}
+A \emph{LinkedTetraChain} of length $n$ is an ordered sequence of tetrahedra
+$(\mathcal{T}_1, \mathcal{T}_2, \ldots, \mathcal{T}_n)$ constructed from a
+vertex sequence $(v_0, v_1, \ldots, v_{n+2})$ where:
+\begin{equation}
+  \mathcal{T}_k = (v_{k-1}, v_k, v_{k+1}, v_{k+2}), \quad k = 1, 2, \ldots, n,
+\end{equation}
+and consecutive tetrahedra $\mathcal{T}_k$ and $\mathcal{T}_{k+1}$ share the
+triangular face $(v_k, v_{k+1}, v_{k+2})$.
+\end{definition}
+
+\begin{proposition}[Edge Count Formula]
+\label{prop:edge-count}
+A LinkedTetraChain of $n$ tetrahedra built from $n + 3$ vertices has exactly
+$3n + 3$ edges.
+\end{proposition}
+\begin{proof}
+The first tetrahedron $\mathcal{T}_1$ contributes $\binom{4}{2} = 6$ edges.
+Each subsequent tetrahedron $\mathcal{T}_k$ for $k \geq 2$ adds one new vertex
+that connects to 3 existing vertices, contributing exactly 3 new edges.
+Thus the total is $6 + 3(n-1) = 3n + 3$.
+\end{proof}
+
+The following diagram shows a chain of four linked tetrahedra:
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[scale=1.1, every node/.style={font=\small}]
+  % Vertices along the chain
+  \coordinate (v0) at (0, 0.2);
+  \coordinate (v1) at (1.2, -0.6);
+  \coordinate (v2) at (1.0, 0.9);
+  \coordinate (v3) at (2.4, 0.2);
+  \coordinate (v4) at (3.6, -0.4);
+  \coordinate (v5) at (3.8, 1.0);
+  \coordinate (v6) at (5.2, 0.1);
+
+  % T1 fill
+  \fill[dogmalight, opacity=0.35] (v0) -- (v1) -- (v2) -- cycle;
+  \fill[dogmalight, opacity=0.2]  (v0) -- (v1) -- (v3) -- cycle;
+
+  % T2 fill
+  \fill[dogmamint, opacity=0.3] (v1) -- (v2) -- (v3) -- cycle;
+  \fill[dogmamint, opacity=0.2] (v1) -- (v3) -- (v4) -- cycle;
+
+  % T3 fill
+  \fill[dogmawarm, opacity=0.3] (v2) -- (v3) -- (v4) -- cycle;
+  \fill[dogmawarm, opacity=0.2] (v3) -- (v4) -- (v5) -- cycle;
+
+  % T4 fill
+  \fill[dogmalight, opacity=0.3] (v3) -- (v4) -- (v5) -- cycle;
+  \fill[dogmalight, opacity=0.2] (v4) -- (v5) -- (v6) -- cycle;
+
+  % All edges
+  \foreach \a/\b in {v0/v1, v0/v2, v0/v3, v1/v2, v1/v3, v2/v3} {
+    \draw[thick, dogmablue] (\a) -- (\b);
+  }
+  \foreach \a/\b in {v1/v4, v2/v4, v3/v4} {
+    \draw[thick, dogmateal] (\a) -- (\b);
+  }
+  \foreach \a/\b in {v2/v5, v3/v5, v4/v5} {
+    \draw[thick, dogmagold] (\a) -- (\b);
+  }
+  \foreach \a/\b in {v3/v6, v4/v6, v5/v6} {
+    \draw[thick, dogmared] (\a) -- (\b);
+  }
+
+  % Vertices
+  \foreach \v in {v0, v1, v2, v3, v4, v5, v6} {
+    \fill[dogmablue!80!black] (\v) circle (3pt);
+  }
+
+  % Vertex labels
+  \node[left=3pt] at (v0) {$v_0$};
+  \node[below=3pt] at (v1) {$v_1$};
+  \node[above=3pt] at (v2) {$v_2$};
+  \node[below=3pt] at (v3) {$v_3$};
+  \node[below=3pt] at (v4) {$v_4$};
+  \node[above=3pt] at (v5) {$v_5$};
+  \node[right=3pt] at (v6) {$v_6$};
+
+  % Tetrahedron labels (below)
+  \node[font=\small\bfseries, color=dogmablue] at (0.8, -1.1) {$\mathcal{T}_1$};
+  \node[font=\small\bfseries, color=dogmateal] at (2.0, -1.1) {$\mathcal{T}_2$};
+  \node[font=\small\bfseries, color=dogmagold] at (3.4, -1.1) {$\mathcal{T}_3$};
+  \node[font=\small\bfseries, color=dogmared] at (4.8, -1.1) {$\mathcal{T}_4$};
+\end{tikzpicture}
+\caption{A LinkedTetraChain of four tetrahedra. Each tetrahedron shares a
+triangular face with its neighbors. Colors distinguish the edges added by each
+new vertex. Total: 7 vertices, $3(4)+3 = 15$ edges.}
+\label{fig:linked-chain}
+\end{figure}
+
+\begin{keyinsight}[The Sliding Window Analogy]
+The LinkedTetraChain is equivalent to a \emph{sliding window of width 4 with
+overlap 3} over the vertex sequence. Each tetrahedron ``sees'' four consecutive
+vertices, and consecutive tetrahedra overlap in three vertices. This means that
+each vertex participates in up to four tetrahedra (except near the ends),
+ensuring that information about each vertex is propagated through multiple
+local interaction contexts.
+
+Compare this to the sliding window in signal processing: a window of width $W$
+with overlap $W - 1$ slides one position at a time. Here, $W = 4$ and
+overlap $= 3$, so each step advances by one vertex. But unlike a flat sliding
+window, each ``window'' is a tetrahedron with volume, chirality, and full $K_4$
+connectivity.
+\end{keyinsight}
+
+\subsection{Growth Table}
+
+The following table tracks the combinatorics as we add vertices:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{ccccccl}
+\toprule
+\textbf{Vertex} & \textbf{Total $|V|$} & \textbf{New edges} & \textbf{Total $|E|$}
+  & \textbf{Total $|\mathcal{T}|$} & \textbf{Shared face} & \textbf{Graph} \\
+\midrule
+$v_0$         & 1 & 0 & 0  & 0 & --- & $K_1$ \\
+$v_1$         & 2 & 1 & 1  & 0 & --- & $K_2$ \\
+$v_2$         & 3 & 2 & 3  & 0 & --- & $K_3$ \\
+$v_3$         & 4 & 3 & 6  & 1 ($\mathcal{T}_1$) & --- & $K_4$ \\
+$v_4$         & 5 & 3 & 9  & 2 ($\mathcal{T}_2$) & $(v_1,v_2,v_3)$ & --- \\
+$v_5$         & 6 & 3 & 12 & 3 ($\mathcal{T}_3$) & $(v_2,v_3,v_4)$ & --- \\
+$v_6$         & 7 & 3 & 15 & 4 ($\mathcal{T}_4$) & $(v_3,v_4,v_5)$ & --- \\
+$v_{k+3}$     & $k{+}4$ & 3 & $3(k{+}1){+}3$ & $k{+}1$ & $(v_k,v_{k+1},v_{k+2})$ & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Notice that after the first tetrahedron is formed, each new vertex adds exactly
+3 new edges and exactly 1 new tetrahedron. The growth is perfectly linear.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{DNA Mapping --- The Key Insight}
+\label{sec:dna-mapping}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+We now arrive at the central insight of the TetraData Structure: the mapping
+between tetrahedra and DNA sequences.
+
+\subsection{Four Vertices, Four Bases}
+
+A tetrahedron has four vertices. DNA has four bases: adenine (A), cytosine (C),
+guanine (G), and thymine (T). In a LinkedTetraChain, each vertex is assigned
+one base type from $\{\mathsf{A}, \mathsf{C}, \mathsf{G}, \mathsf{T}\}$.
+
+\begin{dogmadef}[TetraData--DNA Correspondence]
+In the TetraData Structure, each vertex $v_i$ carries a base assignment
+$b_i \in \{\mathsf{A}, \mathsf{C}, \mathsf{G}, \mathsf{T}\}$.
+A tetrahedron $\mathcal{T}_k = (v_{k-1}, v_k, v_{k+1}, v_{k+2})$ with base
+assignments $(b_{k-1}, b_k, b_{k+1}, b_{k+2})$ represents a \emph{window} of
+four consecutive bases in a DNA-like sequence.
+\end{dogmadef}
+
+\subsection{Worked Example: Mapping \texorpdfstring{$5'$}{5'}-ACGTACGT-\texorpdfstring{$3'$}{3'}}
+
+Consider the DNA sequence $5'$-\texttt{ACGTACGT}-$3'$, which has 8 bases. We
+assign these to vertices $v_0$ through $v_7$:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{ccccccccc}
+\toprule
+Vertex & $v_0$ & $v_1$ & $v_2$ & $v_3$ & $v_4$ & $v_5$ & $v_6$ & $v_7$ \\
+\midrule
+Base   & \textsf{A} & \textsf{C} & \textsf{G} & \textsf{T} & \textsf{A} & \textsf{C} & \textsf{G} & \textsf{T} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+This sequence of 8 vertices produces a LinkedTetraChain of $8 - 3 = 5$ tetrahedra:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{clcl}
+\toprule
+\textbf{Tetra} & \textbf{Vertices} & \textbf{Bases} & \textbf{Shared face with prev.} \\
+\midrule
+$\mathcal{T}_1$ & $(v_0, v_1, v_2, v_3)$ & (A, C, G, T) & --- \\
+$\mathcal{T}_2$ & $(v_1, v_2, v_3, v_4)$ & (C, G, T, A) & $(v_1, v_2, v_3) = $ (C, G, T) \\
+$\mathcal{T}_3$ & $(v_2, v_3, v_4, v_5)$ & (G, T, A, C) & $(v_2, v_3, v_4) = $ (G, T, A) \\
+$\mathcal{T}_4$ & $(v_3, v_4, v_5, v_6)$ & (T, A, C, G) & $(v_3, v_4, v_5) = $ (T, A, C) \\
+$\mathcal{T}_5$ & $(v_4, v_5, v_6, v_7)$ & (A, C, G, T) & $(v_4, v_5, v_6) = $ (A, C, G) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[scale=1.0, every node/.style={font=\small}]
+  % DNA sequence on top
+  \foreach \i/\base/\col in {0/A/dogmared, 1/C/dogmablue, 2/G/dogmateal, 3/T/dogmagold,
+                              4/A/dogmared, 5/C/dogmablue, 6/G/dogmateal, 7/T/dogmagold} {
+    \node[circle, draw=\col, fill=\col!15, minimum size=20pt, font=\bfseries\small]
+      (b\i) at (1.3*\i, 2.5) {\base};
+    \node[below=1pt, font=\tiny, color=black!60] at (b\i.south) {$v_\i$};
+  }
+
+  % Edges connecting consecutive bases
+  \foreach \i [evaluate=\i as \j using int(\i+1)] in {0,...,6} {
+    \draw[thick, black!30] (b\i) -- (b\j);
+  }
+
+  % Tetrahedra brackets below
+  \foreach \k/\s/\col in {1/0/dogmared, 2/1/dogmablue, 3/2/dogmateal, 4/3/dogmagold, 5/4/dogmared} {
+    \pgfmathsetmacro{\left}{1.3*\s - 0.3}
+    \pgfmathsetmacro{\right}{1.3*(\s+3) + 0.3}
+    \pgfmathsetmacro{\yy}{1.2 - 0.35*(\k-1)}
+    \draw[thick, \col, decorate, decoration={brace, amplitude=4pt, mirror}]
+      (\left, \yy) -- (\right, \yy)
+      node[midway, below=5pt, font=\scriptsize\bfseries, color=\col]
+      {$\mathcal{T}_\k$};
+  }
+\end{tikzpicture}
+\caption{DNA sequence \texttt{ACGTACGT} mapped to a LinkedTetraChain.
+Each brace shows which four consecutive vertices form a tetrahedron.
+Note the overlap: each tetrahedron shares three vertices with its neighbors.}
+\label{fig:dna-mapping}
+\end{figure}
+
+Notice the structure: each tetrahedron is a sliding window of width 4 that
+advances by one base at a time. The overlap of 3 bases ensures that
+\emph{every pair of adjacent bases} is captured within at least one tetrahedron,
+and in fact every pair of bases separated by at most 2 positions is captured.
+
+\subsection{Why Not Triangles? An Information Density Argument}
+
+If we used triangles instead of tetrahedra, our sliding window would be width 3
+with overlap 2. Each triangle would be a $K_3$ with only 3 edges. Let us
+compare the two approaches for the same 8-base sequence:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lcc}
+\toprule
+& \textbf{Triangle mesh} ($K_3$) & \textbf{Tetra mesh} ($K_4$) \\
+\midrule
+Window width & 3 & 4 \\
+Overlap & 2 & 3 \\
+Elements for 8 bases & 6 triangles & 5 tetrahedra \\
+Edges per element & 3 & 6 \\
+Total unique edges & 7 & 10 \\
+Pairwise interactions & 3 per element & 6 per element \\
+Has volume? & No & Yes \\
+Has chirality? & No & Yes \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The tetrahedron captures $2\times$ the pairwise interactions per element, while
+also encoding volume and chirality. For the same sequence, the tetrahedral
+representation is strictly richer.
+
+\subsection{The Six Edges: Pairwise Base Interactions}
+\label{sec:six-edges}
+
+Within each tetrahedron $\mathcal{T}_k = (b_{k-1}, b_k, b_{k+1}, b_{k+2})$, the six edges
+encode all pairwise interactions among the four bases:
+
+\begin{center}
+\begin{tikzpicture}[scale=1.5]
+  % Tetrahedron vertices with base labels
+  \coordinate (A) at (0,0);
+  \coordinate (C) at (2.5,0);
+  \coordinate (G) at (1.25,2.0);
+  \coordinate (T) at (0.8,0.7);
+
+  % Faces
+  \fill[dogmalight, opacity=0.3] (A) -- (C) -- (G) -- cycle;
+  \fill[dogmamint, opacity=0.3] (C) -- (G) -- (T) -- cycle;
+
+  % Watson-Crick edges (thick, colored)
+  \draw[very thick, dogmared] (A) -- (T)
+    node[midway, left=3pt, font=\small\bfseries, color=dogmared] {A--T};
+  \draw[very thick, dogmateal] (C) -- (G)
+    node[midway, right=3pt, font=\small\bfseries, color=dogmateal] {C--G};
+
+  % Other edges
+  \draw[thick, dogmablue!60] (A) -- (C)
+    node[midway, below=2pt, font=\scriptsize] {A--C};
+  \draw[thick, dogmablue!60] (A) -- (G)
+    node[midway, above left=1pt, font=\scriptsize] {A--G};
+  \draw[thick, dogmablue!60] (C) -- (T)
+    node[midway, below right=1pt, font=\scriptsize] {C--T};
+  \draw[thick, dogmablue!60] (G) -- (T)
+    node[midway, above right=1pt, font=\scriptsize] {G--T};
+
+  % Vertices
+  \fill[dogmared] (A) circle (4pt);
+  \fill[dogmablue] (C) circle (4pt);
+  \fill[dogmateal] (G) circle (4pt);
+  \fill[dogmagold] (T) circle (4pt);
+
+  % Labels
+  \node[below left=3pt, font=\bfseries, color=dogmared] at (A) {A};
+  \node[below right=3pt, font=\bfseries, color=dogmablue] at (C) {C};
+  \node[above=4pt, font=\bfseries, color=dogmateal] at (G) {G};
+  \node[below=4pt, font=\bfseries, color=dogmagold] at (T) {T};
+
+  % Legend
+  \node[right=20pt, align=left, font=\small] at (2.5, 1.5) {
+    \textcolor{dogmared}{\rule{12pt}{2pt}} Watson--Crick (A--T) \\[2pt]
+    \textcolor{dogmateal}{\rule{12pt}{2pt}} Watson--Crick (C--G) \\[2pt]
+    \textcolor{dogmablue!60}{\rule{12pt}{2pt}} Other pairwise
+  };
+\end{tikzpicture}
+\end{center}
+
+The six edges naturally partition into:
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{2 Watson--Crick edges:} A--T and C--G. These are the
+        complementary base pairings that form hydrogen bonds in the double helix.
+  \item \textbf{4 non-Watson--Crick edges:} A--C, A--G, C--T, G--T. These
+        encode stacking interactions, non-canonical base pairing, and other
+        local sequence features.
+\end{itemize}
+
+Each edge carries a learnable weight $w_{ij} \in \mathbb{R}$ that represents
+the strength and character of the pairwise interaction. These weights are
+analogous to attention scores in a transformer, but they are \emph{local}
+(within a single tetrahedron) and \emph{structured} (constrained by the
+tetrahedral geometry).
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{The TetraData Structure (TDS) --- Formal Definition}
+\label{sec:tds}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+We now give the complete formal definition of the TetraData Structure,
+incorporating everything we have built up.
+
+\begin{definition}[TetraData Structure]
+\label{def:tds}
+A \emph{TetraData Structure} (TDS) element is defined by:
+\begin{equation}
+\mathcal{T}_i = (\mathbf{V}_i, \mathbf{E}_i, \mathbf{B}_i, v_i, \chi_i),
+\end{equation}
+where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $\mathbf{V}_i \in \mathbb{R}^{4 \times 3}$: four vertex positions in 3D space.
+  \item $\mathbf{E}_i \in \mathbb{R}^{6}$: six edge weights (forming the complete graph $K_4$).
+  \item $\mathbf{B}_i \in \{\mathsf{A}, \mathsf{C}, \mathsf{G}, \mathsf{T}\}^4$: base type assignments for each vertex.
+  \item $v_i \in \mathbb{R}$: enclosed volume (computed from vertex positions).
+  \item $\chi_i \in \{+1, -1\}$: chirality (handedness), defined by the sign of the determinant.
+\end{itemize}
+\end{definition}
+
+\subsection{Chirality}
+\label{sec:chirality}
+
+\emph{Chirality}---the property of non-superimposability on a mirror image---is
+fundamental to molecular biology. Amino acids are left-handed ($L$-amino acids),
+sugars are right-handed ($D$-sugars), and the DNA double helix is right-handed.
+TDS preserves chirality through the sign of the vertex determinant:
+
+\begin{equation}
+\chi_i = \text{sign}\left(\det \begin{pmatrix} \mathbf{v}_1 - \mathbf{v}_0 & \mathbf{v}_2 - \mathbf{v}_0 & \mathbf{v}_3 - \mathbf{v}_0 \end{pmatrix}\right).
+\end{equation}
+
+Chirality-preserving transformations are those that maintain the sign of $\chi$.
+This constraint ensures that biological structures retain their handedness
+through computational operations.
+
+\begin{example}[Computing Chirality]
+\label{ex:chirality}
+Consider a tetrahedron with vertices:
+\[
+  \mathbf{v}_0 = (0,0,0), \quad
+  \mathbf{v}_1 = (1,0,0), \quad
+  \mathbf{v}_2 = (0,1,0), \quad
+  \mathbf{v}_3 = (0,0,1).
+\]
+The edge matrix is:
+\[
+  M = \begin{pmatrix}
+    1-0 & 0-0 & 0-0 \\
+    0-0 & 1-0 & 0-0 \\
+    0-0 & 0-0 & 1-0
+  \end{pmatrix}
+  = \begin{pmatrix} 1 & 0 & 0 \\ 0 & 1 & 0 \\ 0 & 0 & 1 \end{pmatrix} = I_3.
+\]
+We have $\det(M) = +1$, so $\chi = +1$ (right-handed). The signed volume is
+$V_{\text{signed}} = \frac{1}{6}(+1) = +\frac{1}{6}$.
+
+Now reflect $\mathbf{v}_3$ across the $xy$-plane: $\mathbf{v}_3' = (0,0,-1)$.
+The new determinant is $-1$, giving $\chi = -1$ (left-handed). Reflection
+reverses chirality, as expected.
+\end{example}
+
+\subsection{Face-Sharing Adjacency}
+
+Adjacent tetrahedra share triangular faces, forming \emph{tetrahedral chains}
+or \emph{tetrahedral meshes}. This face-sharing adjacency defines a natural
+graph structure:
+
+\begin{definition}[Tetrahedral Mesh]
+A \emph{tetrahedral mesh} is a collection of tetrahedra
+$\{\mathcal{T}_1, \ldots, \mathcal{T}_M\}$ where adjacent elements share
+triangular faces. The \emph{dual graph} has one node per tetrahedron and edges
+between face-sharing neighbors.
+\end{definition}
+
+Face-sharing adjacency is richer than the edge-sharing adjacency of triangle
+meshes: each tetrahedron has exactly four potential neighbors (one per face),
+creating a bounded-degree graph that enables efficient local computation.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{36 Degrees of Freedom}
+\label{sec:36-dof}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+Each TDS element carries a rich set of information. Let us count the degrees
+of freedom precisely.
+
+\subsection{Detailed DOF Breakdown}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{clcl}
+\toprule
+\textbf{DOF} & \textbf{Component} & \textbf{Count} & \textbf{Description} \\
+\midrule
+1--12 & Vertex positions $\mathbf{V}_i \in \mathbb{R}^{4 \times 3}$ & 12
+  & 4 vertices $\times$ 3 coordinates each \\
+13--18 & Edge weights $\mathbf{E}_i \in \mathbb{R}^6$ & 6
+  & All $\binom{4}{2} = 6$ pairwise interactions \\
+19--34 & Base encoding $\text{onehot}(\mathbf{B}_i) \in \mathbb{R}^{4 \times 4}$ & 16
+  & 4 vertices $\times$ 4-dim one-hot encoding \\
+35 & Volume $v_i \in \mathbb{R}$ & 1
+  & Signed volume of the tetrahedron \\
+36 & Chirality $\chi_i \in \{+1,-1\}$ & 1
+  & Handedness (sign of the determinant) \\
+\midrule
+& \textbf{Total} & \textbf{36} & \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Comparison: Triangle vs.\ Tetrahedron DOF}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Component} & \textbf{Triangle} & \textbf{Tetrahedron} \\
+\midrule
+Vertex positions & $3 \times 3 = 9$ & $4 \times 3 = 12$ \\
+Edge weights & $\binom{3}{2} = 3$ & $\binom{4}{2} = 6$ \\
+Base encoding & --- & $4 \times 4 = 16$ \\
+Volume & 0 (area only) & 1 \\
+Chirality & 0 (no handedness) & 1 \\
+\midrule
+\textbf{Total DOF} & \textbf{12} & \textbf{36} \\
+\midrule
+\textbf{Ratio} & \multicolumn{2}{c}{$36/12 = 3\times$ richer} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+If we count only the positional DOF (no base encoding), the triangle has 9 DOF
+and the tetrahedron has $12 + 6 + 1 + 1 = 20$ DOF---still more than $2\times$
+richer. The base encoding adds another 16 DOF that are entirely absent in
+triangle meshes.
+
+\subsection{TetraTokenization}
+\label{sec:tetra-tokenization}
+
+For foundation model integration, each TDS element is serialized into a
+36-dimensional vector:
+
+\begin{equation}
+\text{TetraToken}(\mathcal{T}_i) = [\underbrace{\mathbf{V}_i^{\text{flat}}}_{12} \;|\; \underbrace{\mathbf{E}_i}_{6} \;|\; \underbrace{\text{onehot}(\mathbf{B}_i)}_{16} \;|\; \underbrace{v_i}_{1} \;|\; \underbrace{\chi_i}_{1}] \in \mathbb{R}^{36}.
+\label{eq:tetra-token}
+\end{equation}
+
+This tokenization enables DOGMA foundation models to ingest and produce 3D
+structural data alongside text, code, and genomic sequences.
+
+\begin{implnote}[TetraToken in Practice]
+In the DOGMA-Supreme implementation, the 36-dimensional TetraToken is projected
+to the model's hidden dimension $d_{\text{model}}$ via a learned linear layer:
+\[
+  \mathbf{h}_i = \mathbf{W}_{\text{proj}} \cdot \text{TetraToken}(\mathcal{T}_i) + \mathbf{b}_{\text{proj}},
+  \quad \mathbf{W}_{\text{proj}} \in \mathbb{R}^{d_{\text{model}} \times 36}.
+\]
+The reverse direction (decoding) uses a symmetric linear projection from
+$d_{\text{model}}$ back to 36 dimensions, followed by extraction of vertex
+positions, edge weights, base assignments, volume, and chirality.
+\end{implnote}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{TetraMemory: Structured Memory for DOGMA}
+\label{sec:tetradata-tetramemory}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+TetraMemory is DOGMA's alternative to self-attention. Instead of computing
+pairwise interactions between all positions (quadratic cost), TetraMemory
+organizes state elements into a tetrahedral mesh where interactions are
+\emph{local but compose into global computation} through propagation.
+
+\subsection{The Quadratic Attention Problem}
+\label{sec:quadratic-problem}
+
+Standard self-attention computes:
+\begin{equation}
+\text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{softmax}\left(\frac{\mathbf{Q}\mathbf{K}^\top}{\sqrt{d_k}}\right)\mathbf{V}, \quad \text{cost: } O(T^2 d).
+\end{equation}
+
+For a sequence of length $T = 100{,}000$ (a modest genomic sequence), the
+attention matrix has $10^{10}$ entries---impractical for both memory and
+computation. Even for $T = 10{,}000$, storing the $T \times T$ attention matrix
+in float32 requires $\sim$400 MB per head, per layer.
+
+\begin{center}
+\begin{tikzpicture}[scale=0.8]
+  % Self-attention: all-to-all connections
+  \begin{scope}[shift={(0,0)}]
+    \node[font=\bfseries\small, color=dogmablue] at (1.5, 3.2) {Self-Attention};
+    \node[font=\scriptsize, color=dogmagray] at (1.5, 2.7) {$O(T^2)$ connections};
+
+    \foreach \i in {0,...,5} {
+      \fill[dogmablue] (0.5*\i, 0) circle (3pt);
+      \fill[dogmablue] (0.5*\i, 2) circle (3pt);
+    }
+    % All-to-all connections (subset shown)
+    \foreach \i in {0,...,5} {
+      \foreach \j in {0,...,5} {
+        \draw[dogmablue!20, thin] (0.5*\i, 0) -- (0.5*\j, 2);
+      }
+    }
+  \end{scope}
+
+  % TetraMemory: local connections
+  \begin{scope}[shift={(6,0)}]
+    \node[font=\bfseries\small, color=dogmateal] at (1.5, 3.2) {TetraMemory};
+    \node[font=\scriptsize, color=dogmagray] at (1.5, 2.7) {$O(T)$ connections};
+
+    \foreach \i in {0,...,5} {
+      \fill[dogmateal] (0.5*\i, 0) circle (3pt);
+      \fill[dogmateal] (0.5*\i, 2) circle (3pt);
+    }
+    % Local connections only (window of 4)
+    \foreach \i in {0,...,5} {
+      \pgfmathsetmacro{\lo}{max(0, \i-1)}
+      \pgfmathsetmacro{\hi}{min(5, \i+2)}
+      \foreach \j in {\lo,...,\hi} {
+        \draw[dogmateal!50, thin] (0.5*\i, 0) -- (0.5*\j, 2);
+      }
+    }
+  \end{scope}
+\end{tikzpicture}
+\end{center}
+
+\subsection{Face Propagation: Information Flow Through Shared Faces}
+\label{sec:face-propagation}
+
+The key mechanism of TetraMemory is \emph{face propagation}: information
+flows from one tetrahedron to its neighbor through their shared triangular face.
+
+In a LinkedTetraChain, $\mathcal{T}_k$ and $\mathcal{T}_{k+1}$ share three
+vertices. When we compute the state of $\mathcal{T}_{k+1}$, three of its four
+vertices already carry information from $\mathcal{T}_k$. Only one vertex is
+new. This means that 75\% of each tetrahedron's information comes from its
+predecessor---a natural form of \emph{causal propagation}.
+
+\begin{definition}[TetraMemory State Update]
+\label{def:tetra-update}
+At layer $\ell$, the state of tetrahedron $\mathcal{T}_i$ is updated by:
+\begin{equation}
+\mathbf{h}_i^{(\ell+1)} = \phi\left(\mathbf{h}_i^{(\ell)} + \sum_{j \in \mathcal{N}_4(i)} \alpha_{ij} \cdot \mathbf{W}^{(\ell)} \mathbf{h}_j^{(\ell)}\right),
+\label{eq:tetra-update}
+\end{equation}
+where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $\mathcal{N}_4(i)$ is the set of (at most 4) face-sharing neighbors of $\mathcal{T}_i$.
+  \item $\alpha_{ij}$ are attention weights computed from edge properties and shared-face geometry.
+  \item $\mathbf{W}^{(\ell)} \in \mathbb{R}^{d \times d}$ is the layer's learnable weight matrix.
+  \item $\phi$ is a nonlinear activation function.
+\end{itemize}
+\end{definition}
+
+The cost per layer is $O(T \cdot k \cdot d)$ where $k \leq 4$, making it
+\emph{linear} in sequence length.
+
+\subsection{Volume as Attention Weight}
+\label{sec:volume-attention}
+
+Each tetrahedron's signed volume provides a natural attention modulator:
+
+\begin{equation}
+\alpha_{ij} = \sigma\!\left(\frac{\mathbf{q}_i^\top \mathbf{k}_j}{\sqrt{d}} + \beta \cdot V_{\text{signed}}(\mathcal{T}_i)\right),
+\end{equation}
+
+where $\sigma$ is a sigmoid function and $\beta$ is a learnable temperature
+parameter. The volume term acts as a \emph{geometric bias}: tetrahedra with
+larger volume (more ``open'' configurations) attend more strongly to their
+neighbors, while degenerate (near-flat) tetrahedra attend weakly.
+
+\begin{bioinsight}[Volume as Importance]
+In molecular biology, the volume of a protein's active site determines its
+binding affinity. A large, open active site can accommodate many substrates;
+a narrow, constrained one is highly specific. TetraMemory's use of volume as
+an attention modulator mirrors this: the ``openness'' of a tetrahedral
+configuration controls how much information flows through it.
+\end{bioinsight}
+
+\subsection{Edge Weights as Pairwise Compatibility}
+\label{sec:edge-compatibility}
+
+The six edge weights $\mathbf{E}_i \in \mathbb{R}^6$ within each tetrahedron
+encode pairwise compatibility scores between the four vertices. These are
+analogous to the pairwise attention scores in self-attention, but:
+
+\begin{enumerate}[leftmargin=2em]
+  \item They are \emph{local}: only the 6 pairs within a tetrahedron are
+        computed, not the $\binom{T}{2}$ global pairs.
+  \item They are \emph{geometrically constrained}: the edge weights must be
+        consistent with a valid 3D tetrahedron (triangle inequality on faces,
+        positive volume).
+  \item They are \emph{typed}: the Watson--Crick edges (A--T, C--G) can carry
+        different learned biases than the non-Watson--Crick edges.
+\end{enumerate}
+
+\subsection{Long-Range Information Flow}
+\label{sec:long-range}
+
+How does local interaction enable global computation? Through \emph{propagation}:
+after $L$ layers of TetraMemory updates, information from tetrahedron
+$\mathcal{T}_i$ has propagated to all tetrahedra within graph distance $L$ in
+the dual graph.
+
+For a LinkedTetraChain of $n$ tetrahedra, the dual graph is a path graph of
+length $n$, so the diameter is $n$ and full propagation requires $L = n$ layers.
+However, for a 3D tetrahedral mesh (not just a chain), the dual graph diameter
+is $O(n^{1/3})$, so $O(n^{1/3})$ layers suffice for global information flow.
+
+\begin{theorem}[TetraMemory Propagation]
+\label{thm:propagation}
+For a tetrahedral mesh with $n$ tetrahedra and dual-graph diameter $D$, after
+$L \geq D$ layers of TetraMemory updates (Equation~\ref{eq:tetra-update}),
+every tetrahedron has received information from every other tetrahedron.
+\end{theorem}
+\begin{proof}
+At each layer, each tetrahedron receives information from its face-sharing
+neighbors (at most 4). After $L$ layers, the receptive field of each
+tetrahedron is the set of all tetrahedra within graph distance $L$ in the
+dual graph. When $L \geq D$, this includes all tetrahedra.
+\end{proof}
+
+\subsection{Complexity Comparison}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lcc}
+\toprule
+& \textbf{Self-Attention} & \textbf{TetraMemory} \\
+\midrule
+Cost per layer & $O(T^2 d)$ & $O(T \cdot k \cdot d)$, $k \leq 4$ \\
+Memory per layer & $O(T^2)$ & $O(T \cdot k)$ \\
+Layers for global info & 1 (instant) & $O(D)$ where $D$ is mesh diameter \\
+Total cost for global & $O(T^2 d)$ & $O(D \cdot T \cdot k \cdot d)$ \\
+For 3D mesh ($D = O(T^{1/3})$) & $O(T^2 d)$ & $O(T^{4/3} k d)$ \\
+Structural locality & None & Built-in (mesh topology) \\
+Chirality encoding & None & Built-in (signed volume) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{keyinsight}[TetraMemory vs.\ Attention: The Biological Argument]
+Biological neural networks do not use all-to-all connectivity. Instead, neurons
+interact with local neighbors, and global computation emerges from multi-hop
+signal propagation through network topology. TetraMemory follows this principle:
+local interactions compose into global computation, just as local gene
+regulatory interactions compose into genome-wide expression patterns.
+
+The key advantage is not just computational efficiency. It is \emph{structural
+locality}: the mesh topology encodes which elements should interact most
+strongly, providing an architectural prior that dense attention lacks.
+\end{keyinsight}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{The DoubleHelixMesh}
+\label{sec:double-helix-mesh}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+In real DNA, information is stored in two complementary strands running
+antiparallel to each other, forming the iconic double helix. DOGMA mirrors this
+with the \textbf{DoubleHelixMesh}: two complementary LinkedTetraChains---the
+\emph{sense} strand and the \emph{antisense} strand---cross-linked by
+Watson--Crick hydrogen bonds.
+
+\subsection{Sense and Antisense Strands}
+
+Given a sense-strand sequence $S = s_0 s_1 s_2 \cdots s_{n-1}$, the antisense
+strand is the reverse complement:
+\begin{equation}
+  \bar{S} = \overline{s_{n-1}}\;\overline{s_{n-2}}\;\cdots\;\overline{s_1}\;\overline{s_0},
+\end{equation}
+where the complement map is $\overline{\mathsf{A}} = \mathsf{T}$,
+$\overline{\mathsf{T}} = \mathsf{A}$, $\overline{\mathsf{C}} = \mathsf{G}$,
+$\overline{\mathsf{G}} = \mathsf{C}$.
+
+Each strand forms its own LinkedTetraChain:
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Sense chain:} $\mathcal{C}_{\text{sense}} = (\mathcal{T}_1^{+}, \mathcal{T}_2^{+}, \ldots, \mathcal{T}_{n-3}^{+})$
+  \item \textbf{Antisense chain:} $\mathcal{C}_{\text{anti}} = (\mathcal{T}_1^{-}, \mathcal{T}_2^{-}, \ldots, \mathcal{T}_{n-3}^{-})$
+\end{itemize}
+
+The antisense chain runs in the reverse direction (antiparallel), so
+$\mathcal{T}_k^{-}$ aligns spatially with $\mathcal{T}_{n-3-k}^{+}$.
+
+\subsection{Watson--Crick Cross-Links}
+
+The two strands are connected by hydrogen bonds between complementary base pairs:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{A--T pairing:} 2 hydrogen bonds (weaker).
+  \item \textbf{G--C pairing:} 3 hydrogen bonds (stronger).
+\end{itemize}
+
+In the DoubleHelixMesh, these cross-links are represented as inter-chain edges
+with weights proportional to hydrogen bond strength:
+
+\begin{equation}
+  w_{\text{cross}}(b, \bar{b}) = \begin{cases}
+    w_{\text{AT}} & \text{if } (b, \bar{b}) \in \{(\mathsf{A}, \mathsf{T}), (\mathsf{T}, \mathsf{A})\}, \\
+    w_{\text{GC}} & \text{if } (b, \bar{b}) \in \{(\mathsf{G}, \mathsf{C}), (\mathsf{C}, \mathsf{G})\},
+  \end{cases}
+\end{equation}
+
+where $w_{\text{GC}} > w_{\text{AT}}$ reflects the stronger G--C bond.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[scale=0.95, every node/.style={font=\small}]
+  % Sense strand (top)
+  \node[font=\bfseries\small, color=dogmablue] at (-1.5, 1.8) {Sense $5' \to 3'$};
+  \foreach \i/\base/\col in {0/A/dogmared, 1/C/dogmablue, 2/G/dogmateal,
+                              3/T/dogmagold, 4/A/dogmared, 5/C/dogmablue,
+                              6/G/dogmateal, 7/T/dogmagold} {
+    \node[circle, draw=\col, fill=\col!15, minimum size=18pt,
+          inner sep=0pt, font=\bfseries\scriptsize]
+      (s\i) at (1.2*\i, 1.5) {\base};
+  }
+  % Sense strand backbone
+  \foreach \i [evaluate=\i as \j using int(\i+1)] in {0,...,6} {
+    \draw[thick, dogmablue!40] (s\i) -- (s\j);
+  }
+
+  % Antisense strand (bottom, reversed complement)
+  \node[font=\bfseries\small, color=dogmateal] at (-1.5, -1.8) {Antisense $3' \to 5'$};
+  \foreach \i/\base/\col in {0/T/dogmagold, 1/G/dogmateal, 2/C/dogmablue,
+                              3/A/dogmared, 4/T/dogmagold, 5/G/dogmateal,
+                              6/C/dogmablue, 7/A/dogmared} {
+    \node[circle, draw=\col, fill=\col!15, minimum size=18pt,
+          inner sep=0pt, font=\bfseries\scriptsize]
+      (a\i) at (1.2*\i, -1.5) {\base};
+  }
+  % Antisense backbone
+  \foreach \i [evaluate=\i as \j using int(\i+1)] in {0,...,6} {
+    \draw[thick, dogmateal!40] (a\i) -- (a\j);
+  }
+
+  % Watson-Crick hydrogen bonds
+  \foreach \i/\nbonds in {0/2, 1/3, 2/3, 3/2, 4/2, 5/3, 6/3, 7/2} {
+    \pgfmathsetmacro{\aindex}{7 - \i}
+    \ifnum\nbonds=2
+      % A-T: 2 bonds (dashed)
+      \draw[dogmared!60, thick, densely dashed] (s\i) -- (a\aindex);
+      \node[font=\tiny, color=dogmared!60, right=1pt] at ($(s\i)!0.5!(a\aindex)$) {2H};
+    \else
+      % G-C: 3 bonds (solid)
+      \draw[dogmateal!60, thick] (s\i) -- (a\aindex);
+      \node[font=\tiny, color=dogmateal!60, right=1pt] at ($(s\i)!0.5!(a\aindex)$) {3H};
+    \fi
+  }
+\end{tikzpicture}
+\caption{The DoubleHelixMesh for sequence \texttt{ACGTACGT}. The sense strand
+(top, $5' \to 3'$) and antisense strand (bottom, $3' \to 5'$) are connected by
+Watson--Crick hydrogen bonds. A--T pairs have 2 hydrogen bonds (dashed);
+G--C pairs have 3 hydrogen bonds (solid).}
+\label{fig:double-helix}
+\end{figure}
+
+\subsection{Advantages of the Double Helix Structure}
+
+The DoubleHelixMesh provides several computational advantages:
+
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{Redundancy and error detection:} Each base on the sense strand
+        has a complementary base on the antisense strand. Discrepancies can be
+        detected and corrected, mirroring DNA's own error-correction mechanism.
+
+  \item \textbf{Bidirectional reading:} The sense strand reads $5' \to 3'$ while
+        the antisense reads $3' \to 5'$. This provides a natural mechanism for
+        bidirectional sequence processing without the need for separate forward
+        and backward passes.
+
+  \item \textbf{Cross-strand attention:} The hydrogen bond cross-links create
+        additional attention pathways between the two chains, enriching the
+        information flow beyond what a single chain provides.
+
+  \item \textbf{Melting dynamics:} In biology, the double helix can ``melt''
+        (denature) at high temperatures, separating the strands. In DOGMA, a
+        learned ``temperature'' parameter controls the strength of cross-strand
+        interactions, enabling the model to dynamically decouple the strands
+        when independent processing is beneficial.
+\end{enumerate}
+
+\begin{implnote}[DoubleHelixMesh Efficiency]
+Despite having two chains, the DoubleHelixMesh does \emph{not} double the
+computational cost. The antisense chain shares vertex positions (by symmetry)
+with the sense chain, and the cross-strand hydrogen bond weights are computed
+from the base assignments (which are determined by complementarity). The
+additional cost is $O(T)$ for the cross-strand edges, which is dominated by
+the $O(T \cdot k \cdot d)$ per-layer cost of TetraMemory updates on each chain.
+\end{implnote}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Delaunay Tetrahedralization}
+\label{sec:delaunay}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+While the LinkedTetraChain is the primary structure for sequence data, DOGMA
+also supports general 3D point clouds through Delaunay tetrahedralization.
+
+Given a set of points $P \subset \mathbb{R}^3$, the \emph{Delaunay
+tetrahedralization} partitions the convex hull of $P$ into tetrahedra such that
+no point lies inside the circumsphere of any tetrahedron.
+
+\begin{definition}[Delaunay Tetrahedralization]
+A tetrahedralization of point set $P$ is \emph{Delaunay} if, for every
+tetrahedron $\mathcal{T}$, the open circumsphere of $\mathcal{T}$ contains no
+point of $P$.
+\end{definition}
+
+The Delaunay condition maximizes the minimum solid angle among all
+tetrahedralizations, producing well-shaped elements that avoid degeneracies.
+This quality guarantee is important for numerical stability in TetraMemory
+computations.
+
+Applications relevant to DOGMA:
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Protein structure:} Given $C_\alpha$ coordinates, Delaunay
+        tetrahedralization produces a volumetric mesh capturing local packing
+        geometry.
+  \item \textbf{Medical imaging:} CT/MRI voxels can be converted to Delaunay
+        tetrahedral meshes for volumetric analysis.
+  \item \textbf{Molecular dynamics:} Voronoi tessellation (dual of Delaunay)
+        defines natural atomic neighborhoods.
+\end{itemize}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Multimodal Applications of TDS}
+\label{sec:tds-multimodal}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+The TDS representation enables DOGMA to handle diverse data modalities through
+a unified geometric framework:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.95\textwidth}{L{2.5cm} L{3.5cm} Y}
+\toprule
+\textbf{Modality} & \textbf{TDS Representation} & \textbf{Application} \\
+\midrule
+DNA/RNA & LinkedTetraChain & Sequence modeling, variant calling \\
+3D Vision & Volumetric scene $\to$ tetra mesh & Object recognition, scene understanding \\
+Proteins & $C_\alpha$ coordinates $\to$ Delaunay & Structure prediction, drug design \\
+Medical & CT/MRI voxels $\to$ tetra mesh & Segmentation, anomaly detection \\
+Game engines & Physics bodies $\to$ deformable tetra & Destruction simulation, soft bodies \\
+Video & Temporal tetrahedra & Motion tracking, action recognition \\
+Audio & Waveform helix encoding & Speaker recognition, music analysis \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Worked Examples}
+\label{sec:ch10-worked-examples}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{example}[Building a LinkedTetraChain from a DNA Sequence]
+\label{ex:build-chain}
+Given the sequence $5'$-\texttt{CGTACG}-$3'$ (6 bases), construct the
+LinkedTetraChain.
+
+\textbf{Step 1: Assign vertices.}
+\begin{center}
+\begin{tabular}{ccccccc}
+\toprule
+Vertex & $v_0$ & $v_1$ & $v_2$ & $v_3$ & $v_4$ & $v_5$ \\
+\midrule
+Base & C & G & T & A & C & G \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Step 2: Enumerate tetrahedra.}
+The chain has $6 - 3 = 3$ tetrahedra:
+\begin{align*}
+  \mathcal{T}_1 &= (v_0, v_1, v_2, v_3) = (\textsf{C}, \textsf{G}, \textsf{T}, \textsf{A}), \\
+  \mathcal{T}_2 &= (v_1, v_2, v_3, v_4) = (\textsf{G}, \textsf{T}, \textsf{A}, \textsf{C}), \\
+  \mathcal{T}_3 &= (v_2, v_3, v_4, v_5) = (\textsf{T}, \textsf{A}, \textsf{C}, \textsf{G}).
+\end{align*}
+
+\textbf{Step 3: Count combinatorics.}
+\begin{itemize}[leftmargin=1.5em]
+  \item Vertices: 6
+  \item Edges: $3(3) + 3 = 12$
+  \item Shared faces: $(v_1,v_2,v_3)$ between $\mathcal{T}_1$ and $\mathcal{T}_2$;
+        $(v_2,v_3,v_4)$ between $\mathcal{T}_2$ and $\mathcal{T}_3$.
+\end{itemize}
+
+\textbf{Step 4: Compute volume and chirality for $\mathcal{T}_1$.}
+Suppose we embed the vertices at:
+$\mathbf{v}_0 = (0,0,0)$, $\mathbf{v}_1 = (1,0,0)$,
+$\mathbf{v}_2 = (0.5, 0.87, 0)$, $\mathbf{v}_3 = (0.5, 0.29, 0.82)$.
+
+Then:
+\[
+  V_{\text{signed}} = \frac{1}{6} \det \begin{pmatrix}
+    1 & 0.5 & 0.5 \\
+    0 & 0.87 & 0.29 \\
+    0 & 0 & 0.82
+  \end{pmatrix}
+  = \frac{1}{6}(1 \cdot 0.87 \cdot 0.82) = \frac{0.7134}{6} \approx 0.119.
+\]
+Since $V_{\text{signed}} > 0$, the chirality is $\chi = +1$ (right-handed).
+\end{example}
+
+\begin{example}[TetraMemory vs.\ Self-Attention Cost]
+\label{ex:cost-comparison}
+Consider a genomic sequence of length $T = 50{,}000$ with embedding dimension
+$d = 512$.
+
+\textbf{Self-attention cost per layer:}
+\[
+  O(T^2 d) = 50{,}000^2 \times 512 = 1.28 \times 10^{12} \text{ FLOPs}.
+\]
+
+\textbf{TetraMemory cost per layer} (with $k = 4$ neighbors):
+\[
+  O(T \cdot k \cdot d) = 50{,}000 \times 4 \times 512 = 1.024 \times 10^{8} \text{ FLOPs}.
+\]
+
+\textbf{Speedup per layer:} $\frac{1.28 \times 10^{12}}{1.024 \times 10^{8}} \approx 12{,}500\times$.
+
+Even accounting for the need for $O(T^{1/3}) \approx 37$ layers for global
+propagation in a 3D mesh, the total TetraMemory cost is:
+\[
+  37 \times 1.024 \times 10^{8} = 3.79 \times 10^{9} \text{ FLOPs},
+\]
+which is still $\sim$$338\times$ faster than a single self-attention layer.
+\end{example}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Exercises}
+\label{sec:ch10-exercises}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}[label=\textbf{10.\arabic*.}, leftmargin=2.5em]
+
+\item \textbf{[Fundamentals]} Compute the volume and chirality of the tetrahedron
+with vertices $(0,0,0)$, $(1,0,0)$, $(0,1,0)$, $(0,0,1)$. Verify that
+reflecting one vertex across a coordinate plane reverses the chirality.
+
+\item \textbf{[Construction]} Build the LinkedTetraChain for the DNA sequence
+$5'$-\texttt{GATTACA}-$3'$. List all tetrahedra, their base assignments,
+and the shared faces between consecutive tetrahedra. How many total edges
+does the chain have?
+
+\item \textbf{[Analysis]} For a tetrahedral mesh with $M$ elements, each with at
+most 4 face-sharing neighbors, compare the computational cost of one TetraMemory
+layer ($O(4Md)$) with one self-attention layer ($O(M^2 d)$). For what value of
+$M$ does TetraMemory become 100$\times$ faster?
+
+\item \textbf{[Information Density]} Compute the number of unique pairwise
+interactions captured by (a) a triangle mesh with sliding window of width 3
+and overlap 2, and (b) a tetrahedral mesh with sliding window of width 4 and
+overlap 3, both applied to a sequence of length $T = 100$. Express the ratio.
+
+\item \textbf{[DOF Counting]} A hexahedron (cube) has 8 vertices, 12 edges, and
+6 faces. Compute the number of degrees of freedom for a ``HexaData'' structure
+analogous to TDS (vertex positions + edge weights + base encoding for 8 bases +
+volume + chirality). Is the DOF-per-vertex ratio better or worse than TDS?
+
+\item \textbf{[Coding]} Implement the TetraTokenizer (Equation~\ref{eq:tetra-token})
+in Python. Given a list of tetrahedra (each specified by 4 vertex coordinates
+and 4 base types), produce the 36-dimensional token representation for each.
+
+\item \textbf{[DoubleHelix]} Given the sense strand $5'$-\texttt{ATGCATGC}-$3'$,
+write out the antisense strand. Construct the DoubleHelixMesh and count the
+total number of cross-strand hydrogen bonds. How many are A--T bonds (2H) and
+how many are G--C bonds (3H)?
+
+\item \textbf{[Theory]} Prove that the graph diameter of a Delaunay
+tetrahedralization of $M$ uniformly distributed points in a unit cube is
+$O(M^{1/3})$.
+
+\item \textbf{[Design]} Propose a scheme for encoding a protein backbone
+(sequence of $C_\alpha$ coordinates) as a TDS mesh. How would you assign base
+types $\{\mathsf{A}, \mathsf{C}, \mathsf{G}, \mathsf{T}\}$ to vertices based
+on amino acid properties?
+
+\item \textbf{[Research]} Compare TetraMemory with graph neural networks (GNNs).
+Both use local message passing. What does the tetrahedral structure provide that
+a generic graph does not? Consider: bounded degree, volume, chirality, and
+face-sharing.
+
+\end{enumerate}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Key Takeaways}
+
+\keytakeaway{
+\begin{itemize}[leftmargin=1.5em]
+  \item A tetrahedron is the \emph{minimal solid}: four vertices, six edges, four
+        faces, and one volume. It is the simplest 3D object with both volume and
+        chirality. No simpler primitive can encode these properties.
+  \item The TetraData Structure uses tetrahedra as computational primitives,
+        mapping four vertices to DNA base types $\{\mathsf{A}, \mathsf{C},
+        \mathsf{G}, \mathsf{T}\}$ and encoding 36 degrees of freedom per element.
+  \item The LinkedTetraChain links tetrahedra by shared triangular faces, acting
+        as a sliding window of width 4 with overlap 3 over a sequence. Each new
+        vertex adds exactly 3 edges and 1 tetrahedron.
+  \item DNA sequences map naturally to LinkedTetraChains: each tetrahedron
+        represents a window of 4 consecutive bases, and adjacent tetrahedra
+        share 3 bases through their common face.
+  \item TetraMemory replaces $O(T^2)$ self-attention with $O(T \cdot k)$ local
+        tetrahedral interactions ($k \leq 4$) that compose into global computation
+        through face propagation. Volume serves as a geometric attention weight;
+        edge weights encode local pairwise compatibility.
+  \item The DoubleHelixMesh pairs a sense and antisense LinkedTetraChain with
+        Watson--Crick cross-links (A--T: 2 hydrogen bonds, G--C: 3 hydrogen
+        bonds), providing redundancy, bidirectional reading, and cross-strand
+        attention.
+  \item Delaunay tetrahedralization extends TDS beyond sequences to general 3D
+        point clouds, enabling multimodal applications from protein structure to
+        medical imaging.
+\end{itemize}
+}
+
+\section*{Suggested Reading}
+\begin{itemize}[leftmargin=1.5em]
+  \item Chapter~\ref{ch:dogma-architecture}, Section on DNAComputeBlock:
+        TetraMemory's architectural context.
+  \item \citet{jumper2021}: AlphaFold's use of structural representations for
+        proteins.
+  \item \citet{gu2023mamba}: Alternative approach to sub-quadratic sequence
+        processing.
+\end{itemize}

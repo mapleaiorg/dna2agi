@@ -1,0 +1,1082 @@
+% ═══════════════════════════════════════════════════════════════════════════════
+% Chapter 3: Gene Regulation as Computation
+% Part I: The Biological Computer
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\chapter{Gene Regulation as Computation}
+\label{ch:gene-regulation}
+
+\chapterepigraph{The genome is not a blueprint; it is a regulatory program that produces different outputs depending on context.}{After Fran\c{c}ois Jacob}
+
+\noindent
+Every cell in a human body contains the same genome---approximately 3.2 billion base pairs, encoding roughly 20,000 protein-coding genes. Yet a neuron looks and functions nothing like a liver cell, a muscle fiber, or an immune cell. The difference is not in what genes are \emph{present}, but in which genes are \emph{expressed}---and when, where, how much, and in response to what signals.
+
+Gene regulation is the computational system that controls this selective expression. It is, arguably, the most sophisticated information-processing system in biology---and the one that DOGMA most directly emulates. In this chapter, we examine gene regulation not as a topic in biochemistry, but as a \emph{computational architecture}: one with logic gates, conditional branching, feedback loops, memory, and context-dependent program execution.
+
+Understanding gene regulation is essential for understanding DOGMA's design. The six-stage pipeline (Chapter~\ref{ch:dogma-architecture}) is a direct formalization of the regulatory logic that cells use to convert persistent genomic state into context-appropriate behavior.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Regulatory Grammar of DNA}
+\label{sec:regulatory-grammar}
+
+Gene regulation operates through \emph{cis-regulatory elements}---DNA sequences that control transcription of nearby genes---and \emph{trans-acting factors}---proteins and RNAs that bind these elements. Together, they form a regulatory grammar with well-defined syntax and semantics \citep{alberts2022, encode2012}.
+
+Think of it this way: if the genome is a book, then cis-regulatory elements are the punctuation, chapter headings, and margin notes that tell the reader \emph{how to read} the text. Trans-acting factors are the readers themselves---molecular machines that interpret these instructions.
+
+\subsection{Promoters: The Entry Point}
+
+A \emph{promoter} is a DNA sequence (typically 100--1000 bp) located upstream of a gene. It serves as the binding site for RNA polymerase and associated transcription factors. The promoter determines \emph{whether} a gene can be transcribed and sets the \emph{basal} transcription rate.
+
+\begin{dogmadef}[Promoter as Conditional Gate]
+In computational terms, a promoter is a \emph{conditional gate}: it permits downstream execution (transcription) only when the appropriate activation signals (transcription factors) are present. The strength of the promoter determines the gate's threshold---how much signal is needed to initiate transcription.
+\end{dogmadef}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  dna/.style={very thick, dogmablue},
+  protein/.style={draw, rounded corners=3pt, fill=dogmamint, minimum height=0.7cm, font=\footnotesize},
+]
+  % DNA strand
+  \draw[dna] (0,0) -- (12,0);
+  \draw[dna] (0,-0.15) -- (12,-0.15);
+
+  % Promoter region
+  \draw[decorate, decoration={brace, amplitude=5pt, raise=2pt}] (1.5,0.1) -- (4,0.1)
+    node[midway, above=8pt, font=\footnotesize\bfseries] {Promoter};
+
+  % Gene body
+  \draw[decorate, decoration={brace, amplitude=5pt, raise=2pt}] (4.5,0.1) -- (10,0.1)
+    node[midway, above=8pt, font=\footnotesize\bfseries] {Gene Body};
+
+  % TATA box
+  \fill[dogmagold, opacity=0.4] (2.2,-0.3) rectangle (3.2,0.15);
+  \node[font=\tiny, below] at (2.7,-0.35) {TATA box};
+
+  % Transcription start site
+  \draw[-{Latex[length=2mm]}, thick, dogmared] (4.2,0.6) -- (4.2,0.1);
+  \node[font=\tiny, above] at (4.2,0.65) {TSS (+1)};
+
+  % RNA Polymerase
+  \node[protein, fill=dogmawarm, minimum width=1.8cm] (rnap) at (4.5,1.5) {RNA Pol II};
+  \draw[-{Latex[length=2mm]}, dashed, gray] (rnap) -- (4.2,0.2);
+
+  % Transcription factors
+  \node[protein, minimum width=1.2cm] (tf1) at (2.7,1.5) {TF};
+  \draw[-{Latex[length=2mm]}, dashed, gray] (tf1) -- (2.7,0.2);
+
+  % Arrow showing transcription direction
+  \draw[-{Latex[length=3mm]}, very thick, dogmateal] (5,0.5) -- (8,0.5)
+    node[midway, above, font=\footnotesize] {Transcription};
+
+  % Upstream / Downstream labels
+  \node[font=\tiny, gray] at (0.5,0.3) {Upstream};
+  \node[font=\tiny, gray] at (11,0.3) {Downstream};
+\end{tikzpicture}
+\caption{A gene promoter region. Transcription factors (TFs) bind to specific sites within the promoter, recruiting RNA Polymerase II to the transcription start site (TSS). Transcription proceeds downstream through the gene body.}
+\label{fig:promoter-diagram}
+\end{figure}
+
+\subsection{Enhancers: Remote Amplifiers}
+
+\emph{Enhancers} are regulatory sequences that can increase transcription of a target gene from distances of up to one megabase (1 million bp). They function by looping the intervening DNA to bring the enhancer-bound proteins into contact with the promoter \citep{encode2012}.
+
+Enhancers implement \emph{long-range conditional amplification}: they increase the activation of specific genes based on cellular context, regardless of their linear distance on the chromosome. This is analogous to an attention mechanism that selectively amplifies relevant features regardless of sequence position---a parallel that DOGMA's regulation stage exploits.
+
+\subsection{Silencers and Insulators}
+
+\emph{Silencers} are the complement of enhancers: they recruit repressor proteins that suppress transcription. \emph{Insulators} create boundaries that prevent regulatory signals from crossing into adjacent domains, functioning as scope delimiters in the regulatory program.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.95\textwidth}{L{2.5cm} L{3cm} L{3cm} Y}
+\toprule
+\textbf{Element} & \textbf{Biological Function} & \textbf{Computational Analogue} & \textbf{DOGMA Mapping} \\
+\midrule
+Promoter & Initiates transcription & Conditional entry point & Activation gate in Regulation stage \\
+Enhancer & Amplifies transcription & Remote attention / boost & Context-dependent amplification \\
+Silencer & Represses transcription & Inhibitory gate & Suppression in activation map \\
+Insulator & Blocks cross-domain effects & Scope delimiter & Region boundary in genome \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Transcription Factor Binding: Step by Step}
+\label{sec:tf-binding}
+
+Transcription factors are the molecular workhorses of gene regulation. Understanding \emph{how} they work---at a mechanistic level---reveals the computational logic that DOGMA formalizes.
+
+\subsection{How Transcription Factors Bind DNA}
+
+A transcription factor (TF) is a protein with two key domains:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{DNA-binding domain (DBD):} A structural motif that recognizes and binds a specific short DNA sequence (typically 6--12 bp), called a \emph{binding motif} or \emph{response element}.
+  \item \textbf{Effector domain:} A region that interacts with other proteins to either \emph{activate} or \emph{repress} transcription.
+\end{enumerate}
+
+The binding process works as follows:
+\begin{enumerate}[leftmargin=1.8em]
+  \item The TF diffuses through the nucleus, sampling DNA sequences by sliding along the double helix.
+  \item When the DBD encounters its target motif, it forms hydrogen bonds and van der Waals contacts with the DNA bases in the major groove.
+  \item The TF-DNA complex is stabilized, and the effector domain recruits co-activators or co-repressors.
+  \item If the TF is an \emph{activator}, it helps recruit RNA polymerase to the promoter, increasing transcription. If it is a \emph{repressor}, it blocks polymerase access or recruits chromatin-modifying enzymes that compact the DNA.
+\end{enumerate}
+
+\subsection{Activators vs.\ Repressors}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  dna/.style={very thick, dogmablue},
+  gene/.style={draw, rectangle, minimum height=0.5cm, minimum width=3cm, fill=dogmalight, font=\footnotesize},
+  protein/.style={draw, rounded corners=3pt, minimum height=0.6cm, font=\footnotesize},
+]
+  % === Panel A: Activator ===
+  \node[font=\bfseries] at (-0.5, 2.2) {(a) Activator};
+
+  % DNA
+  \draw[dna] (0,0) -- (10,0);
+  \draw[dna] (0,-0.12) -- (10,-0.12);
+
+  % Binding site
+  \fill[dogmamint, opacity=0.4] (1.5,-0.25) rectangle (3,0.13);
+  \node[font=\tiny] at (2.25, -0.5) {Binding site};
+
+  % Gene
+  \node[gene] at (6.5,0) {Gene};
+
+  % Activator TF
+  \node[protein, fill=dogmamint] (act) at (2.25, 1.2) {Activator TF};
+  \draw[-{Latex[length=2mm]}, thick, dogmateal] (act) -- (2.25, 0.2);
+
+  % RNA Pol
+  \node[protein, fill=dogmawarm] (pol1) at (5, 1.2) {RNA Pol};
+  \draw[-{Latex[length=2mm]}, dashed, dogmateal] (act.east) -- (pol1.west)
+    node[midway, above, font=\tiny] {Recruits};
+  \draw[-{Latex[length=2mm]}, thick, dogmateal] (pol1) -- (5, 0.2);
+
+  % Result arrow
+  \draw[-{Latex[length=3mm]}, very thick, dogmateal] (8.5, 0) -- (10.5, 0)
+    node[right, font=\footnotesize] {mRNA $\uparrow$};
+
+  % === Panel B: Repressor ===
+  \node[font=\bfseries] at (-0.5, -1.8) {(b) Repressor};
+
+  % DNA
+  \draw[dna] (0,-4) -- (10,-4);
+  \draw[dna] (0,-4.12) -- (10,-4.12);
+
+  % Binding site (operator)
+  \fill[dogmawarm, opacity=0.4] (3.5,-4.25) rectangle (5.5,-3.87);
+  \node[font=\tiny] at (4.5, -4.5) {Operator};
+
+  % Gene
+  \node[gene] at (6.5,-4) {Gene};
+
+  % Repressor TF
+  \node[protein, fill=dogmawarm] (rep) at (4.5, -2.8) {Repressor TF};
+  \draw[-{Latex[length=2mm]}, thick, dogmared] (rep) -- (4.5, -3.8);
+
+  % RNA Pol blocked
+  \node[protein, fill=gray!30] (pol2) at (2.5, -2.8) {RNA Pol};
+  \draw[-{Latex[length=2mm]}, dashed, dogmared] (pol2.east) -- (rep.west);
+  \node[font=\Large, dogmared] at (3.5,-2.8) {$\times$};
+
+  % Result
+  \draw[-{Latex[length=3mm]}, very thick, dogmared] (8.5, -4) -- (10.5, -4)
+    node[right, font=\footnotesize] {mRNA $\downarrow$};
+\end{tikzpicture}
+\caption{(a) An activator TF binds its target site, recruits RNA Polymerase, and increases transcription. (b) A repressor TF binds the operator, physically blocking RNA Polymerase and decreasing transcription.}
+\label{fig:activator-repressor}
+\end{figure}
+
+\subsection{Cooperative Binding and the Hill Function}
+\label{subsec:hill-function}
+
+A single transcription factor binding event is often not enough to switch a gene on or off. In practice, multiple copies of a TF must bind cooperatively---each binding event makes the next more likely. This produces a \emph{sigmoidal} (S-shaped) response curve, described by the \textbf{Hill equation}:
+
+\begin{equation}
+f(x) = \frac{x^n}{K^n + x^n},
+\label{eq:hill-equation}
+\end{equation}
+
+where:
+\begin{itemize}[leftmargin=1.8em]
+  \item $x$ = concentration of the transcription factor,
+  \item $K$ = dissociation constant (the concentration at which the gene is half-maximally activated),
+  \item $n$ = Hill coefficient (controls the steepness of the response).
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.85]
+  \begin{axis}[
+    width=10cm, height=6.5cm,
+    xlabel={TF concentration $x$ (relative to $K$)},
+    ylabel={Gene expression $f(x)$},
+    xmin=0, xmax=4, ymin=0, ymax=1.1,
+    legend pos=south east,
+    grid=major,
+    grid style={gray!30},
+    axis lines=left,
+    every axis label/.style={font=\small},
+    tick label style={font=\small},
+    legend style={font=\footnotesize},
+  ]
+    % n=1
+    \addplot[thick, dogmablue, domain=0:4, samples=100]
+      {x^1 / (1 + x^1)};
+    \addlegendentry{$n=1$ (hyperbolic)}
+
+    % n=2
+    \addplot[thick, dogmateal, domain=0:4, samples=100]
+      {x^2 / (1 + x^2)};
+    \addlegendentry{$n=2$ (cooperative)}
+
+    % n=4
+    \addplot[thick, dogmared, domain=0:4, samples=100]
+      {x^4 / (1 + x^4)};
+    \addlegendentry{$n=4$ (highly cooperative)}
+
+    % n=10 (switch-like)
+    \addplot[thick, dogmagold, dashed, domain=0:4, samples=100]
+      {x^10 / (1 + x^10)};
+    \addlegendentry{$n=10$ (switch-like)}
+
+    % Half-max line
+    \draw[dashed, gray] (axis cs:0,0.5) -- (axis cs:4,0.5);
+    \draw[dashed, gray] (axis cs:1,0) -- (axis cs:1,0.55);
+    \node[font=\tiny, gray] at (axis cs:1.4, 0.55) {$x=K$};
+  \end{axis}
+\end{tikzpicture}
+\caption{The Hill function for different Hill coefficients $n$. As $n$ increases, the response becomes increasingly switch-like. At $x=K$, the output is always $0.5$ (half-maximal). For $n=1$, the response is gradual (Michaelis--Menten kinetics). For large $n$, the response approximates a digital step function.}
+\label{fig:hill-function}
+\end{figure}
+
+\begin{example}[Worked Example: Hill Function Calculation]
+Consider a gene regulated by a transcription factor with $K = 10\;\text{nM}$ and $n = 3$. What fraction of maximal expression do we get at concentrations $x = 5, 10, 15, 20$ nM?
+
+Using $f(x) = \frac{x^n}{K^n + x^n} = \frac{x^3}{10^3 + x^3}$:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{cccc}
+\toprule
+$x$ (nM) & $x^3$ & $K^3 + x^3$ & $f(x)$ \\
+\midrule
+5  & 125   & 1125  & $125/1125 = 0.111$ \quad (11\%) \\
+10 & 1000  & 2000  & $1000/2000 = 0.500$ \quad (50\%) \\
+15 & 3375  & 4375  & $3375/4375 = 0.771$ \quad (77\%) \\
+20 & 8000  & 9000  & $8000/9000 = 0.889$ \quad (89\%) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Notice the steep transition: doubling $x$ from 5 to 10 nM raises expression from 11\% to 50\%, and going from 10 to 20 nM raises it from 50\% to 89\%. This steep, switch-like behavior is what allows cells to make sharp decisions from graded chemical signals.
+\end{example}
+
+\begin{bioinsight}[Why Cooperativity Matters]
+Without cooperativity ($n=1$), a gene responds gradually to TF concentration---like a dimmer switch. With cooperativity ($n \geq 2$), the response becomes sigmoidal---more like a toggle switch. This is biologically essential because cells must make \emph{discrete decisions} (divide or not, differentiate or not, die or not) from \emph{continuous signals}. The Hill function is biology's analog-to-digital converter. DOGMA's activation functions in the Regulation stage play an analogous role.
+\end{bioinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Transcription Factors as Logic Gates}
+\label{sec:tf-logic}
+
+Transcription factors (TFs) are proteins that bind specific DNA sequences and either activate or repress transcription. They are the \emph{logic gates} of gene regulation, implementing combinatorial Boolean functions over input signals \citep{alon2019}.
+
+\subsection{Combinatorial Regulation}
+
+Most genes are regulated by multiple TFs simultaneously. The promoter and enhancer regions of a gene contain binding sites for several different TFs, and the transcriptional output depends on the \emph{combination} of TFs present. This is \emph{combinatorial logic}:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{AND logic:} Gene $X$ is expressed only if both TF-A \textbf{and} TF-B are present. This occurs when the promoter requires cooperative binding of both factors.
+
+  \item \textbf{OR logic:} Gene $X$ is expressed if TF-A \textbf{or} TF-B (or both) are present. This occurs when either factor alone can recruit RNA polymerase.
+
+  \item \textbf{NOT logic:} Gene $X$ is expressed unless repressor TF-C is present. The repressor physically blocks polymerase access or recruits chromatin-modifying enzymes.
+
+  \item \textbf{Complex functions:} Real promoters implement complex Boolean functions like $(A \land B) \lor (C \land \lnot D)$---requiring multiple TF binding sites with specific spatial arrangements and cooperative interactions.
+\end{itemize}
+
+\subsection{The Lac Operon: A Biological AND Gate}
+
+The \emph{lac operon} in \emph{E.\ coli}, discovered by Jacob and Monod \citep{jacob1961}, is the canonical example of gene regulation as computation. It controls the expression of genes needed to metabolize lactose.
+
+The logic is elegant: the cell should only invest energy in making lactose-digesting enzymes when two conditions are \emph{both} true: (1) lactose is available, and (2) the preferred sugar, glucose, is absent. This is an AND gate with one inverted input.
+
+\begin{lstlisting}[style=dogmapython, caption={The lac operon expressed as pseudocode.}]
+# Biological lac operon logic (simplified)
+def lac_operon_expression(glucose_present: bool, lactose_present: bool) -> bool:
+    """Returns True if lac genes are expressed."""
+    # CAP activator binds only when glucose is absent (cAMP high)
+    cap_active = not glucose_present
+    # Lac repressor releases only when lactose (allolactose) is present
+    repressor_inactive = lactose_present
+    # Expression requires BOTH conditions
+    return cap_active and repressor_inactive
+\end{lstlisting}
+
+The lac operon implements $\textit{express} = (\lnot \textit{glucose}) \land \textit{lactose}$---a two-input logic gate with biological NOT and AND operations. This is not a metaphor: the molecular interactions are functionally identical to a logic circuit.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  gate/.style={draw, thick, minimum size=1cm, fill=dogmalight, font=\footnotesize\bfseries},
+  input/.style={font=\footnotesize},
+  signal/.style={-{Latex[length=2.5mm]}, thick},
+]
+  % Inputs
+  \node[input] (gluc) at (0, 1.5) {Glucose};
+  \node[input] (lact) at (0, -0.5) {Lactose};
+
+  % NOT gate for glucose
+  \node[gate, circle] (not1) at (2.5, 1.5) {NOT};
+  \draw[signal] (gluc) -- (not1);
+
+  % Internal signal: lactose releases repressor
+  \node[input, text width=2cm, align=center, font=\tiny] (note1) at (2.5, -0.5) {Releases\\repressor};
+
+  % AND gate
+  \node[gate, rectangle, minimum width=1.2cm] (and1) at (5, 0.5) {AND};
+  \draw[signal] (not1) -- (and1.west |- not1);
+  \draw[signal] (lact) -- ++(1.5,0) |- (and1.west |- lact);
+
+  % Output
+  \node[input, text width=2.5cm, align=left] (out) at (8.5, 0.5) {Lac genes\\expressed};
+  \draw[signal, dogmateal] (and1) -- (out);
+
+  % Truth table
+  \node[font=\footnotesize\bfseries] at (11.5, 2.5) {Truth Table};
+  \node[font=\tiny, anchor=north] at (11.5, 2.1) {
+    \begin{tabular}{cc|c}
+    Glu & Lac & Express \\
+    \hline
+    0 & 0 & 0 \\
+    0 & 1 & \textbf{1} \\
+    1 & 0 & 0 \\
+    1 & 1 & 0 \\
+    \end{tabular}
+  };
+\end{tikzpicture}
+\caption{The lac operon as a logic circuit. Glucose is inverted (NOT gate) because its \emph{absence} activates CAP. The AND gate requires both CAP activation and lactose presence. The truth table confirms: expression occurs only when glucose is absent \emph{and} lactose is present.}
+\label{fig:lac-operon-logic}
+\end{figure}
+
+\begin{bioinsight}[Biological Economics]
+The lac operon logic is economically optimal: the cell expends energy to make lactose-metabolizing enzymes only when lactose is available and glucose (the preferred sugar) is not. This cost-aware regulation is a form of \emph{resource-optimal computation}---a principle that DOGMA inherits through its efficiency pressure in the Tera regime (Chapter~\ref{ch:tera}).
+\end{bioinsight}
+
+\begin{example}[Worked Example: Lac Operon Conditions]
+Consider \emph{E.\ coli} growing in a medium. Predict lac operon expression:
+
+\begin{enumerate}[label=(\alph*)]
+  \item \textbf{Glucose only:} Glucose $= 1$, Lactose $= 0$. Expression $= (\lnot 1) \land 0 = 0 \land 0 = 0$. No expression---the cell uses glucose, its preferred carbon source.
+  \item \textbf{Lactose only:} Glucose $= 0$, Lactose $= 1$. Expression $= (\lnot 0) \land 1 = 1 \land 1 = 1$. Full expression---the cell makes enzymes to digest the only available sugar.
+  \item \textbf{Both sugars:} Glucose $= 1$, Lactose $= 1$. Expression $= (\lnot 1) \land 1 = 0 \land 1 = 0$. No expression---why waste energy on lactose enzymes when glucose is available?
+  \item \textbf{Neither sugar:} Glucose $= 0$, Lactose $= 0$. Expression $= (\lnot 0) \land 0 = 1 \land 0 = 0$. No expression---no substrate to metabolize.
+\end{enumerate}
+
+This is a biological optimization: the cell only manufactures proteins when they are both \emph{needed} and \emph{useful}.
+\end{example}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Gene Regulatory Networks}
+\label{sec:grn}
+
+Individual regulatory interactions connect into \emph{gene regulatory networks} (GRNs)---directed graphs where nodes are genes and edges represent regulatory relationships (activation or repression). GRNs exhibit recurring structural motifs with characteristic dynamical behaviors \citep{alon2019}.
+
+\subsection{Network Motifs}
+
+\citet{alon2019} identified several common network motifs:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Negative autoregulation:} A gene represses its own transcription. This motif speeds up response time and reduces cell-to-cell variability in gene expression levels. \emph{Computational analogue:} self-normalizing activation function.
+
+  \item \textbf{Positive feedback loop:} A gene activates its own transcription. This creates bistability---the cell commits to one of two stable states (on or off). \emph{Computational analogue:} binary memory element.
+
+  \item \textbf{Feed-forward loop:} Gene A activates gene B, and both A and B regulate gene C. Depending on the signs (activation or repression), this motif can implement persistence detection (filtering out transient signals) or pulse generation. \emph{Computational analogue:} temporal filter / edge detector.
+
+  \item \textbf{Toggle switch:} Two genes mutually repress each other, creating a bistable switch \citep{gardner2000}. \emph{Computational analogue:} SR latch / binary memory.
+
+  \item \textbf{Oscillator:} Three (or more) genes form a repression ring, producing oscillatory expression \citep{elowitz2000}. \emph{Computational analogue:} clock circuit.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  gene/.style={draw, circle, minimum size=1cm, fill=dogmalight},
+  act/.style={-{Latex[length=2.5mm]}, thick, dogmablue},
+  rep/.style={-{Latex[length=2.5mm]}, thick, dogmared, dashed},
+]
+  % Toggle switch
+  \node[gene] (a) at (0, 0) {$A$};
+  \node[gene] (b) at (2.5, 0) {$B$};
+  \draw[rep, bend left=25] (a) to node[above, font=\footnotesize] {$\dashv$} (b);
+  \draw[rep, bend left=25] (b) to node[below, font=\footnotesize] {$\dashv$} (a);
+  \node[below=0.6cm, font=\footnotesize\bfseries] at (1.25, -0.8) {Toggle Switch};
+
+  % Oscillator
+  \node[gene] (x) at (6, 0.5) {$X$};
+  \node[gene] (y) at (8, -0.7) {$Y$};
+  \node[gene] (z) at (4, -0.7) {$Z$};
+  \draw[rep] (x) to node[right, font=\footnotesize] {$\dashv$} (y);
+  \draw[rep] (y) to node[below, font=\footnotesize] {$\dashv$} (z);
+  \draw[rep] (z) to node[left, font=\footnotesize] {$\dashv$} (x);
+  \node[below=0.4cm, font=\footnotesize\bfseries] at (6, -1.5) {Repressilator};
+
+  % Feed-forward
+  \node[gene] (p) at (11, 0.5) {$P$};
+  \node[gene] (q) at (13, 0.5) {$Q$};
+  \node[gene] (r) at (12, -1) {$R$};
+  \draw[act] (p) -- (q);
+  \draw[act] (p) -- (r);
+  \draw[act] (q) -- (r);
+  \node[below=0.3cm, font=\footnotesize\bfseries] at (12, -1.8) {Feed-Forward Loop};
+\end{tikzpicture}
+\caption{Common gene regulatory network motifs. Solid arrows indicate activation; dashed arrows indicate repression. Each motif implements a distinct computational function.}
+\label{fig:grn-motifs}
+\end{figure}
+
+\subsection{The Repressilator: A Biological Ring Oscillator}
+
+The \emph{repressilator} \citep{elowitz2000} is one of the most elegant examples of biological computation. It consists of three genes arranged in a ring, where each gene represses the next:
+
+\[
+X \dashv Y \dashv Z \dashv X
+\]
+
+This is precisely a \emph{ring oscillator}---the same circuit used in electronics to generate clock signals. In electronics, three NOT gates (inverters) connected in a loop produce oscillation because the output is always the complement of the input, and the signal chases itself around the loop.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  notgate/.style={draw, thick, isosceles triangle, isosceles triangle apex angle=60, minimum width=1.2cm, shape border rotate=0, fill=dogmalight, inner sep=2pt, font=\footnotesize},
+  gene/.style={draw, circle, minimum size=1.1cm, fill=dogmamint, font=\footnotesize\bfseries},
+  signal/.style={-{Latex[length=2.5mm]}, thick},
+]
+  % === Electronic ring oscillator (top) ===
+  \node[font=\bfseries] at (-2, 2) {Electronic:};
+
+  \node[notgate] (n1) at (0, 2) {NOT};
+  \node[notgate] (n2) at (3, 2) {NOT};
+  \node[notgate] (n3) at (6, 2) {NOT};
+
+  \draw[signal] (n1.east) -- (n2.west);
+  \draw[signal] (n2.east) -- (n3.east |- n2.east);
+  \draw[signal] (n3.east) -- ++(0.8,0) |- ++(0,1.2) -| ($(n1.west)+(-0.8,0)$) -- (n1.west);
+
+  % === Biological repressilator (bottom) ===
+  \node[font=\bfseries] at (-2, -1) {Biological:};
+
+  \node[gene] (g1) at (0, -1) {LacI};
+  \node[gene] (g2) at (3, -1) {TetR};
+  \node[gene] (g3) at (6, -1) {$\lambda$CI};
+
+  \draw[signal, dogmared, dashed] (g1) -- (g2) node[midway, above, font=\tiny] {represses};
+  \draw[signal, dogmared, dashed] (g2) -- (g3) node[midway, above, font=\tiny] {represses};
+  \draw[signal, dogmared, dashed] (g3.east) -- ++(0.8,0) |- ++(0,-1.2) -| ($(g1.west)+(-0.8,0)$) -- (g1.west);
+  \node[font=\tiny] at (3, -2.8) {represses};
+
+  % Equivalence
+  \draw[{Latex[length=2mm]}-{Latex[length=2mm]}, thick, gray, dashed] (3, 0.7) -- (3, -0.2)
+    node[midway, right, font=\tiny, text=gray] {equivalent};
+\end{tikzpicture}
+\caption{The repressilator is the biological equivalent of an electronic ring oscillator. Three repressor genes form a loop where each represses the next, producing sustained oscillations in protein expression levels.}
+\label{fig:repressilator-circuit}
+\end{figure}
+
+\begin{example}[Worked Example: Repressilator Dynamics]
+Trace the logic step by step, starting with gene $X$ highly expressed:
+
+\begin{enumerate}
+  \item $X$ is HIGH $\Rightarrow$ $X$ protein represses $Y$ $\Rightarrow$ $Y$ goes LOW.
+  \item $Y$ is LOW $\Rightarrow$ $Y$ protein cannot repress $Z$ $\Rightarrow$ $Z$ goes HIGH.
+  \item $Z$ is HIGH $\Rightarrow$ $Z$ protein represses $X$ $\Rightarrow$ $X$ goes LOW.
+  \item $X$ is LOW $\Rightarrow$ $X$ protein cannot repress $Y$ $\Rightarrow$ $Y$ goes HIGH.
+  \item $Y$ is HIGH $\Rightarrow$ $Y$ protein represses $Z$ $\Rightarrow$ $Z$ goes LOW.
+  \item $Z$ is LOW $\Rightarrow$ $Z$ protein cannot repress $X$ $\Rightarrow$ $X$ goes HIGH.
+  \item Return to step 1. The cycle repeats indefinitely!
+\end{enumerate}
+
+The period of oscillation depends on protein production and degradation rates. In the original \citet{elowitz2000} experiment, the period was approximately 150 minutes per cycle, visible as blinking fluorescent \emph{E.\ coli} cells under a microscope.
+\end{example}
+
+\subsection{The Toggle Switch: A Biological Flip-Flop}
+
+The \emph{genetic toggle switch} \citep{gardner2000} consists of two genes that mutually repress each other. This creates \emph{bistability}: the system has two stable states and can be flipped between them by transient signals.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  gene/.style={draw, rounded corners, minimum width=1.5cm, minimum height=0.8cm, font=\footnotesize\bfseries},
+  signal/.style={-{Latex[length=2.5mm]}, thick},
+]
+  % State 1
+  \node[font=\bfseries] at (0, 2.2) {State 1: Gene A dominant};
+  \node[gene, fill=dogmamint] (a1) at (-1.2, 1) {Gene A};
+  \node[gene, fill=gray!20] (b1) at (1.8, 1) {Gene B};
+  \node[font=\tiny, dogmateal] at (-1.2, 0.2) {HIGH};
+  \node[font=\tiny, gray] at (1.8, 0.2) {LOW};
+  \draw[signal, dogmared, dashed, thick] (a1) -- (b1) node[midway, above, font=\tiny] {represses};
+  \draw[signal, gray!40, dashed] (b1.south) to[bend right=40] node[below, font=\tiny, gray] {too weak} (a1.south);
+
+  % State 2
+  \node[font=\bfseries] at (7, 2.2) {State 2: Gene B dominant};
+  \node[gene, fill=gray!20] (a2) at (5.8, 1) {Gene A};
+  \node[gene, fill=dogmamint] (b2) at (8.8, 1) {Gene B};
+  \node[font=\tiny, gray] at (5.8, 0.2) {LOW};
+  \node[font=\tiny, dogmateal] at (8.8, 0.2) {HIGH};
+  \draw[signal, gray!40, dashed] (a2) -- (b2) node[midway, above, font=\tiny, gray] {too weak};
+  \draw[signal, dogmared, dashed, thick] (b2.south) to[bend right=40] node[below, font=\tiny] {represses} (a2.south);
+
+  % Flip arrow
+  \draw[{Latex[length=3mm]}-{Latex[length=3mm]}, very thick, dogmagold] (3.3, 1) -- (4.7, 1)
+    node[midway, above, font=\tiny\bfseries] {Transient};
+  \node[font=\tiny\bfseries, dogmagold] at (4, 0.5) {signal};
+
+  % Digital analogy
+  \node[draw, dashed, gray, rounded corners, inner sep=5pt, font=\tiny, text=gray] at (4, -1.2)
+    {Digital equivalent: SR Latch (1-bit memory)};
+\end{tikzpicture}
+\caption{The toggle switch as a bistable flip-flop. In State 1, Gene A is dominant and represses Gene B. In State 2, Gene B is dominant and represses Gene A. A transient signal can flip between states, but each state is self-maintaining---a 1-bit biological memory.}
+\label{fig:toggle-switch}
+\end{figure}
+
+The toggle switch truth table looks like a memory element:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{ccc}
+\toprule
+\textbf{Signal 1 (Set)} & \textbf{Signal 2 (Reset)} & \textbf{Output State} \\
+\midrule
+0 & 0 & \emph{Retains previous state} \\
+1 & 0 & Gene A dominant \\
+0 & 1 & Gene B dominant \\
+1 & 1 & Undefined (race condition) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+This is identical to an SR latch in digital electronics---the simplest form of memory. Biology discovered flip-flops billions of years before engineers did.
+
+\subsection{GRNs as Programs}
+
+A gene regulatory network can be formalized as a dynamical system. Let $x_i(t) \geq 0$ denote the expression level (mRNA or protein concentration) of gene $i$ at time $t$. The regulatory dynamics are:
+
+\begin{equation}
+\frac{dx_i}{dt} = f_i(x_1, x_2, \ldots, x_n) - \gamma_i x_i,
+\label{eq:grn-dynamics}
+\end{equation}
+
+where $f_i$ is the \emph{regulatory function} (determined by the network topology and TF binding kinetics) and $\gamma_i$ is the degradation rate. A common model for the regulatory function uses Hill kinetics:
+
+\begin{equation}
+f_i(\mathbf{x}) = \beta_i \cdot \prod_{j \in \text{activators}} \frac{x_j^{n_j}}{K_j^{n_j} + x_j^{n_j}} \cdot \prod_{k \in \text{repressors}} \frac{K_k^{n_k}}{K_k^{n_k} + x_k^{n_k}},
+\label{eq:hill-regulation}
+\end{equation}
+
+where $\beta_i$ is the maximal production rate, $K_j$ are dissociation constants, and $n_j$ are Hill coefficients controlling the steepness of the regulatory response.
+
+\begin{example}[Worked Example: Toggle Switch Steady States]
+For the toggle switch, we have two genes $x$ and $y$ that mutually repress each other:
+\begin{align*}
+\frac{dx}{dt} &= \frac{\beta}{1 + y^n} - \gamma x, \\[4pt]
+\frac{dy}{dt} &= \frac{\beta}{1 + x^n} - \gamma y.
+\end{align*}
+
+At steady state, $\frac{dx}{dt} = \frac{dy}{dt} = 0$. Let $\beta = 10$, $\gamma = 1$, and $n = 2$:
+\[
+x = \frac{10}{1 + y^2}, \qquad y = \frac{10}{1 + x^2}.
+\]
+
+Substituting the first into the second:
+\[
+y = \frac{10}{1 + \left(\frac{10}{1 + y^2}\right)^2}.
+\]
+
+This equation has three solutions: (1) a symmetric unstable fixed point at $x = y \approx 2.62$ (found numerically), and (2,3) two stable states where one gene dominates: approximately $(x, y) \approx (9.6, 0.98)$ and $(x, y) \approx (0.98, 9.6)$. The two asymmetric fixed points are the ``flip'' and ``flop'' of the toggle switch.
+\end{example}
+
+\begin{keyinsight}[From GRNs to DOGMA Regulation]
+DOGMA's Regulation stage computes an activation map $A_t = \mathrm{Regulate}(\Gamma_t, c_t)$ that determines which genomic regions participate in the current computation. This is a direct formalization of Equation~\ref{eq:grn-dynamics}: the genome $\Gamma_t$ plays the role of the gene network, the context $c_t$ plays the role of external signals, and the activation map $A_t$ plays the role of the expression profile $\mathbf{x}(t)$.
+
+The key design insight borrowed from biology is that \emph{regulation should be sparse and context-dependent}. In a human cell, only 10--20\% of genes are expressed at any time. DOGMA inherits this sparsity: the activation map activates only the genomic regions relevant to the current task, rather than engaging the full genome uniformly.
+\end{keyinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Boolean Networks in Biology}
+\label{sec:boolean-networks}
+
+In the 1960s, Stuart Kauffman proposed a radical simplification of gene regulatory networks: treat each gene as a \emph{Boolean variable} (ON or OFF), and model regulation as a \emph{Boolean function} of the gene's inputs. Despite the drastic simplification, Boolean network models capture essential features of real biological networks.
+
+\subsection{Kauffman's Random Boolean Networks}
+
+A \emph{random Boolean network} (RBN) with $N$ genes is defined as follows:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item Each gene $i$ has a state $s_i(t) \in \{0, 1\}$ at time $t$.
+  \item Each gene receives inputs from $K$ randomly chosen other genes.
+  \item Each gene's next state is determined by a randomly assigned Boolean function of its $K$ inputs.
+  \item All genes update synchronously: $s_i(t+1) = f_i(s_{j_1}(t), \ldots, s_{j_K}(t))$.
+\end{enumerate}
+
+The total state of the network at time $t$ is a binary vector $\mathbf{s}(t) = (s_1(t), \ldots, s_N(t))$, which can take at most $2^N$ distinct values. Since the update rule is deterministic, the network must eventually revisit a state, entering a \emph{cycle}---called an \emph{attractor}.
+
+\subsection{Attractors as Cell Types}
+
+Kauffman's key insight was to identify attractors with cell types. Consider:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item A human has $\sim$20,000 genes and $\sim$200 cell types.
+  \item A random Boolean network with $N$ nodes typically has $\sim\!\sqrt{N}$ attractors.
+  \item For $N = 20{,}000$: $\sqrt{20{,}000} \approx 141$---remarkably close to $\sim$200.
+\end{itemize}
+
+While this numerical coincidence is not proof, the conceptual framework is powerful: \emph{cell differentiation corresponds to the network settling into different attractors}, and the number of stable cell types is determined by the network's dynamical structure, not by a special genetic program for each cell type.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  state/.style={draw, circle, minimum size=0.7cm, inner sep=1pt, font=\tiny},
+  attractor/.style={draw, circle, minimum size=0.7cm, inner sep=1pt, font=\tiny, thick},
+  trans/.style={-{Latex[length=2mm]}, thin, gray},
+]
+  % State space for 3-gene network
+  \node[font=\footnotesize\bfseries] at (3, 3.5) {State Transition Diagram ($N=3$ genes)};
+
+  % Attractor 1 (cycle): 000 -> 110 -> 011 -> 000
+  \node[attractor, fill=dogmamint] (s000) at (0, 0) {000};
+  \node[attractor, fill=dogmamint] (s110) at (2, 1.5) {110};
+  \node[attractor, fill=dogmamint] (s011) at (0, 2.5) {011};
+  \draw[trans, thick, dogmateal] (s000) -- (s110);
+  \draw[trans, thick, dogmateal] (s110) -- (s011);
+  \draw[trans, thick, dogmateal] (s011) -- (s000);
+  \node[font=\tiny, dogmateal, below] at (0, -0.5) {Attractor 1 (cycle)};
+  \node[font=\tiny, dogmateal, below] at (0, -0.9) {``Cell type A''};
+
+  % Transient states flowing into attractor 1
+  \node[state, fill=gray!15] (s100) at (-1.5, 1.5) {100};
+  \draw[trans] (s100) -- (s110);
+  \node[state, fill=gray!15] (s010) at (2, -0.5) {010};
+  \draw[trans] (s010) -- (s000);
+
+  % Attractor 2 (fixed point): 111
+  \node[attractor, fill=dogmawarm] (s111) at (6, 1.2) {111};
+  \draw[trans, thick, dogmagold] (s111) to[loop right] (s111);
+  \node[font=\tiny, dogmagold, below] at (6, 0.5) {Attractor 2 (fixed point)};
+  \node[font=\tiny, dogmagold, below] at (6, 0.1) {``Cell type B''};
+
+  % Transient states flowing into attractor 2
+  \node[state, fill=gray!15] (s101) at (4.5, 2.5) {101};
+  \draw[trans] (s101) -- (s111);
+  \node[state, fill=gray!15] (s001) at (5, 0) {001};
+  \draw[trans] (s001) -- (s111);
+\end{tikzpicture}
+\caption{State transition diagram for a hypothetical 3-gene Boolean network. The $2^3 = 8$ possible states are connected by the network's update rule. States eventually reach \emph{attractors}---either fixed points or cycles. Each attractor corresponds to a stable cell type. Transient states represent differentiating cells ``flowing'' toward their fate.}
+\label{fig:boolean-network-states}
+\end{figure}
+
+\begin{dogmadef}[Boolean Network Attractors and DOGMA]
+In DOGMA, the genome state $\Gamma_t$ can be viewed as a high-dimensional dynamical system whose attractors correspond to stable computational strategies. The Tera regime state nudges the system between attractor basins, analogous to external signals triggering cell fate transitions. The regulation stage determines the basin of attraction for each input context.
+\end{dogmadef}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Signal Transduction as Computation}
+\label{sec:signal-transduction}
+
+Cells do not just regulate individual genes in isolation---they process complex signals from their environment through elaborate \emph{signal transduction pathways}. These pathways are biochemical circuits that convert extracellular signals into intracellular responses, and they implement sophisticated computational operations.
+
+\subsection{Kinase Cascades as Amplifiers}
+
+A \emph{kinase} is an enzyme that adds a phosphate group to a target protein, typically activating it. In \emph{kinase cascades}, the signal is passed through a chain of kinases, where each activated kinase activates many copies of the next kinase in the chain:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  kinase/.style={draw, rounded corners, minimum width=1.8cm, minimum height=0.7cm, font=\footnotesize},
+  signal/.style={-{Latex[length=2.5mm]}, thick, dogmateal},
+  amp/.style={font=\tiny, dogmagold},
+]
+  % Signal
+  \node[font=\footnotesize, dogmared] (sig) at (0, 0) {Signal};
+
+  % Receptor
+  \node[kinase, fill=dogmalight] (rec) at (3, 0) {Receptor};
+  \draw[signal] (sig) -- (rec);
+
+  % Kinase 1
+  \node[kinase, fill=dogmamint!50] (k1) at (3, -1.5) {Kinase 1};
+  \draw[signal] (rec) -- (k1);
+  \node[amp] at (4.5, -0.75) {$1 \to 10$};
+
+  % Kinase 2
+  \node[kinase, fill=dogmamint!70] (k2) at (3, -3) {Kinase 2};
+  \draw[signal] (k1) -- (k2);
+  \node[amp] at (4.5, -2.25) {$10 \to 100$};
+
+  % Kinase 3
+  \node[kinase, fill=dogmamint] (k3) at (3, -4.5) {Kinase 3};
+  \draw[signal] (k2) -- (k3);
+  \node[amp] at (4.7, -3.75) {$100 \to 1000$};
+
+  % Target
+  \node[kinase, fill=dogmawarm] (targ) at (3, -6) {Target protein};
+  \draw[signal] (k3) -- (targ);
+
+  % Amplification label
+  \draw[decorate, decoration={brace, amplitude=8pt, raise=5pt}] (5.5, 0) -- (5.5, -6)
+    node[midway, right=15pt, font=\footnotesize, text width=3cm, align=left] {Signal amplified\\$\sim\!1000\times$\\through cascade};
+\end{tikzpicture}
+\caption{A kinase cascade amplifies a weak extracellular signal into a strong intracellular response. Each level activates many copies of the next kinase, producing exponential amplification---analogous to a transistor amplifier chain.}
+\label{fig:kinase-cascade}
+\end{figure}
+
+\subsection{The MAPK Pathway: A Signal Processing Pipeline}
+
+The \emph{mitogen-activated protein kinase} (MAPK) pathway is one of the most important and well-studied signal transduction cascades. It converts growth factor signals at the cell surface into gene expression changes in the nucleus, controlling cell growth, division, and differentiation.
+
+The MAPK pathway is a \emph{three-tier kinase cascade}: Raf $\to$ MEK $\to$ ERK. Each tier amplifies the signal and adds a layer of regulation. The pathway has striking parallels to a \emph{signal processing pipeline}:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.95\textwidth}{L{3cm} L{4cm} Y}
+\toprule
+\textbf{MAPK Layer} & \textbf{Signal Processing Analogue} & \textbf{DOGMA Stage} \\
+\midrule
+Growth factor receptor & Input transducer (antenna) & Context encoding \\
+Ras (G-protein switch) & Binary switch / multiplexer & Regulation gate \\
+Raf (MAP3K) & First amplifier stage & Activation map \\
+MEK (MAP2K) & Second amplifier + filter & Transcription \\
+ERK (MAPK) & Output driver & Expression \\
+Transcription factors & Output device (speaker) & Folding / output \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Feedback Loops in Signaling}
+
+Signal transduction pathways are not simple linear chains---they contain extensive feedback loops that shape the signal:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Negative feedback} attenuates the signal, preventing overactivation. Example: ERK phosphorylates and inactivates Sos (an upstream activator), creating a self-limiting circuit. \emph{Computational analogue:} gain control / automatic volume adjustment.
+
+  \item \textbf{Positive feedback} amplifies the signal and can create bistability (all-or-none responses). Example: ERK activates its own upstream kinase Raf through an indirect path. \emph{Computational analogue:} switch / latch with hysteresis.
+
+  \item \textbf{Combined feedback} creates complex behaviors like oscillations, adaptation (returning to baseline despite persistent stimulus), and ultrasensitivity (very steep dose-response curves).
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  box/.style={draw, rounded corners, minimum width=1.5cm, minimum height=0.7cm, fill=dogmalight, font=\footnotesize},
+  posarr/.style={-{Latex[length=2.5mm]}, thick, dogmateal},
+  negarr/.style={-{Latex[length=2.5mm]}, thick, dogmared, dashed},
+]
+  % === Negative feedback ===
+  \node[font=\footnotesize\bfseries] at (1.5, 2) {Negative Feedback};
+  \node[box] (a1) at (0, 0.8) {$A$};
+  \node[box] (b1) at (3, 0.8) {$B$};
+  \draw[posarr] (a1) -- (b1) node[midway, above, font=\tiny] {activates};
+  \draw[negarr] (b1.south) to[bend right=35] node[below, font=\tiny] {inhibits} (a1.south);
+  \node[font=\tiny, gray] at (1.5, -0.4) {Effect: damping, stability};
+
+  % === Positive feedback ===
+  \node[font=\footnotesize\bfseries] at (7.5, 2) {Positive Feedback};
+  \node[box] (a2) at (6, 0.8) {$A$};
+  \node[box] (b2) at (9, 0.8) {$B$};
+  \draw[posarr] (a2) -- (b2) node[midway, above, font=\tiny] {activates};
+  \draw[posarr] (b2.south) to[bend right=35] node[below, font=\tiny] {activates} (a2.south);
+  \node[font=\tiny, gray] at (7.5, -0.4) {Effect: bistability, switch};
+
+  % === Combined ===
+  \node[font=\footnotesize\bfseries] at (13, 2) {Combined};
+  \node[box] (a3) at (12, 0.8) {$A$};
+  \node[box] (b3) at (14.5, 0.8) {$B$};
+  \draw[posarr] (a3) -- (b3) node[midway, above, font=\tiny] {activates};
+  \draw[posarr] (b3.north) to[bend left=35] node[above, font=\tiny] {$+$} (a3.north);
+  \draw[negarr] (b3.south) to[bend right=35] node[below, font=\tiny] {$-$} (a3.south);
+  \node[font=\tiny, gray] at (13.25, -0.4) {Effect: oscillation, adaptation};
+\end{tikzpicture}
+\caption{Three types of feedback in signal transduction. Negative feedback creates stability and damping. Positive feedback creates bistability and switching. Combined feedback can produce oscillations or adaptation.}
+\label{fig:feedback-types}
+\end{figure}
+
+\begin{keyinsight}[Signal Transduction and DOGMA]
+DOGMA's six-stage pipeline (Regulation $\to$ Transcription $\to$ Translation $\to$ Folding $\to$ Expression $\to$ Tera feedback) mirrors the signal transduction paradigm. Each stage transforms and refines the signal, with feedback from downstream stages (especially Tera) modulating upstream behavior. The MAPK cascade's multi-tier amplification with feedback is a direct biological precedent for DOGMA's multi-stage processing with regime-driven adaptation.
+\end{keyinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Epigenetics: Computation That Modifies the Reader}
+\label{sec:epigenetics}
+
+Epigenetics refers to heritable changes in gene expression that do not alter the DNA sequence itself \citep{allis2016}. If the genome is a book, epigenetics is the system of bookmarks, highlights, and sticky notes that tell the reader which pages to read and which to skip---without changing a single word of the text.
+
+\subsection{DNA Methylation}
+
+\emph{DNA methylation} is the addition of a methyl group ($\text{CH}_3$) to the cytosine base in DNA, typically at \emph{CpG dinucleotides} (a C followed by a G). Methylation generally \emph{silences} gene expression through two mechanisms:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Direct blocking:} The methyl group physically prevents transcription factors from binding to the DNA.
+  \item \textbf{Recruitment of repressors:} Methylated DNA attracts \emph{methyl-binding proteins} that recruit histone-modifying enzymes, compacting the chromatin and making the DNA inaccessible.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  dna/.style={very thick, dogmablue},
+  methyl/.style={circle, fill=dogmared, minimum size=0.3cm, inner sep=0pt, font=\tiny\bfseries, text=white},
+]
+  % === Unmethylated (active) ===
+  \node[font=\footnotesize\bfseries] at (-1, 1) {Unmethylated (Active):};
+  \draw[dna] (2, 0.5) -- (10, 0.5);
+  \draw[dna] (2, 0.35) -- (10, 0.35);
+
+  % CpG sites without methylation
+  \foreach \x in {3, 5, 7} {
+    \node[font=\tiny, dogmablue] at (\x, 0.85) {CpG};
+  }
+
+  % TF binds
+  \node[draw, rounded corners, fill=dogmamint, font=\tiny] (tf) at (5, 1.5) {TF binds};
+  \draw[-{Latex[length=1.5mm]}, dogmateal] (tf) -- (5, 0.6);
+
+  \node[font=\tiny, dogmateal] at (11, 0.5) {Gene ON};
+  \draw[-{Latex[length=2mm]}, thick, dogmateal] (10.2, 0.42) -- (10.8, 0.42);
+
+  % === Methylated (silenced) ===
+  \node[font=\footnotesize\bfseries] at (-1, -1.2) {Methylated (Silenced):};
+  \draw[dna, gray] (2, -1.7) -- (10, -1.7);
+  \draw[dna, gray] (2, -1.85) -- (10, -1.85);
+
+  % CpG sites with methylation
+  \foreach \x in {3, 5, 7} {
+    \node[methyl] at (\x, -1.35) {M};
+    \node[font=\tiny, gray] at (\x, -1.15) {CpG};
+  }
+
+  % TF blocked
+  \node[draw, rounded corners, fill=gray!20, font=\tiny, text=gray] (tf2) at (5, -0.5) {TF blocked};
+  \draw[-{Latex[length=1.5mm]}, gray, dashed] (tf2) -- (5, -1.2);
+  \node[font=\Large, dogmared] at (5, -0.9) {$\times$};
+
+  \node[font=\tiny, dogmared] at (11, -1.7) {Gene OFF};
+  \draw[thick, dogmared] (10.3, -1.6) -- (10.7, -1.9);
+  \draw[thick, dogmared] (10.3, -1.9) -- (10.7, -1.6);
+\end{tikzpicture}
+\caption{DNA methylation silences genes. Methyl groups (M) added to CpG sites block transcription factor binding, effectively switching the gene off without changing the DNA sequence.}
+\label{fig:dna-methylation}
+\end{figure}
+
+\subsection{Histone Modification}
+
+DNA in eukaryotic cells is wound around protein spools called \emph{histones}. Chemical modifications to histone ``tails'' (protruding amino acid chains) alter chromatin structure:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Histone acetylation} (adding acetyl groups): \emph{Opens} chromatin, making DNA accessible for transcription. Think of it as ``loosening the spool.''
+  \item \textbf{Histone methylation} (adding methyl groups): Can either \emph{open} or \emph{close} chromatin, depending on which amino acid is modified and how many methyl groups are added.
+  \item \textbf{Histone phosphorylation:} Involved in DNA damage response and chromosome condensation during cell division.
+\end{itemize}
+
+\subsection{The Histone Code}
+
+The combination of histone modifications at a given genomic locus forms a \emph{histone code}---a combinatorial signal that determines the regulatory state of that region \citep{allis2016}. This code is ``read'' by effector proteins with specific binding domains.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.95\textwidth}{L{3cm} L{2.5cm} L{3cm} Y}
+\toprule
+\textbf{Modification} & \textbf{Effect} & \textbf{Chromatin State} & \textbf{Computational Analogue} \\
+\midrule
+H3K4me3 & Activation & Open & Feature flag = ON \\
+H3K27me3 & Repression & Closed & Feature flag = OFF \\
+H3K9ac & Activation & Open & Access permission = READ \\
+H3K9me3 & Strong repression & Heterochromatin & Access permission = DENIED \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Epigenetic Memory: State Without Sequence Change}
+
+The most remarkable property of epigenetic marks is that they are \emph{maintained through cell division}. When a cell divides, its methylation pattern and histone modifications are copied to both daughter cells. This creates \emph{persistent state without sequence modification}:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item A liver cell remains a liver cell not because its DNA is different from a neuron's, but because its epigenetic state keeps liver-specific genes active and neuron-specific genes silent.
+  \item The same genome, with different epigenetic marks, produces completely different cell types---just as the same program, with different configuration files, produces different behaviors.
+\end{itemize}
+
+\begin{dogmadef}[Epigenetics as Configuration State]
+From a computational perspective, epigenetics is a \emph{configuration layer} that modifies the behavior of the underlying program (genome) without changing its source code. It is analogous to environment variables, runtime configuration files, or feature flags that alter program behavior at deployment time.
+
+In DOGMA, the Tera regime state (Chapter~\ref{ch:tera}) plays this role: it modifies how the genome is regulated and expressed without altering the genome itself. Just as epigenetic marks can persist across cell divisions, Tera's meta-policy memory persists across training runs.
+\end{dogmadef}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Alternative Splicing: One Genome, Many Programs}
+\label{sec:alternative-splicing}
+
+\subsection{The Mechanism}
+
+In eukaryotes, protein-coding genes are interrupted by non-coding sequences called \emph{introns}. During transcription, introns are removed and the remaining \emph{exons} are joined together in a process called \emph{splicing}. Crucially, different combinations of exons can be joined, producing different mRNAs---and therefore different proteins---from the same gene.
+
+This is \emph{alternative splicing}: the ability to produce multiple distinct outputs from a single genetic locus, depending on context. The human gene \textit{DSCAM} (Down Syndrome Cell Adhesion Molecule) in \textit{Drosophila} can produce over 38,000 distinct mRNA variants through alternative splicing---more than twice the total number of genes in the fly's genome.
+
+\subsection{Computational Significance}
+
+Alternative splicing demonstrates that the relationship between genome and output is \emph{many-to-many}, not one-to-one. A single genomic region can produce different outputs depending on regulatory context. DOGMA's Transcription stage implements this principle: the same genome $\Gamma_t$ can yield different transcripts $T_t$ depending on the activation map $A_t$ and context $c_t$.
+
+\begin{implnote}[Alternative Splicing in DOGMA]
+In the \textsc{evo-trainer} implementation, alternative splicing corresponds to the ability of the transcription engine to select different subsets of activated genomic regions and combine them in different orders. This is implemented through context-dependent region selection and composition operators, producing task-specific intermediate representations from a shared persistent genome.
+\end{implnote}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The ENCODE Project: Quantifying the Regulatory Genome}
+\label{sec:encode}
+
+The ENCODE (Encyclopedia of DNA Elements) project \citep{encode2012} systematically mapped functional elements across the human genome. Key findings relevant to DOGMA include:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{80\% of the genome is functional} (by biochemical assay), far more than the $\sim$1.5\% that encodes proteins. Most functional sequence is regulatory.
+
+  \item \textbf{Over 400,000 enhancer-like regions} were identified, outnumbering genes by 20:1. The regulatory program is far more complex than the structural program.
+
+  \item \textbf{Gene expression is combinatorially regulated:} the average gene is influenced by multiple distal enhancers, and the average enhancer influences multiple genes.
+\end{itemize}
+
+The ENCODE findings reinforce a central DOGMA thesis: \emph{in sophisticated information-processing systems, regulation is more important than content.} A genome's power lies not in its coding sequences alone, but in the regulatory architecture that controls their expression. Similarly, DOGMA's power lies not in its base representations alone, but in the regulation, transcription, and expression stages that control how those representations are activated and combined.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Synthetic Biology: Engineering Biological Circuits}
+\label{sec:synthetic-biology}
+
+Synthetic biology applies engineering principles to design and construct biological systems with novel functions. Two landmark achievements demonstrate that gene regulation can be \emph{designed}, not just observed:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{The repressilator} \citep{elowitz2000}: an engineered genetic oscillator consisting of three mutually repressing genes arranged in a ring (Section~\ref{sec:grn}). The circuit produces regular oscillations in fluorescent protein expression, visible as blinking cells under a microscope.
+
+  \item \textbf{The genetic toggle switch} \citep{gardner2000}: an engineered bistable circuit consisting of two mutually repressing genes (Section~\ref{sec:grn}). The switch can be flipped between two stable states by transient chemical signals, implementing a one-bit memory.
+\end{enumerate}
+
+These achievements confirm that gene regulation is not merely an evolved accident but a \emph{designable computational substrate}. If we can engineer biological circuits, we can certainly formalize their computational principles and implement them in silicon---which is precisely what DOGMA does.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{From Biological Regulation to DOGMA}
+\label{sec:bio-to-dogma}
+
+This chapter has established that gene regulation is a computational system with:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Logic:} Transcription factors implement combinatorial Boolean functions (Section~\ref{sec:tf-logic}).
+  \item \textbf{Memory:} Epigenetic marks and toggle switches maintain persistent state (Sections~\ref{sec:epigenetics}, \ref{sec:grn}).
+  \item \textbf{Dynamics:} Feed-forward loops, oscillators, and feedback circuits implement temporal computation (Sections~\ref{sec:grn}, \ref{sec:signal-transduction}).
+  \item \textbf{Context-dependence:} Alternative splicing and combinatorial regulation produce different outputs from the same genome (Section~\ref{sec:alternative-splicing}).
+  \item \textbf{Sparsity:} Only 10--20\% of genes are active in any given cell, creating efficient task-specific programs.
+  \item \textbf{Hierarchy:} Regulation operates at multiple scales (nucleotide, gene, operon, chromosome, genome).
+\end{enumerate}
+
+DOGMA inherits all six properties:
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Logic $\to$ Regulation stage:} The activation map $A_t$ implements context-dependent gating.
+  \item \textbf{Memory $\to$ Tera meta-policy:} Persistent regime state survives across runs.
+  \item \textbf{Dynamics $\to$ Evolutionary training:} Multi-generational mutation and selection implement temporal optimization.
+  \item \textbf{Context-dependence $\to$ Transcription:} The same genome produces different transcripts for different tasks.
+  \item \textbf{Sparsity $\to$ Regulated activation:} Only relevant regions participate in each forward pass.
+  \item \textbf{Hierarchy $\to$ Genomic organization:} Bases $\to$ motifs $\to$ regions $\to$ subgenomes.
+\end{enumerate}
+
+With Part~I complete, we have established the biological foundations: DNA as information (Chapter~\ref{ch:code-of-life}), DNA as computation (Chapter~\ref{ch:dna-computing}), and gene regulation as a sophisticated programming system (this chapter). Part~II builds the complementary AI/ML foundations before Part~III unites them in the DOGMA architecture.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Exercises}
+\label{sec:ch3-exercises}
+
+\begin{enumerate}[label=\textbf{3.\arabic*.}, leftmargin=2.5em]
+
+\item \textbf{[Logic]} Design a gene regulatory circuit (using transcription factor interactions) that implements the Boolean function $f(A, B, C) = (A \land B) \lor (\lnot C)$. Draw the circuit diagram and specify which interactions are activating vs.\ repressing.
+
+\item \textbf{[Hill Function]} A gene is regulated by an activator with Hill coefficient $n = 4$ and $K = 50$ nM. The maximal expression rate is $\beta = 200$ mRNA/min and the degradation rate is $\gamma = 0.1$ min$^{-1}$.
+  \begin{enumerate}[label=(\alph*)]
+    \item What is the steady-state mRNA level when the activator concentration is $x = 25$ nM?
+    \item At what activator concentration does expression reach 90\% of its maximum?
+    \item Plot the dose-response curve for $x \in [0, 200]$ nM.
+  \end{enumerate}
+
+\item \textbf{[Dynamics]} For the toggle switch system with mutual repression:
+  \begin{equation*}
+    \frac{dx}{dt} = \frac{\beta}{1 + y^n} - \gamma x, \qquad \frac{dy}{dt} = \frac{\beta}{1 + x^n} - \gamma y,
+  \end{equation*}
+  find the steady states for $\beta = 10$, $\gamma = 1$, $n = 2$. Show that the system is bistable by analyzing the nullclines.
+
+\item \textbf{[Boolean Networks]} Construct a Boolean network with $N=4$ genes, where each gene's next state depends on two inputs with the following rules:
+  \begin{itemize}
+    \item Gene 1: AND(Gene 2, Gene 4)
+    \item Gene 2: OR(Gene 1, Gene 3)
+    \item Gene 3: NOT(Gene 2)
+    \item Gene 4: XOR(Gene 1, Gene 3)
+  \end{itemize}
+  Enumerate all $2^4 = 16$ states and draw the complete state transition diagram. How many attractors exist? What are their lengths?
+
+\item \textbf{[Signal Transduction]} Consider a three-tier kinase cascade where each active kinase activates 10 copies of the next. If the initial signal activates 5 copies of Kinase 1:
+  \begin{enumerate}[label=(\alph*)]
+    \item How many copies of Kinase 3 are active after one round of signaling?
+    \item If each tier also has a phosphatase that inactivates kinases at a rate of 20\% per step, what is the net amplification?
+    \item Explain how negative feedback from Kinase 3 to Kinase 1 would change the dynamics.
+  \end{enumerate}
+
+\item \textbf{[Coding]} Implement a gene regulatory network simulator that:
+  \begin{enumerate}[label=(\alph*)]
+    \item Takes a network topology (adjacency matrix with activation/repression signs) and Hill parameters.
+    \item Simulates the dynamics using Equation~\ref{eq:grn-dynamics} with Hill kinetics (Equation~\ref{eq:hill-regulation}).
+    \item Plots the time course of all gene expression levels.
+    \item Test with the repressilator circuit: three genes in a mutual repression ring.
+  \end{enumerate}
+
+\item \textbf{[Analysis]} The ENCODE project found $>$400,000 enhancer-like regions but only $\sim$20,000 protein-coding genes. What does this 20:1 ratio of regulatory to coding elements suggest about the relative importance of ``content'' vs.\ ``control'' in biological information processing? How does this inform DOGMA's design philosophy?
+
+\item \textbf{[Conceptual]} Compare epigenetic memory to the Tera regime state in DOGMA. What properties do they share? Where does the analogy break down?
+
+\item \textbf{[Advanced]} Prove that a feed-forward loop with coherent type-1 logic (both direct and indirect paths are activating) acts as a persistence detector: it responds to sustained input signals but filters out transient pulses. Under what parameter conditions does filtering occur?
+
+\item \textbf{[Synthesis]} Design a synthetic biological circuit that implements a 2-bit counter (counts 00 $\to$ 01 $\to$ 10 $\to$ 11 $\to$ 00). Specify the required number of genes, the regulatory interactions between them, and the external clock signal. How does this compare to the digital logic implementation?
+
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Key Takeaways}
+
+\keytakeaway{
+\begin{itemize}[leftmargin=1.5em]
+  \item Gene regulation implements combinatorial logic through transcription factors, with promoters, enhancers, silencers, and insulators forming a complete regulatory grammar.
+  \item Transcription factor binding follows Hill kinetics, producing sigmoidal (switch-like) responses that convert analog chemical signals into digital-like decisions. The Hill coefficient $n$ controls steepness.
+  \item The lac operon is a biological AND gate: expression requires lactose present AND glucose absent---an economically optimal computation.
+  \item Gene regulatory networks exhibit recurring motifs (toggle switches, oscillators, feed-forward loops) that implement specific computational functions: memory, timing, and signal filtering.
+  \item Boolean networks model gene regulation as discrete state machines, with attractors corresponding to stable cell types---providing a bridge between molecular biology and computation theory.
+  \item Signal transduction pathways implement amplification (kinase cascades), signal processing (MAPK pipeline), and feedback control (positive and negative loops).
+  \item Epigenetics provides a configuration layer that modifies gene expression without altering the DNA sequence---the biological precedent for DOGMA's Tera regime state.
+  \item Alternative splicing demonstrates that one genome can produce many different outputs depending on context---the principle behind DOGMA's context-dependent transcription.
+  \item The ENCODE project revealed that $\sim$80\% of the functional genome is regulatory, confirming that control is more complex and important than content.
+  \item Synthetic biology demonstrates that biological regulatory circuits can be designed from first principles, validating DOGMA's approach of formalizing and reimplementing them computationally.
+\end{itemize}
+}
+
+\section*{Suggested Reading}
+\begin{itemize}[leftmargin=1.5em]
+  \item \citet{jacob1961}: The original discovery of gene regulation (lac operon).
+  \item \citet{alon2019}: Systems biology of gene networks, with emphasis on motifs and design principles.
+  \item \citet{encode2012}: The ENCODE project's comprehensive regulatory map.
+  \item \citet{allis2016}: Epigenetic mechanisms and the histone code.
+  \item \citet{elowitz2000} and \citet{gardner2000}: Foundational synthetic biology circuits.
+\end{itemize}

@@ -1,0 +1,202 @@
+% dogma-book.sty — Style package for "From DNA to AGI: The DOGMA Revolution"
+% First Edition, 2026
+% Author: Wenyan Qin
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{dogma-book}[2026/03/16 DOGMA Textbook Style v1.0]
+
+% ─── Core packages ────────────────────────────────────────────────────────────
+\RequirePackage[utf8]{inputenc}
+\RequirePackage[T1]{fontenc}
+\RequirePackage{lmodern}
+\RequirePackage{microtype}
+\RequirePackage[margin=1in,headheight=23pt]{geometry}
+\RequirePackage{graphicx}
+\RequirePackage[table]{xcolor}
+\RequirePackage{amsmath,amssymb,amsthm,mathtools}
+\RequirePackage{algorithm,algpseudocode}
+\RequirePackage{booktabs,tabularx,multirow,longtable}
+\RequirePackage{enumitem}
+\RequirePackage{fancyhdr}
+\RequirePackage{titlesec}
+\RequirePackage{hyperref}
+\RequirePackage{cleveref}
+\RequirePackage{float}
+\RequirePackage{caption,subcaption}
+\RequirePackage{tcolorbox}
+\RequirePackage{listings}
+\RequirePackage{tikz}
+\RequirePackage{pgfplots}
+\RequirePackage{epigraph}
+\RequirePackage{natbib}
+\RequirePackage{makeidx}
+\RequirePackage{marginnote}
+
+% ─── TikZ libraries ──────────────────────────────────────────────────────────
+\usetikzlibrary{arrows.meta,calc,decorations.pathmorphing,decorations.pathreplacing,
+  positioning,shapes.geometric,fit,backgrounds,chains,matrix}
+\pgfplotsset{compat=1.18}
+
+% ─── Color palette ────────────────────────────────────────────────────────────
+\definecolor{dogmablue}{HTML}{1B4F72}
+\definecolor{dogmateal}{HTML}{148F77}
+\definecolor{dogmagold}{HTML}{B7950B}
+\definecolor{dogmared}{HTML}{922B21}
+\definecolor{dogmalight}{HTML}{EBF5FB}
+\definecolor{dogmamint}{HTML}{E8F8F5}
+\definecolor{dogmawarm}{HTML}{FEF9E7}
+\definecolor{dogmagray}{HTML}{85929E}
+\definecolor{codebg}{HTML}{F7F9FB}
+\definecolor{citeblue}{HTML}{2471A3}
+
+% ─── Hyperref setup ───────────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=dogmablue,
+  citecolor=citeblue,
+  urlcolor=dogmateal,
+  bookmarksnumbered=true,
+  bookmarksopen=true,
+}
+
+% ─── Headers and footers ─────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE]{\small\textit{\leftmark}}
+\fancyhead[RO]{\small\textit{\rightmark}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ─── Chapter and section formatting ──────────────────────────────────────────
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries\color{dogmablue}}
+  {\chaptertitlename\ \thechapter}{20pt}{\Huge}
+\titleformat{\section}
+  {\normalfont\Large\bfseries\color{dogmablue}}{\thesection}{1em}{}
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\color{dogmateal}}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalfont\normalsize\bfseries\color{dogmagold}}{\thesubsubsection}{1em}{}
+
+% ─── Theorem-like environments ────────────────────────────────────────────────
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[chapter]
+\newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{example}{Example}[chapter]
+\newtheorem{remark}{Remark}[chapter]
+
+% ─── Custom tcolorbox environments ───────────────────────────────────────────
+
+% Definition box
+\newtcolorbox{dogmadef}[1][]{
+  colback=dogmalight,
+  colframe=dogmablue,
+  coltitle=white,
+  fonttitle=\bfseries,
+  title={#1},
+  rounded corners,
+  boxrule=0.8pt,
+  left=6pt,right=6pt,top=6pt,bottom=6pt,
+}
+
+% Biological insight sidebar
+\newtcolorbox{bioinsight}[1][Biological Insight]{
+  colback=dogmamint,
+  colframe=dogmateal,
+  coltitle=white,
+  fonttitle=\bfseries,
+  title={#1},
+  rounded corners,
+  boxrule=0.8pt,
+  left=6pt,right=6pt,top=6pt,bottom=6pt,
+}
+
+% Implementation note
+\newtcolorbox{implnote}[1][Implementation Note]{
+  colback=dogmawarm,
+  colframe=dogmagold,
+  coltitle=white,
+  fonttitle=\bfseries,
+  title={#1},
+  rounded corners,
+  boxrule=0.8pt,
+  left=6pt,right=6pt,top=6pt,bottom=6pt,
+}
+
+% Key insight / important concept
+\newtcolorbox{keyinsight}[1][Key Insight]{
+  colback=white,
+  colframe=dogmared,
+  coltitle=white,
+  fonttitle=\bfseries,
+  title={#1},
+  rounded corners,
+  boxrule=0.8pt,
+  left=6pt,right=6pt,top=6pt,bottom=6pt,
+}
+
+% Chapter epigraph command
+\newcommand{\chapterepigraph}[2]{%
+  \epigraph{\textit{#1}}{--- #2}%
+}
+
+% ─── Code listing style ──────────────────────────────────────────────────────
+\lstdefinestyle{dogmapython}{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  keywordstyle=\color{dogmablue}\bfseries,
+  stringstyle=\color{dogmateal},
+  commentstyle=\color{dogmagray}\itshape,
+  numberstyle=\tiny\color{dogmagray},
+  numbers=left,
+  numbersep=8pt,
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{dogmagray!40},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  captionpos=b,
+  aboveskip=10pt,
+  belowskip=10pt,
+  xleftmargin=16pt,
+  framexleftmargin=16pt,
+  morekeywords={Self,match,case,dataclass,field},
+}
+
+\lstset{style=dogmapython}
+
+% ─── Custom column types for tabularx ────────────────────────────────────────
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+% ─── Key takeaway box (end of chapter) ───────────────────────────────────────
+\newcommand{\keytakeaway}[1]{%
+  \begin{tcolorbox}[
+    colback=dogmalight,
+    colframe=dogmablue,
+    title={\textbf{Key Takeaways}},
+    coltitle=white,
+    fonttitle=\bfseries,
+    rounded corners,
+    boxrule=0.8pt,
+  ]
+  #1
+  \end{tcolorbox}
+}
+
+% ─── Margin note for cross-references ────────────────────────────────────────
+\newcommand{\seeref}[1]{\marginnote{\scriptsize\textcolor{dogmateal}{$\rightarrow$ #1}}}
+
+% ─── Citation helpers ────────────────────────────────────────────────────────
+\bibliographystyle{plainnat}
+
+% ─── Index setup ─────────────────────────────────────────────────────────────
+\makeindex
+
+\endinput

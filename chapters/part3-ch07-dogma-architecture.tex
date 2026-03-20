@@ -1,0 +1,1296 @@
+% ═══════════════════════════════════════════════════════════════════════════════
+% Chapter 7: DOGMA — DNA-Organized Genomic Model Architecture
+% Part III: The DOGMA Architecture
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\part{The DOGMA Architecture}
+
+\chapter{DOGMA --- The Six-Stage Pipeline}
+\label{ch:dogma-architecture}
+
+\chapterepigraph{The Evolutor is NOT a better decoder. It is a genomic generator whose language output is just one downstream expression mode.}{DOGMA Design Manifesto}
+
+\noindent
+This chapter presents the central contribution of this book: \textbf{DOGMA}, the \emph{DNA-Organized Genomic Model Architecture}. DOGMA is not an incremental improvement to the transformer. It is a fundamentally different way of organizing computation in an AI system---one inspired by three and a half billion years of biological information processing.
+
+The core idea is simple but radical: \emph{an intelligent system should maintain a persistent, structured internal genome whose regions have distinct roles, activation patterns, and interaction semantics. Output is not the system itself. Output is the temporary expression of a deeper organized substrate.}
+
+In a standard large language model, everything---system instructions, retrieved context, latent plans, working memory, and output tokens---exists in a single undifferentiated token stream, processed by uniform attention blocks. DOGMA rejects this flattening. It proposes that capable intelligence requires the separation of persistent state from transient expression, just as biology separates the genome from the phenotype.
+
+This chapter is organized as follows. We begin with the DOGMA thesis and motivation (\S\ref{sec:dogma-thesis}), then define the genomic base---DOGMA's atomic computational unit (\S\ref{sec:genomic-base}). The heart of the chapter is a detailed walkthrough of the six-stage pipeline (\S\ref{sec:six-stages}), with each stage receiving its own dedicated section containing mathematical formulations, TikZ diagrams, worked examples, and complexity analysis. We then present a full architecture diagram (\S\ref{sec:full-architecture}), the DogmaBlock pseudocode (\S\ref{sec:dogma-code}), a detailed comparison with competing architectures (\S\ref{sec:formal-comparison}), and a complete worked example tracing data through all six stages (\S\ref{sec:worked-example}).
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The DOGMA Thesis}
+\label{sec:dogma-thesis}
+
+\begin{dogmadef}[The DOGMA Principle]
+\textbf{DOGMA} (DNA-Organized Genomic Model Architecture) is a computational architecture in which:
+\begin{enumerate}[leftmargin=1.5em]
+  \item Internal state is a \emph{persistent genomic structure} composed of typed bases and organized regions.
+  \item Context determines \emph{selective activation} of genomic regions (regulation).
+  \item Active regions are \emph{assembled and modified} under evolutionary pressure (synthesis).
+  \item Selected information is \emph{read into task-specific intermediate representations} (transcription).
+  \item Intermediate representations are \emph{folded into structured behavior} (expression).
+  \item Structured behavior is \emph{rendered into modality-specific output} (realization).
+\end{enumerate}
+Language generation is one realization mode among several; the genome, not the output, is the primary computational object.
+\end{dogmadef}
+
+\subsection{Why Current LLMs Are Structurally Limited}
+
+Before presenting DOGMA's architecture, we must understand \emph{why} a new architecture is needed. Current transformer-based LLMs, despite their impressive capabilities \citep{brown2020, wei2022}, share several structural limitations:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{No native region semantics.} System prompts, user queries, retrieved documents, chain-of-thought reasoning, and generated output all occupy the same undifferentiated token stream. The model must learn implicit conventions to distinguish these roles---conventions that are fragile and unverifiable.
+
+  \item \textbf{Weak persistent organization.} A transformer's ``knowledge'' lives in its parameters (frozen after training) and its context window (bounded and transient). There is no intermediate state that persists across sessions while remaining modifiable.
+
+  \item \textbf{Dense uniform interaction.} Self-attention computes pairwise interactions between \emph{all} positions, even when most regions should remain silent. This is $O(T^2)$ in sequence length $T$---biologically implausible and computationally wasteful for long sequences.
+
+  \item \textbf{Output-first bias.} The canonical training objective (next-token prediction) optimizes text generation directly. There is no explicit intermediate ``phenotype''---no structured representation of \emph{what the model intends to do} before it starts producing tokens.
+
+  \item \textbf{No evolutionary self-modification.} Once trained, a model's parameters are fixed. It cannot modify its own computational structure in response to new tasks or environments without full retraining.
+\end{enumerate}
+
+DOGMA addresses each limitation by drawing on biological precedent (Table~\ref{tab:dogma-vs-transformer}).
+
+\begin{table}[H]
+\centering
+\caption{Structural comparison: Transformer LLMs vs.\ DOGMA.}
+\label{tab:dogma-vs-transformer}
+\begin{tabularx}{\textwidth}{L{3cm} L{4cm} Y}
+\toprule
+\textbf{Property} & \textbf{Transformer LLM} & \textbf{DOGMA} \\
+\midrule
+Internal state & Flat token sequence + static weights & Typed genomic structure with regions \\
+Access pattern & Dense all-pairs attention $O(T^2)$ & Sparse regulated activation \\
+Persistent memory & Parameters (frozen) or context (bounded) & Genome + Tera regime + meta-policy \\
+Output generation & Direct token prediction & Staged pipeline: regulate $\to$ transcribe $\to$ express $\to$ realize \\
+Self-modification & None (post-training) & Evolutionary synthesis with fitness criteria \\
+Modality & Primarily text & Modality-agnostic realization \\
+Biological analogue & --- & Central Dogma of molecular biology \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Genomic Base: DOGMA's Atomic Unit}
+\label{sec:genomic-base}
+
+The fundamental computational atom of DOGMA is the \emph{genomic base}---a typed, weighted, compatibility-annotated element that carries more structure than a standard token embedding.
+
+\begin{definition}[Genomic Base]
+\label{def:genomic-base}
+A \emph{genomic base} is a 4-tuple:
+\begin{equation}
+b_i = (\sigma_i, \tau_i, \rho_i, \omega_i),
+\end{equation}
+where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $\sigma_i \in \mathbb{R}^d$ is the \textbf{base embedding}---the continuous vector representation of the base's informational content (analogous to a token embedding, but enriched with type-specific structure).
+  \item $\tau_i \in \{\mathsf{A}, \mathsf{C}, \mathsf{G}, \mathsf{T}\}$ is the \textbf{base type}, assigning one of four functional roles:
+    \begin{itemize}
+      \item $\mathsf{A}$ (Activation): bases that initiate or enable downstream computation.
+      \item $\mathsf{C}$ (Composition): bases that combine, transform, or route information.
+      \item $\mathsf{G}$ (Generation): bases that produce new content or expand state.
+      \item $\mathsf{T}$ (Termination): bases that halt, bound, or complete a process.
+    \end{itemize}
+  \item $\rho_i \in [0,1]^c$ is the \textbf{compatibility vector}---a $c$-dimensional vector encoding bonding potential, interaction affinity, and routing metadata. This determines which other bases this base can productively interact with.
+  \item $\omega_i \in \mathbb{R}_{\ge 0}$ is the \textbf{weight}---a non-negative scalar indicating the base's relative importance or expression strength in the current context.
+\end{itemize}
+\end{definition}
+
+\subsection{Anatomy of a Genomic Base}
+
+To build intuition, let us examine each component in detail.
+
+\begin{table}[H]
+\centering
+\caption{The four components of a genomic base $b_i = (\sigma_i, \tau_i, \rho_i, \omega_i)$ with dimensions, ranges, and biological analogues.}
+\label{tab:genomic-base-components}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{L{2.2cm} C{2cm} C{2.2cm} Y Y}
+\toprule
+\textbf{Component} & \textbf{Symbol} & \textbf{Dimension} & \textbf{Range / Domain} & \textbf{Biological Analogue} \\
+\midrule
+Base embedding & $\sigma_i$ & $\mathbb{R}^d$ & Continuous & Nucleotide chemical identity \\
+Base type & $\tau_i$ & Discrete & $\{A, C, G, T\}$ & Purine/pyrimidine class \\
+Compatibility & $\rho_i$ & $\mathbb{R}^c$ & $[0,1]^c$ & Hydrogen-bond donors/acceptors \\
+Weight & $\omega_i$ & $\mathbb{R}$ & $[0, \infty)$ & Expression level \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{The base embedding $\sigma_i$.} This is the primary informational payload of the base. In the simplest case, $\sigma_i$ is a learned embedding vector of dimension $d$ (e.g., $d = 512$ or $d = 1024$). Unlike a standard token embedding, $\sigma_i$ is structured: the first $d/4$ dimensions encode type-specific features, while the remaining dimensions encode content. This structure allows downstream operations to efficiently extract type information without separate lookups.
+
+\paragraph{The base type $\tau_i$.} The discrete type tag partitions all bases into four functional classes. The type determines which computational pathways the base participates in and which complementary pairing rules apply. The complement mapping is:
+\begin{equation}
+\overline{\mathsf{A}} = \mathsf{T}, \quad \overline{\mathsf{T}} = \mathsf{A}, \quad \overline{\mathsf{C}} = \mathsf{G}, \quad \overline{\mathsf{G}} = \mathsf{C}.
+\label{eq:complement}
+\end{equation}
+
+\paragraph{The compatibility vector $\rho_i$.} This vector governs inter-base interactions. Given two bases $b_i$ and $b_j$, their \emph{compatibility score} is:
+\begin{equation}
+\mathrm{compat}(b_i, b_j) = \rho_i^\top \rho_j + \beta(\tau_i, \tau_j),
+\label{eq:compat}
+\end{equation}
+where $\beta(\tau_i, \tau_j)$ is a learned type-pair bias. Complementary pairs ($\mathsf{A}$--$\mathsf{T}$ and $\mathsf{C}$--$\mathsf{G}$) receive a positive bias; mismatches receive a negative bias or zero.
+
+\paragraph{The weight $\omega_i$.} This scalar controls how strongly the base contributes to downstream computation. During the regulation stage (\S\ref{sec:stage-regulation}), weights are modulated by context. A weight of zero effectively silences the base.
+
+The following TikZ diagram illustrates a single genomic base with all its components annotated.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  component/.style={draw, rounded corners=3pt, minimum width=2.2cm, minimum height=0.7cm, align=center},
+  label/.style={font=\footnotesize\itshape, text=dogmagray},
+  arrow/.style={-{Latex[length=2mm]}, thick, dogmablue},
+]
+  % Central base node
+  \node[draw, thick, rounded corners=6pt, fill=dogmalight,
+        minimum width=3.8cm, minimum height=3.8cm, align=center] (base) at (0,0) {};
+  \node[font=\large\bfseries, color=dogmablue] at (0, 0) {$b_i$};
+  \node[font=\footnotesize, color=dogmablue] at (0, -0.45) {Genomic Base};
+
+  % sigma - top
+  \node[component, fill=dogmamint] (sigma) at (0, 3.5) {$\sigma_i \in \mathbb{R}^d$};
+  \node[label, anchor=west] at (sigma.east) [right=4pt] {Base embedding};
+  \draw[arrow] (sigma.south) -- (base.north);
+
+  % tau - right
+  \node[component, fill=dogmawarm] (tau) at (5.5, 1) {$\tau_i \in \{A,C,G,T\}$};
+  \node[label, anchor=west] at (tau.east) [right=4pt] {Base type};
+  \draw[arrow] (tau.west) -- (base.east |- tau);
+
+  % rho - right below
+  \node[component, fill=white, draw=dogmared] (rho) at (5.5, -1) {$\rho_i \in [0,1]^c$};
+  \node[label, anchor=west] at (rho.east) [right=4pt] {Compatibility};
+  \draw[arrow] (rho.west) -- (base.east |- rho);
+
+  % omega - bottom
+  \node[component, fill=dogmalight, draw=dogmablue] (omega) at (0, -3.5) {$\omega_i \in \mathbb{R}_{\ge 0}$};
+  \node[label, anchor=west] at (omega.east) [right=4pt] {Weight};
+  \draw[arrow] (omega.north) -- (base.south);
+
+  % Type legend
+  \node[font=\scriptsize, anchor=north west] at (-6.5, 3.8) {
+    \begin{tabular}{cl}
+      \cellcolor{dogmamint} $\mathsf{A}$ & Activation \\
+      \cellcolor{dogmawarm} $\mathsf{C}$ & Composition \\
+      \cellcolor{dogmalight} $\mathsf{G}$ & Generation \\
+      \cellcolor{white} $\mathsf{T}$ & Termination \\
+    \end{tabular}
+  };
+\end{tikzpicture}
+\caption{Anatomy of a single genomic base $b_i = (\sigma_i, \tau_i, \rho_i, \omega_i)$. The base embedding $\sigma_i$ carries content, the type tag $\tau_i$ assigns functional role, the compatibility vector $\rho_i$ governs inter-base interactions, and the weight $\omega_i$ controls expression strength.}
+\label{fig:genomic-base-anatomy}
+\end{figure}
+
+\begin{keyinsight}[Why Four Types?]
+The choice of four base types is not arbitrary. It is the minimum alphabet that provides:
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Complementary pairing:} $\mathsf{A} \leftrightarrow \mathsf{T}$ and $\mathsf{C} \leftrightarrow \mathsf{G}$ enable HelixHash's double-strand representation (Chapter~\ref{ch:helixhash}).
+  \item \textbf{Functional coverage:} The four roles (initiate, terminate, combine, generate) span the basic operations of any computational pipeline.
+  \item \textbf{Algebraic structure:} The Klein four-group $\mathbb{Z}_2 \times \mathbb{Z}_2$ acts naturally on $\{\mathsf{A}, \mathsf{T}, \mathsf{C}, \mathsf{G}\}$ via complement and type-swap, providing symmetry operations for equivariant processing.
+  \item \textbf{Biological compatibility:} Direct mapping to DNA's $\{A, T, C, G\}$ enables training on genomic corpora and interfacing with biological data.
+\end{enumerate}
+\end{keyinsight}
+
+\subsection{Genomic Sequences and Regions}
+
+Bases are organized into \emph{genomic sequences} and \emph{regions}:
+
+\begin{definition}[Genomic Sequence]
+A \emph{genomic sequence} is an ordered tuple of genomic bases:
+\begin{equation}
+\Gamma = (b_1, b_2, \ldots, b_n), \quad b_i = (\sigma_i, \tau_i, \rho_i, \omega_i).
+\end{equation}
+\end{definition}
+
+\begin{definition}[Genomic Region]
+A \emph{genomic region} $R = (\Gamma[i:j], \mu)$ is a contiguous subsequence of a genomic sequence annotated with a region type $\mu$. Region types include:
+\begin{center}
+\renewcommand{\arraystretch}{1.12}
+\begin{tabularx}{0.85\textwidth}{L{2.5cm} Y}
+\toprule
+\textbf{Region Type} & \textbf{Computational Role} \\
+\midrule
+\textsc{Promoter} & Activation entry point; determines whether downstream regions fire \\
+\textsc{Enhancer} & Amplifies activation of distant regions under matching context \\
+\textsc{Silencer} & Suppresses activation of associated regions \\
+\textsc{Insulator} & Prevents regulatory signals from crossing domain boundaries \\
+\textsc{Coding} & Carries functional content (templates, programs, knowledge) \\
+\textsc{Memory} & Stores persistent state (facts, habits, world model fragments) \\
+\textsc{Adapter} & Connects to modality-specific output heads \\
+\bottomrule
+\end{tabularx}
+\end{center}
+\end{definition}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Six-Stage Pipeline: Overview}
+\label{sec:six-stages}
+
+DOGMA processes information through six sequential stages, each corresponding to a step in the biological Central Dogma and its regulatory context. The complete pipeline transforms persistent genomic state into task-specific output:
+
+\begin{equation}
+\boxed{
+\text{TetraMemory} \xrightarrow{\text{Stage 1}}
+\text{DNA Block} \xrightarrow{\text{Stage 2}}
+\text{Regulate} \xrightarrow{\text{Stage 3}}
+\text{Translate} \xrightarrow{\text{Stage 4}}
+\text{Strand Attn} \xrightarrow{\text{Stage 5}}
+\text{Epi+Allo} \xrightarrow{\text{Stage 6}}
+\text{Output}
+}
+\label{eq:dogma-pipeline}
+\end{equation}
+
+Each stage receives the output of the previous stage and produces a transformed representation. We now devote a full section to each stage, providing mathematical formulations, diagrams, worked examples, and complexity analysis.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\subsection{Stage 1: TetraMemory}
+\label{sec:stage-tetramemory}
+
+TetraMemory is DOGMA's replacement for global self-attention. Instead of computing pairwise interactions between \emph{all} $T$ tokens ($O(T^2)$ cost), TetraMemory organizes tokens into overlapping groups of four---\emph{tetrahedra}---and computes interactions only within and between adjacent tetrahedra in $O(T)$ time.
+
+\subsubsection{The Tetrahedral Unit: $K_4$ Complete Interaction}
+
+Given a sequence of $T$ tokens, TetraMemory partitions them into $\lfloor T/4 \rfloor$ non-overlapping groups of four consecutive tokens. Within each group, all six pairwise interactions are computed, forming a complete graph $K_4$.
+
+\begin{definition}[Tetrahedron]
+\label{def:tetrahedron}
+A \emph{tetrahedron} $\Delta_k$ is a group of four consecutive tokens $(x_{4k+1}, x_{4k+2}, x_{4k+3}, x_{4k+4})$ together with the complete set of pairwise interactions:
+\begin{equation}
+\Delta_k = \Bigl\{ (x_i, x_j) \;\Big|\; i, j \in \{4k+1, \ldots, 4k+4\},\; i \neq j \Bigr\}.
+\end{equation}
+This yields $\binom{4}{2} = 6$ directed interaction edges per tetrahedron.
+\end{definition}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  vertex/.style={circle, draw, thick, fill=dogmalight, minimum size=8mm, font=\small\bfseries},
+  edge/.style={thick, dogmablue},
+  face/.style={fill=dogmamint, fill opacity=0.3},
+  arrow/.style={-{Latex[length=2.5mm]}, thick},
+]
+  % First tetrahedron
+  \begin{scope}[shift={(-3.5,0)}]
+    \node[font=\small\bfseries, color=dogmablue] at (0, 3) {Tetrahedron $\Delta_k$};
+    % Vertices
+    \coordinate (A) at (0, 2.2);
+    \coordinate (B) at (-1.5, 0);
+    \coordinate (C) at (1.5, 0);
+    \coordinate (D) at (0, 0.8);
+
+    % Faces (back)
+    \fill[face] (A) -- (B) -- (D) -- cycle;
+    \fill[face] (A) -- (C) -- (D) -- cycle;
+    \fill[dogmawarm, fill opacity=0.3] (B) -- (C) -- (D) -- cycle;
+
+    % Edges (6 edges for K4)
+    \draw[edge] (A) -- (B);
+    \draw[edge] (A) -- (C);
+    \draw[edge] (A) -- (D);
+    \draw[edge] (B) -- (C);
+    \draw[edge] (B) -- (D);
+    \draw[edge] (C) -- (D);
+
+    % Vertices (drawn on top)
+    \node[vertex] at (A) {$x_1$};
+    \node[vertex] at (B) {$x_2$};
+    \node[vertex] at (C) {$x_3$};
+    \node[vertex, fill=dogmawarm] at (D) {$x_4$};
+
+    % Label
+    \node[font=\footnotesize, text=dogmagray] at (0, -1) {6 edges = $\binom{4}{2}$};
+  \end{scope}
+
+  % Arrow between tetrahedra
+  \draw[arrow, dogmared, very thick, decorate, decoration={snake, amplitude=1.5mm, segment length=5mm}]
+    (-0.5, 0.8) -- (1.5, 0.8);
+  \node[font=\footnotesize, color=dogmared] at (0.5, 1.4) {face sharing};
+
+  % Second tetrahedron
+  \begin{scope}[shift={(5,0)}]
+    \node[font=\small\bfseries, color=dogmablue] at (0, 3) {Tetrahedron $\Delta_{k+1}$};
+    \coordinate (A2) at (0, 2.2);
+    \coordinate (B2) at (-1.5, 0);
+    \coordinate (C2) at (1.5, 0);
+    \coordinate (D2) at (0, 0.8);
+
+    \fill[face] (A2) -- (B2) -- (D2) -- cycle;
+    \fill[face] (A2) -- (C2) -- (D2) -- cycle;
+    \fill[dogmawarm, fill opacity=0.3] (B2) -- (C2) -- (D2) -- cycle;
+
+    \draw[edge] (A2) -- (B2);
+    \draw[edge] (A2) -- (C2);
+    \draw[edge] (A2) -- (D2);
+    \draw[edge] (B2) -- (C2);
+    \draw[edge] (B2) -- (D2);
+    \draw[edge] (C2) -- (D2);
+
+    \node[vertex, fill=dogmawarm] at (A2) {$x_4$};
+    \node[vertex] at (B2) {$x_5$};
+    \node[vertex] at (C2) {$x_6$};
+    \node[vertex] at (D2) {$x_7$};
+
+    \node[font=\footnotesize, text=dogmagray] at (0, -1) {6 edges = $\binom{4}{2}$};
+  \end{scope}
+\end{tikzpicture}
+\caption{Two adjacent tetrahedra in TetraMemory. Each tetrahedron forms a $K_4$ complete graph with 6 pairwise interactions. Adjacent tetrahedra share a face (3 vertices, shown in gold), enabling information propagation along the sequence without global attention.}
+\label{fig:tetramemory-k4}
+\end{figure}
+
+\subsubsection{Face Propagation}
+
+Long-range information flow is achieved through \emph{face propagation}: adjacent tetrahedra share a triangular face (3 of 4 vertices overlap). This overlap allows information computed in $\Delta_k$ to flow into $\Delta_{k+1}$ through shared vertices.
+
+\begin{equation}
+\text{Face}(\Delta_k, \Delta_{k+1}) = \{x_{4k+2},\; x_{4k+3},\; x_{4k+4}\}.
+\label{eq:face-sharing}
+\end{equation}
+
+More precisely, after computing local interactions within $\Delta_k$, the updated representations of the shared vertices carry information from the entire tetrahedron. When these shared vertices participate in $\Delta_{k+1}$'s local computation, information propagates forward. After processing all $\lfloor T/4 \rfloor$ tetrahedra, information from position 1 can reach position $T$ through a chain of $O(T/4)$ propagation steps---but each step involves only $O(1)$ local computations.
+
+\subsubsection{Mathematical Formulation}
+
+Let $\mathbf{X} \in \mathbb{R}^{T \times d}$ be the input sequence. TetraMemory proceeds as follows:
+
+\begin{enumerate}[leftmargin=1.5em]
+\item \textbf{Partition.} Divide $\mathbf{X}$ into groups of 4: $\mathbf{X}_k = [x_{4k+1}; x_{4k+2}; x_{4k+3}; x_{4k+4}] \in \mathbb{R}^{4 \times d}$.
+
+\item \textbf{Local $K_4$ interaction.} For each tetrahedron $\Delta_k$, compute:
+\begin{equation}
+\mathbf{Y}_k = \mathrm{softmax}\!\left(\frac{\mathbf{X}_k \mathbf{W}_Q (\mathbf{X}_k \mathbf{W}_K)^\top}{\sqrt{d_k}}\right) \mathbf{X}_k \mathbf{W}_V,
+\label{eq:tetra-local}
+\end{equation}
+where $\mathbf{W}_Q, \mathbf{W}_K, \mathbf{W}_V \in \mathbb{R}^{d \times d_k}$ are learned projections. This is standard attention, but restricted to a $4 \times 4$ attention matrix---a constant-size operation.
+
+\item \textbf{Face propagation.} Update shared vertices:
+\begin{equation}
+\tilde{x}_{4k+j} = \mathbf{Y}_k[j] + \gamma \cdot \mathbf{Y}_{k-1}[j+1] \quad \text{for } j \in \{1, 2, 3\},
+\label{eq:face-prop}
+\end{equation}
+where $\gamma$ is a learned mixing coefficient and the index arithmetic accounts for the face-sharing overlap.
+\end{enumerate}
+
+\subsubsection{Complexity Analysis}
+
+\begin{proposition}[TetraMemory Complexity]
+\label{prop:tetra-complexity}
+TetraMemory has time complexity $O(T \cdot d)$ and space complexity $O(T \cdot d)$, compared to $O(T^2 \cdot d)$ time and $O(T^2 + T \cdot d)$ space for standard self-attention.
+\end{proposition}
+
+\begin{proof}
+There are $T/4$ tetrahedra. Each tetrahedron requires a $4 \times 4$ attention computation costing $O(4^2 \cdot d) = O(d)$. Total: $(T/4) \cdot O(d) = O(T \cdot d)$. Face propagation adds $O(T \cdot d)$ for the linear updates. Space: we store $O(T)$ hidden states of dimension $d$.
+\end{proof}
+
+\begin{bioinsight}[Tetrahedra in Biology]
+Tetrahedral geometry appears throughout molecular biology. The carbon atom's $sp^3$ hybridization creates tetrahedral bond angles. Protein quaternary structures often involve tetrameric complexes (e.g., hemoglobin's four subunits). TetraMemory's use of groups of four mirrors this fundamental structural motif: local interactions within a small, tightly-coupled unit, with information propagating through shared interfaces.
+\end{bioinsight}
+
+\begin{implnote}[GPU-Friendly TetraMemory]
+Because each $K_4$ interaction involves only a $4 \times 4$ attention matrix, TetraMemory is extremely GPU-friendly. The local attention computations can be batched as a single large matrix multiplication across all tetrahedra simultaneously:
+\begin{equation}
+\mathbf{Y}_{\text{all}} = \mathrm{BatchedAttn}(\mathbf{X}_{\text{reshaped}}) \quad \text{where } \mathbf{X}_{\text{reshaped}} \in \mathbb{R}^{(T/4) \times 4 \times d}.
+\end{equation}
+This avoids the sequential processing bottleneck of some recurrent architectures while maintaining the $O(T)$ complexity advantage.
+\end{implnote}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\subsection{Stage 2: DNA Computing Block}
+\label{sec:stage-dna-block}
+
+The DNA Computing Block is the core computational engine of DOGMA. It replaces the transformer's feed-forward + attention block with four parallel computational paths, each inspired by a different mechanism from DNA computing. The four paths are:
+\begin{enumerate}[leftmargin=1.5em]
+\item \textbf{Path (i): Strand Displacement} --- conditional signal routing
+\item \textbf{Path (ii): Parallel Scan Automaton / SSM} --- linear-time sequential processing
+\item \textbf{Path (iii): Stochastic Computing} --- probabilistic reasoning
+\item \textbf{Path (iv): Double Strand} --- bidirectional context
+\end{enumerate}
+
+The outputs of all four paths are combined through a \emph{learned softmax gate}:
+\begin{equation}
+\mathbf{y} = \sum_{p=1}^{4} \alpha_p \cdot \mathrm{Path}_p(\mathbf{x}), \qquad \boldsymbol{\alpha} = \mathrm{softmax}(\mathbf{W}_g \mathbf{x} + \mathbf{b}_g) \in \mathbb{R}^4,
+\label{eq:gated-fusion}
+\end{equation}
+where $\mathbf{W}_g \in \mathbb{R}^{4 \times d}$ and $\mathbf{b}_g \in \mathbb{R}^4$ are learned parameters. The gate weights $\alpha_p$ are input-dependent: for some inputs, the strand displacement path dominates; for others, the parallel scan path may carry more weight.
+
+\begin{keyinsight}[Three of Four Paths Are Independently Turing-Complete]
+A remarkable property of the DNA Computing Block is that three of its four paths---Strand Displacement, Parallel Scan Automaton, and Double Strand---are each independently Turing-complete (given sufficient width and depth). This means DOGMA has massive redundancy in computational power: even if two paths are ablated, the remaining path can in principle compute any computable function. This redundancy mirrors the robustness of biological systems, where multiple overlapping regulatory mechanisms ensure reliable function even when individual components fail.
+\end{keyinsight}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  block/.style={draw, rounded corners, minimum width=3cm, minimum height=1.1cm, align=center},
+  smallblock/.style={draw, rounded corners=2pt, minimum width=2.6cm, minimum height=0.75cm, align=center, font=\footnotesize},
+  arrow/.style={-{Latex[length=2.5mm]}, thick},
+  gate/.style={draw, rounded corners, fill=dogmawarm, minimum width=5cm, minimum height=0.9cm, align=center},
+]
+  % Input
+  \node[block, fill=dogmalight] (input) at (0, 5) {Input from TetraMemory\\$\mathbf{x} \in \mathbb{R}^{T \times d}$};
+
+  % Four paths
+  \node[block, fill=dogmamint] (sd) at (-5.5, 2.5) {(i) Strand\\Displacement};
+  \node[block, fill=dogmawarm] (ps) at (-1.8, 2.5) {(ii) Parallel Scan\\Automaton / SSM};
+  \node[block, fill=dogmalight] (sc) at (1.8, 2.5) {(iii) Stochastic\\Computing};
+  \node[block, fill=white, draw=dogmablue] (ds) at (5.5, 2.5) {(iv) Double\\Strand};
+
+  % Turing-complete labels
+  \node[font=\scriptsize, color=dogmared, anchor=north] at (sd.south) {Turing-complete};
+  \node[font=\scriptsize, color=dogmared, anchor=north] at (ps.south) {Turing-complete};
+  \node[font=\scriptsize, color=dogmared, anchor=north] at (ds.south) {Turing-complete};
+
+  % Gate
+  \node[gate] (gate) at (0, 0) {Learned Softmax Gate: $\boldsymbol{\alpha} = \mathrm{softmax}(\mathbf{W}_g \mathbf{x} + \mathbf{b}_g)$};
+
+  % Output
+  \node[block, fill=dogmamint] (output) at (0, -2) {$\mathbf{y} = \sum_p \alpha_p \cdot \mathrm{Path}_p(\mathbf{x})$};
+
+  % Arrows from input
+  \draw[arrow, dogmablue] (input.south) -| (sd.north);
+  \draw[arrow, dogmablue] (input.south) -- ++(0,-0.5) -| (ps.north);
+  \draw[arrow, dogmablue] (input.south) -- ++(0,-0.5) -| (sc.north);
+  \draw[arrow, dogmablue] (input.south) -| (ds.north);
+
+  % Arrows to gate
+  \draw[arrow, dogmateal] (sd.south) -- ++(0,-0.7) -| (gate.north -| -3,0);
+  \draw[arrow, dogmateal] (ps.south) -- ++(0,-1.0) -| (gate.north -| -1,0);
+  \draw[arrow, dogmateal] (sc.south) -- ++(0,-1.0) -| (gate.north -| 1,0);
+  \draw[arrow, dogmateal] (ds.south) -- ++(0,-0.7) -| (gate.north -| 3,0);
+
+  % Arrow to output
+  \draw[arrow, dogmared, very thick] (gate.south) -- (output.north);
+
+  % Path labels
+  \node[font=\footnotesize, text=dogmagray, anchor=north] at (-5.5, 1.4) {signal routing};
+  \node[font=\footnotesize, text=dogmagray, anchor=north] at (-1.8, 1.4) {$O(T \log T)$};
+  \node[font=\footnotesize, text=dogmagray, anchor=north] at (1.8, 1.4) {Monte Carlo};
+  \node[font=\footnotesize, text=dogmagray, anchor=north] at (5.5, 1.4) {bidirectional};
+\end{tikzpicture}
+\caption{The DNA Computing Block with four parallel computational paths. Three of the four paths are independently Turing-complete. The learned softmax gate $\boldsymbol{\alpha}$ dynamically weights each path's contribution based on the input.}
+\label{fig:dna-compute-block}
+\end{figure}
+
+We now describe each path in detail.
+
+\subsubsection{Path (i): Strand Displacement}
+\label{sec:path-strand-displacement}
+
+Strand displacement is inspired by toehold-mediated strand displacement (TMSD) reactions in DNA nanotechnology \citep{zhang2011}. In the wet lab, a single-stranded DNA ``invader'' binds to a short exposed region (the \emph{toehold}) of a double-stranded complex, then progressively displaces the incumbent strand through branch migration. DOGMA abstracts this into a computational primitive for conditional signal routing.
+
+\paragraph{Mechanism.} Given input $\mathbf{x} \in \mathbb{R}^{T \times d}$, the strand displacement path computes:
+\begin{align}
+\mathbf{e}_{\text{toe}} &= \sigma(\mathbf{x} \mathbf{W}_{\text{toe}}), && \text{(toehold binding energies)} \label{eq:toehold} \\
+\mathbf{m}_{\text{gate}} &= \mathbf{1}[\mathbf{e}_{\text{toe}} > \theta], && \text{(thresholded gate mask)} \\
+\mathbf{h}_{\text{migrate}} &= \mathrm{CausalConv1D}(\mathbf{x} \odot \mathbf{m}_{\text{gate}}), && \text{(branch migration via causal conv)} \\
+\mathbf{y}_{\text{SD}} &= \mathbf{x} + \mathbf{h}_{\text{migrate}} \mathbf{W}_{\text{out}}, && \text{(residual output)}
+\end{align}
+where $\theta$ is a learned threshold, $\sigma$ is the sigmoid function, and $\odot$ denotes element-wise multiplication. The gate mask $\mathbf{m}_{\text{gate}}$ selectively activates only those positions where the toehold binding is strong enough---mimicking the thermodynamic threshold required for strand displacement to initiate.
+
+\paragraph{Computational role.} Strand displacement excels at conditional routing: ``if this pattern is present, activate this pathway.'' This is analogous to biological signal transduction cascades.
+
+\begin{bioinsight}[Toehold-Mediated Strand Displacement]
+In DNA nanotechnology, TMSD reactions are the basis for molecular logic gates, neural networks, and even Turing machines built entirely from DNA strands. The toehold---typically 6--10 nucleotides long---acts as a ``password'' that controls whether the displacement reaction proceeds. DOGMA's learned toehold energies play the same role: they determine which computational pathways are activated for a given input.
+\end{bioinsight}
+
+\subsubsection{Path (ii): Parallel Scan Automaton / SSM}
+\label{sec:path-parallel-scan}
+
+The Parallel Scan path implements linear-time sequence processing using the parallel scan (prefix sum) algorithm, closely related to state-space models (SSMs) such as Mamba \citep{gu2023mamba}.
+
+\paragraph{Mechanism.} The path defines a linear recurrence:
+\begin{equation}
+h_t = \mathbf{A}_t h_{t-1} + \mathbf{B}_t x_t, \qquad y_t = \mathbf{C}_t h_t + \mathbf{D}_t x_t,
+\label{eq:ssm-recurrence}
+\end{equation}
+where $\mathbf{A}_t, \mathbf{B}_t, \mathbf{C}_t, \mathbf{D}_t$ are input-dependent (selective) parameters computed from $x_t$. The key insight is that this recurrence can be computed in $O(T \log T)$ time using the \emph{parallel scan} algorithm, which restructures the sequential recurrence into a balanced binary tree of associative operations.
+
+\paragraph{The parallel scan algorithm.} Given $T$ elements with an associative binary operator $\oplus$, the parallel scan computes all prefix sums $s_k = a_1 \oplus a_2 \oplus \cdots \oplus a_k$ in $O(\log T)$ parallel steps using $O(T)$ total work. For the SSM recurrence, the operator is:
+\begin{equation}
+(a_i, b_i) \oplus (a_j, b_j) = (a_j \cdot a_i, \; a_j \cdot b_i + b_j),
+\label{eq:scan-operator}
+\end{equation}
+which allows all hidden states $h_1, h_2, \ldots, h_T$ to be computed in parallel.
+
+\paragraph{Computational role.} The Parallel Scan path handles sequential dependencies efficiently. It captures positional and ordering information that the other paths may miss.
+
+\subsubsection{Path (iii): Stochastic Computing}
+\label{sec:path-stochastic}
+
+The Stochastic Computing path implements probabilistic reasoning through stochastic bitstream operations, inspired by stochastic computing in hardware design and by the inherent randomness of molecular reactions.
+
+\paragraph{Mechanism.} The input is converted to stochastic bitstreams via Bernoulli sampling:
+\begin{equation}
+\hat{x}_t^{(s)} \sim \mathrm{Bernoulli}\bigl(\sigma(\mathbf{x}_t \mathbf{W}_s)\bigr), \qquad s = 1, \ldots, S,
+\label{eq:stochastic-sample}
+\end{equation}
+where $S$ is the number of stochastic samples. Multiplication of probabilities is implemented as AND operations on bitstreams; addition as OR operations. This provides naturally calibrated uncertainty estimates.
+
+\paragraph{Output.} The stochastic path output is the empirical mean over $S$ samples:
+\begin{equation}
+\mathbf{y}_{\text{SC}} = \frac{1}{S} \sum_{s=1}^{S} f(\hat{\mathbf{x}}^{(s)}),
+\label{eq:stochastic-output}
+\end{equation}
+where $f$ is a learned nonlinear function applied to each sampled bitstream. During training, the Bernoulli sampling is relaxed using the Gumbel--softmax trick for differentiability.
+
+\paragraph{Computational role.} Stochastic computing provides uncertainty quantification and robustness to noise. It excels at tasks requiring probabilistic inference or calibrated confidence estimates.
+
+\subsubsection{Path (iv): Double Strand}
+\label{sec:path-double-strand}
+
+The Double Strand path maintains two coupled representations---a forward strand $\vec{x}$ and a reverse-complement strand $\overleftarrow{x}$---mirroring DNA's antiparallel double-helix structure.
+
+\paragraph{Mechanism.}
+\begin{align}
+\vec{h}_t &= \mathrm{ForwardRNN}(\vec{h}_{t-1}, x_t), \label{eq:forward-strand} \\
+\overleftarrow{h}_t &= \mathrm{ReverseRNN}(\overleftarrow{h}_{t+1}, \bar{x}_t), \label{eq:reverse-strand} \\
+\mathbf{y}_{\text{DS},t} &= \mathbf{W}_{\text{merge}}[\vec{h}_t \| \overleftarrow{h}_t] + \mathbf{b}_{\text{merge}}, \label{eq:ds-merge}
+\end{align}
+where $\bar{x}_t$ is the type-complement of $x_t$ (applying the complement mapping from Equation~\ref{eq:complement}) and $\|$ denotes concatenation. The forward strand processes the sequence left-to-right; the reverse strand processes the complement right-to-left. Their outputs are concatenated and projected.
+
+\paragraph{Computational role.} The Double Strand path provides bidirectional context, similar to bidirectional LSTMs but with the added constraint of complementary pairing. This constraint acts as a regularizer: the reverse strand must maintain consistency with the forward strand's complement.
+
+\begin{implnote}[Gated Fusion in Practice]
+The gate weights $\alpha_p$ in Equation~\ref{eq:gated-fusion} are computed per-position and per-head. In a typical trained DOGMA model, the gate distribution varies significantly across layers: early layers tend to weight the Parallel Scan path more heavily (capturing sequential structure), while later layers shift toward Strand Displacement (conditional routing for semantic processing). The Stochastic Computing path typically receives lower weight on average but activates strongly for inputs with high uncertainty.
+\end{implnote}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\subsection{Stage 3: Regulation Gate}
+\label{sec:stage-regulation}
+
+The Regulation Gate implements DOGMA's core principle of \emph{selective gene expression}: not all information should participate in every computation. Given the output of the DNA Computing Block, the Regulation Gate computes a context-dependent express/suppress decision for each position.
+
+\subsubsection{Mathematical Formulation}
+
+Let $\mathbf{h} \in \mathbb{R}^{T \times d}$ be the hidden representation from Stage 2 and $\mathbf{c} \in \mathbb{R}^{d_c}$ be the current context embedding. The Regulation Gate computes:
+\begin{align}
+\mathbf{g}_{\text{express}} &= \sigma\bigl(\mathbf{h} \mathbf{W}_e + \mathbf{c} \mathbf{U}_e + \mathbf{b}_e\bigr) \in [0,1]^{T \times d}, \label{eq:express-gate} \\
+\mathbf{g}_{\text{suppress}} &= \sigma\bigl(\mathbf{h} \mathbf{W}_s + \mathbf{c} \mathbf{U}_s + \mathbf{b}_s\bigr) \in [0,1]^{T \times d}, \label{eq:suppress-gate} \\
+\mathbf{r} &= \mathbf{g}_{\text{express}} \odot (1 - \mathbf{g}_{\text{suppress}}), \label{eq:regulation-combined} \\
+\mathbf{h}_{\text{reg}} &= \mathbf{r} \odot \mathbf{h}, \label{eq:regulated-output}
+\end{align}
+where $\sigma$ is the sigmoid function, $\mathbf{W}_e, \mathbf{W}_s \in \mathbb{R}^{d \times d}$ and $\mathbf{U}_e, \mathbf{U}_s \in \mathbb{R}^{d_c \times d}$ are learned weight matrices. The \emph{net regulatory signal} $\mathbf{r}$ is the element-wise product of expression and non-suppression: a position is fully active only if it is both expressed \emph{and} not suppressed.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  block/.style={draw, rounded corners, minimum width=2.5cm, minimum height=0.8cm, align=center},
+  arrow/.style={-{Latex[length=2.5mm]}, thick},
+  gate/.style={draw, circle, minimum size=7mm, fill=dogmawarm, font=\footnotesize},
+]
+  % Input h
+  \node[block, fill=dogmalight] (h) at (0, 3) {$\mathbf{h}$ from Stage 2};
+  % Context c
+  \node[block, fill=dogmamint] (c) at (5, 3) {Context $\mathbf{c}$};
+
+  % Express gate
+  \node[block, fill=dogmamint, draw=dogmateal] (express) at (-1.5, 1) {Express $\sigma(\cdot)$};
+  % Suppress gate
+  \node[block, fill=dogmawarm, draw=dogmared] (suppress) at (2.5, 1) {Suppress $\sigma(\cdot)$};
+
+  % Product
+  \node[gate] (prod) at (0.5, -1) {$\odot$};
+
+  % Output
+  \node[block, fill=dogmalight] (out) at (0.5, -3) {$\mathbf{h}_{\text{reg}}$};
+
+  % Arrows
+  \draw[arrow, dogmablue] (h.south) -- ++(0, -0.5) -| (express.north);
+  \draw[arrow, dogmablue] (h.south) -- ++(0, -0.5) -| (suppress.north);
+  \draw[arrow, dogmateal] (c.south) -- ++(0, -0.5) -| (express.north east);
+  \draw[arrow, dogmateal] (c.south) -- ++(0, -0.5) -| (suppress.north east);
+  \draw[arrow, dogmateal] (express.south) -- (prod);
+  \draw[arrow, dogmared] (suppress.south) -- (prod);
+  \draw[arrow, dogmablue] (prod.south) -- (out.north);
+
+  % Annotation
+  \node[font=\footnotesize, text=dogmagray, anchor=west] at (3, -1) {$\mathbf{r} = \mathbf{g}_e \odot (1 - \mathbf{g}_s)$};
+\end{tikzpicture}
+\caption{The Regulation Gate. Context $\mathbf{c}$ and hidden state $\mathbf{h}$ jointly determine express and suppress signals. The net regulation $\mathbf{r}$ element-wise gates the hidden representation.}
+\label{fig:regulation-gate}
+\end{figure}
+
+\subsubsection{Sparsity and Complexity}
+
+When the regulation gate drives many positions to near-zero ($r_{t,j} \approx 0$), downstream stages can skip those positions entirely. If a fraction $s$ of positions survive regulation (i.e., $r_{t,j} > \epsilon$ for some threshold $\epsilon$), then downstream computation scales with $sT$ rather than $T$.
+
+\begin{proposition}[Regulation Sparsity]
+\label{prop:regulation-sparsity}
+If the Regulation Gate produces activation sparsity $s = |\{t : \|\mathbf{r}_t\|_1 > \epsilon\}| / T$, then the effective sequence length for downstream stages is $T_{\text{eff}} = sT$, reducing complexity by a factor of $1/s$ for stages with super-linear complexity.
+\end{proposition}
+
+\begin{bioinsight}[Gene Regulation in Biology]
+In a human cell, roughly 20,000 protein-coding genes exist, but only 10--20\% are expressed at any given time \citep{encode2012}. The pattern of expression is cell-type specific: a neuron expresses a different set of genes than a liver cell, even though both contain the same genome. DOGMA's Regulation Gate mirrors this: the same model (genome) produces different activation patterns for different inputs (cell types), enabling specialization without separate models.
+\end{bioinsight}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\subsection{Stage 4: Codon Translation}
+\label{sec:stage-codon}
+
+Codon Translation implements DOGMA's analogue of the genetic code: a differentiable mapping from 64 input codons to 21 output symbols (20 amino acids + 1 stop signal). This stage compresses information through a biologically-motivated bottleneck.
+
+\subsubsection{The $64 \to 21$ Mapping}
+
+In biology, three consecutive nucleotides (a \emph{codon}) encode one amino acid according to the standard genetic code. There are $4^3 = 64$ possible codons but only 20 amino acids plus a stop signal, so the code is degenerate---multiple codons map to the same amino acid.
+
+DOGMA implements this as a learned soft mapping. Given the regulated hidden state $\mathbf{h}_{\text{reg}} \in \mathbb{R}^{T \times d}$, consecutive triples of positions are grouped into codons:
+\begin{equation}
+\mathbf{c}_k = [\mathbf{h}_{\text{reg}, 3k-2} \| \mathbf{h}_{\text{reg}, 3k-1} \| \mathbf{h}_{\text{reg}, 3k}] \in \mathbb{R}^{3d}, \quad k = 1, \ldots, \lfloor T/3 \rfloor.
+\label{eq:codon-grouping}
+\end{equation}
+
+Each codon is translated through a differentiable lookup:
+\begin{equation}
+\mathbf{a}_k = \sum_{j=1}^{64} \mathrm{softmax}\bigl(\mathbf{c}_k \mathbf{W}_{\text{codon}}\bigr)_j \cdot \mathbf{E}_{\text{aa}}[j], \quad \mathbf{W}_{\text{codon}} \in \mathbb{R}^{3d \times 64},
+\label{eq:codon-translate}
+\end{equation}
+where $\mathbf{E}_{\text{aa}} \in \mathbb{R}^{64 \times d_a}$ is a codon embedding table whose rows are initialized to respect the degeneracy structure of the biological genetic code. Multiple codons that map to the same amino acid are initialized with the same embedding, though they are free to diverge during training.
+
+\begin{table}[H]
+\centering
+\caption{Excerpt of the DOGMA codon table showing the $64 \to 21$ mapping. Codons with the same output class share an initial embedding. The full table mirrors the standard genetic code.}
+\label{tab:codon-table}
+\renewcommand{\arraystretch}{1.1}
+\footnotesize
+\begin{tabular}{cccc|l}
+\toprule
+\textbf{First} & \textbf{Second} & \textbf{Third} & \textbf{Codon ID} & \textbf{Output Class} \\
+\midrule
+A & A & A & 1  & Phe (F) \\
+A & A & C & 2  & Phe (F) \\
+A & A & G & 3  & Leu (L) \\
+A & A & T & 4  & Leu (L) \\
+A & C & A & 5  & Ser (S) \\
+A & C & C & 6  & Ser (S) \\
+A & C & G & 7  & Ser (S) \\
+A & C & T & 8  & Ser (S) \\
+\multicolumn{4}{c|}{$\vdots$} & $\vdots$ \\
+T & G & A & 61 & Trp (W) \\
+T & G & C & 62 & \textsc{Stop} \\
+T & G & G & 63 & \textsc{Stop} \\
+T & G & T & 64 & \textsc{Stop} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Why a Compression Bottleneck?}
+
+The $3 \to 1$ compression (every 3 positions become 1) serves several purposes:
+\begin{enumerate}[leftmargin=1.5em]
+\item \textbf{Information compression.} The regulated representation contains redundancy; grouping triples and projecting to a smaller space removes it.
+\item \textbf{Sequence length reduction.} After codon translation, the effective sequence length is $T/3$, reducing the cost of the subsequent Strand Attention stage from $O(T^2 d)$ to $O((T/3)^2 d) = O(T^2 d / 9)$.
+\item \textbf{Inductive bias.} The degeneracy structure of the genetic code provides a useful inductive bias: synonymous codons (mapping to the same amino acid) should carry similar information, encouraging the model to learn robust representations.
+\end{enumerate}
+
+\begin{bioinsight}[The Genetic Code Is Not Arbitrary]
+The standard genetic code has been optimized by billions of years of evolution for error tolerance: single-nucleotide mutations typically produce amino acids with similar biochemical properties. DOGMA inherits this structure. Initializing the codon embedding table with biologically-motivated degeneracy ensures that small perturbations in the input representation produce small changes in the translated output---a form of built-in robustness.
+\end{bioinsight}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\subsection{Stage 5: Strand Attention}
+\label{sec:stage-strand-attention}
+
+Strand Attention is DOGMA's analogue of self-attention, but with attention scores derived from thermodynamic binding energies rather than simple dot products. It operates on the codon-translated representation and computes pairwise interactions using the SantaLucia nearest-neighbor model of DNA hybridization.
+
+\subsubsection{Thermodynamic Attention Scores}
+
+Standard dot-product attention computes scores as $\mathbf{q}_i^\top \mathbf{k}_j / \sqrt{d}$. Strand Attention replaces this with a binding energy function inspired by DNA thermodynamics:
+\begin{equation}
+\mathrm{Attn}_{\text{DNA}}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \mathrm{softmax}\!\left(\frac{\Delta G(\mathbf{Q}, \mathbf{K})}{\tau}\right) \mathbf{V},
+\label{eq:dna-attention}
+\end{equation}
+where $\tau$ is a learnable temperature parameter and the binding energy function $\Delta G$ is:
+\begin{equation}
+\Delta G(\mathbf{q}_i, \mathbf{k}_j) = \underbrace{\mathbf{q}_i^\top \mathbf{W}_{\Delta H} \mathbf{k}_j}_{\text{enthalpy (stacking)}} - \tau_{\text{phys}} \cdot \underbrace{\mathbf{q}_i^\top \mathbf{W}_{\Delta S} \mathbf{k}_j}_{\text{entropy (disorder)}} + \underbrace{\beta(\tau_i, \tau_j)}_{\text{type bias}}.
+\label{eq:delta-g}
+\end{equation}
+
+Here $\mathbf{W}_{\Delta H}, \mathbf{W}_{\Delta S} \in \mathbb{R}^{d \times d}$ are learned matrices corresponding to enthalpy and entropy contributions, $\tau_{\text{phys}}$ is a learned physical temperature, and $\beta(\tau_i, \tau_j)$ is the type-pair bias from Equation~\ref{eq:compat}.
+
+\subsubsection{The SantaLucia Connection}
+
+In physical chemistry, the SantaLucia nearest-neighbor model computes the free energy of DNA hybridization as:
+\begin{equation}
+\Delta G^{\circ} = \Delta H^{\circ} - T \Delta S^{\circ} = \sum_{i=1}^{n-1} \Delta H^{\circ}_{X_i X_{i+1} / Y_i Y_{i+1}} - T \sum_{i=1}^{n-1} \Delta S^{\circ}_{X_i X_{i+1} / Y_i Y_{i+1}},
+\label{eq:santalucia}
+\end{equation}
+where the sums are over dinucleotide pairs and $T$ is the physical temperature in Kelvin. DOGMA's Strand Attention learns analogous dinucleotide-like parameters in a high-dimensional embedding space. The enthalpy matrix $\mathbf{W}_{\Delta H}$ captures context-dependent binding strength; the entropy matrix $\mathbf{W}_{\Delta S}$ captures the disorder cost of binding.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  base/.style={draw, circle, minimum size=6mm, thick},
+  arrow/.style={-{Latex[length=2mm]}, thick},
+]
+  % Query strand
+  \node[font=\bfseries, color=dogmablue] at (-3, 2) {Query strand};
+  \foreach \i/\c in {1/A, 2/C, 3/G, 4/T, 5/A} {
+    \node[base, fill=dogmalight] (q\i) at (\i*1.1 - 3, 1.5) {\c};
+  }
+
+  % Key strand
+  \node[font=\bfseries, color=dogmared] at (-3, -0.5) {Key strand};
+  \foreach \i/\c in {1/T, 2/G, 3/C, 4/A, 5/T} {
+    \node[base, fill=dogmawarm] (k\i) at (\i*1.1 - 3, 0) {\c};
+  }
+
+  % Binding lines
+  \foreach \i in {1,...,5} {
+    \draw[thick, dogmared, dashed] (q\i.south) -- (k\i.north);
+  }
+
+  % Energy annotations
+  \draw[decorate, decoration={brace, amplitude=5pt, mirror}] (3.6, 1.5) -- (3.6, 0)
+    node[midway, right=8pt, font=\footnotesize] {$\Delta G = \Delta H - T\Delta S$};
+
+  % Labels for stacking
+  \draw[arrow, dogmateal] (q1.east) -- (q2.west);
+  \draw[arrow, dogmateal] (q2.east) -- (q3.west);
+  \node[font=\scriptsize, color=dogmateal, anchor=south] at ($(q1.east)!0.5!(q2.west)$) {stack};
+\end{tikzpicture}
+\caption{Strand Attention computes attention scores using thermodynamic binding energies $\Delta G$. Complementary base pairs (A--T, C--G) form bonds (dashed lines). Stacking interactions between adjacent pairs contribute to the enthalpy term.}
+\label{fig:strand-attention}
+\end{figure}
+
+\subsubsection{Complexity}
+
+\begin{proposition}[Strand Attention Complexity]
+\label{prop:strand-attention-complexity}
+Strand Attention has time complexity $O(T'^2 \cdot d)$ and space complexity $O(T'^2 + T' \cdot d)$, where $T' = T/3$ is the post-codon-translation sequence length. Compared to standard self-attention on the original sequence, this is a $9\times$ reduction in the quadratic term.
+\end{proposition}
+
+\begin{implnote}[Connection to Biological Thermodynamics]
+In wet-lab DNA computing, the binding energy $\Delta G$ of a DNA duplex determines whether two strands will hybridize. The SantaLucia nearest-neighbor model computes $\Delta G$ from dinucleotide parameters. DOGMA's DNA Strand Attention learns analogous dinucleotide-like parameters, but in a high-dimensional embedding space rather than the four-letter DNA alphabet. The temperature parameter $\tau$ plays the same role as physical temperature in controlling binding stringency.
+\end{implnote}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\subsection{Stage 6: Epigenetic + Allosteric Mechanisms}
+\label{sec:stage-epigenetic}
+
+The final stage combines two complementary memory mechanisms: \emph{epigenetic memory} (persistent, slowly-evolving state) and \emph{allosteric broadcast} (fast, targeted signal distribution). Together they provide DOGMA with both long-term and short-term context integration.
+
+\subsubsection{Epigenetic Memory: $O(TM)$ Persistent State}
+
+Epigenetic memory maintains a bank of $M$ memory slots $\mathbf{m}_1, \ldots, \mathbf{m}_M \in \mathbb{R}^{d_m}$ that persist across time steps and are updated incrementally:
+\begin{align}
+\mathbf{u}_j &= \sigma\bigl(\mathbf{h}_{\text{attn}} \mathbf{W}_u \mathbf{m}_j^\top\bigr), && \text{(update gate for slot } j\text{)} \label{eq:epi-update-gate} \\
+\tilde{\mathbf{m}}_j &= \tanh\bigl(\mathbf{h}_{\text{attn}} \mathbf{W}_m + \mathbf{m}_j \mathbf{W}_r\bigr), && \text{(candidate update)} \label{eq:epi-candidate} \\
+\mathbf{m}_j' &= (1 - \mathbf{u}_j) \odot \mathbf{m}_j + \mathbf{u}_j \odot \tilde{\mathbf{m}}_j, && \text{(gated update)} \label{eq:epi-gated}
+\end{align}
+where $\mathbf{h}_{\text{attn}} \in \mathbb{R}^{T' \times d}$ is the output of Strand Attention. The read operation retrieves information from memory via attention:
+\begin{equation}
+\mathbf{v}_{\text{epi}} = \mathrm{softmax}\bigl(\mathbf{h}_{\text{attn}} \mathbf{W}_q^{\text{epi}} (\mathbf{M} \mathbf{W}_k^{\text{epi}})^\top\bigr) \mathbf{M} \mathbf{W}_v^{\text{epi}},
+\label{eq:epi-read}
+\end{equation}
+where $\mathbf{M} = [\mathbf{m}_1; \ldots; \mathbf{m}_M] \in \mathbb{R}^{M \times d_m}$.
+
+The complexity of epigenetic memory operations is $O(T' \cdot M \cdot d_m)$, which is linear in sequence length when $M$ is fixed.
+
+\subsubsection{Allosteric Broadcast: $O(Tk)$ Signal Distribution}
+
+Allosteric regulation, in biology, is the modulation of a protein's activity by binding at a site other than the active site. In DOGMA, allosteric broadcast selects $k$ ``broadcast sites'' and distributes their signals to all other positions:
+\begin{align}
+\text{sites} &= \mathrm{TopK}\bigl(\mathbf{h}_{\text{attn}} \mathbf{w}_{\text{select}},\; k\bigr), \label{eq:allo-select} \\
+\mathbf{s}_{\text{broadcast}} &= \frac{1}{k}\sum_{j \in \text{sites}} \mathbf{h}_{\text{attn}, j}, \label{eq:allo-mean} \\
+\mathbf{h}_{\text{final}, t} &= \mathbf{h}_{\text{attn}, t} + \mathbf{v}_{\text{epi}, t} + \mathrm{MLP}(\mathbf{s}_{\text{broadcast}}), \label{eq:allo-combine}
+\end{align}
+where $\mathbf{w}_{\text{select}} \in \mathbb{R}^d$ is a learned selection vector and $\mathrm{TopK}$ selects the $k$ positions with highest selection scores. The broadcast signal $\mathbf{s}_{\text{broadcast}}$ is added to all positions, providing global context from the most salient positions.
+
+The complexity is $O(T' \cdot k \cdot d)$ for computing the broadcast, where $k \ll T'$.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  block/.style={draw, rounded corners, minimum width=2.8cm, minimum height=0.8cm, align=center},
+  mem/.style={draw, rounded corners=2pt, fill=dogmawarm, minimum width=1cm, minimum height=0.6cm, font=\scriptsize},
+  arrow/.style={-{Latex[length=2mm]}, thick},
+]
+  % Input
+  \node[block, fill=dogmalight] (input) at (0, 3.5) {$\mathbf{h}_{\text{attn}}$ from Stage 5};
+
+  % Epigenetic branch
+  \node[block, fill=dogmamint] (epi) at (-3, 1.5) {Epigenetic\\Memory};
+  % Memory slots
+  \foreach \i in {1,...,4} {
+    \node[mem] (m\i) at (-5 + \i*0.9, 0.2) {$m_{\i}$};
+  }
+  \node[font=\scriptsize] at (-3, -0.3) {$M$ persistent slots};
+
+  % Allosteric branch
+  \node[block, fill=dogmawarm] (allo) at (3, 1.5) {Allosteric\\Broadcast};
+  % Broadcast illustration
+  \node[draw, circle, fill=dogmared!20, minimum size=5mm, font=\scriptsize] (bcast) at (3, 0.2) {$k$};
+  \node[font=\scriptsize, color=dogmagray] at (4.5, 0.2) {$k$ selected sites};
+
+  % Output
+  \node[block, fill=dogmalight, minimum width=4cm] (output) at (0, -1.5) {$\mathbf{h}_{\text{final}} = \mathbf{h}_{\text{attn}} + \mathbf{v}_{\text{epi}} + \mathrm{MLP}(\mathbf{s}_{\text{broadcast}})$};
+
+  % Arrows
+  \draw[arrow, dogmablue] (input.south) -| (epi.north);
+  \draw[arrow, dogmablue] (input.south) -| (allo.north);
+  \draw[arrow, dogmateal] (epi.south) -- ++(0,-0.8) -| (output.north -| -2,0);
+  \draw[arrow, dogmared] (allo.south) -- ++(0,-0.8) -| (output.north -| 2,0);
+\end{tikzpicture}
+\caption{Stage 6: Epigenetic Memory ($O(TM)$) provides persistent state; Allosteric Broadcast ($O(Tk)$) provides fast global context from $k$ selected sites. Their outputs are combined with the attention output.}
+\label{fig:epi-allo}
+\end{figure}
+
+\begin{bioinsight}[Epigenetics and Allosteric Regulation]
+In biology, epigenetic modifications (DNA methylation, histone acetylation) create persistent, heritable changes in gene expression without altering the DNA sequence itself. Allosteric regulation is a fast, reversible mechanism where binding at one site affects activity at a distant site. DOGMA separates these two timescales: epigenetic memory changes slowly across many forward passes (akin to long-term memory), while allosteric broadcast operates within a single forward pass (akin to working memory or attention).
+\end{bioinsight}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{The Expression Folder}
+\label{sec:expression-folder}
+
+After the six-stage pipeline produces the final hidden representation $\mathbf{h}_{\text{final}}$, DOGMA must convert this internal representation into the output space---a process we call the \emph{Expression Folder}, by analogy with protein folding.
+
+In protein folding, a linear amino acid chain (the primary structure) folds into a complex three-dimensional structure (the tertiary structure) that determines the protein's function. Similarly, the Expression Folder transforms the linear sequence of hidden states into a structured output representation.
+
+\begin{equation}
+\Phi = \mathrm{ExpressionFolder}(\mathbf{h}_{\text{final}}) = \mathrm{MLP}_{\text{fold}}\bigl(\mathrm{LayerNorm}(\mathbf{h}_{\text{final}})\bigr),
+\label{eq:expression-folder}
+\end{equation}
+
+where $\mathrm{MLP}_{\text{fold}}$ is a two-layer feed-forward network with GELU activation:
+\begin{equation}
+\mathrm{MLP}_{\text{fold}}(\mathbf{z}) = \mathbf{W}_2 \cdot \mathrm{GELU}(\mathbf{W}_1 \mathbf{z} + \mathbf{b}_1) + \mathbf{b}_2.
+\label{eq:fold-mlp}
+\end{equation}
+
+The output $\Phi$ is not text. It is a \emph{phenotype representation}---a structured semantic object that can be \emph{realized} into different modalities:
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Natural language:} A language head applies a linear projection followed by softmax to produce token probabilities.
+  \item \textbf{Code:} A syntax-aware head produces abstract syntax tree nodes.
+  \item \textbf{JSON/Schema:} A structured output head generates key-value pairs conforming to a schema.
+  \item \textbf{Action plans:} A tool-use head produces function calls and arguments.
+  \item \textbf{3D structure:} A TetraMesh head produces spatial coordinates (Chapter~\ref{ch:tetradata}).
+\end{itemize}
+
+\begin{keyinsight}[Phenotype Before Output]
+In a standard LLM, the model generates text directly from its hidden state. There is no explicit representation of ``what the model intends to do.'' In DOGMA, the phenotype $\Phi$ is this explicit representation. It can be:
+\begin{itemize}[leftmargin=1.5em]
+  \item Inspected for correctness before realization.
+  \item Verified against safety constraints.
+  \item Realized in multiple modalities from the same plan.
+  \item Stored for future reference or comparison.
+\end{itemize}
+This is the computational analogue of protein folding: a linear sequence (transcript) is transformed into a three-dimensional functional structure (phenotype) through a deterministic but complex process.
+\end{keyinsight}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Full Architecture Diagram}
+\label{sec:full-architecture}
+
+Figure~\ref{fig:full-dogma-architecture} presents the complete DOGMA architecture, showing both the six-stage pipeline (left) and the detailed DNA Computing Block structure (right).
+
+\begin{figure}[p]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  stage/.style={draw, thick, rounded corners=4pt, minimum width=4cm, minimum height=1cm, align=center},
+  detail/.style={draw, rounded corners=2pt, minimum width=2.6cm, minimum height=0.7cm, align=center, font=\footnotesize},
+  arrow/.style={-{Latex[length=2.5mm]}, thick},
+  bigarrow/.style={-{Latex[length=3mm]}, very thick},
+  label/.style={font=\footnotesize\bfseries},
+]
+  % ===== LEFT SIDE: Main Pipeline =====
+  \node[label, color=dogmablue] at (-4, 13) {\large Six-Stage Pipeline};
+
+  % Input
+  \node[stage, fill=dogmalight] (input) at (-4, 11.5) {Input Tokens\\$\mathbf{x} \in \mathbb{R}^{T \times d}$};
+
+  % Stage 1
+  \node[stage, fill=dogmamint, draw=dogmateal] (s1) at (-4, 9.5) {\textbf{Stage 1:} TetraMemory\\$K_4$ local attention, $O(T)$};
+
+  % Stage 2
+  \node[stage, fill=dogmawarm, draw=dogmagold] (s2) at (-4, 7.5) {\textbf{Stage 2:} DNA Computing Block\\4 parallel paths, gated fusion};
+
+  % Stage 3
+  \node[stage, fill=dogmamint, draw=dogmateal] (s3) at (-4, 5.5) {\textbf{Stage 3:} Regulation Gate\\express / suppress, $\sigma$-gating};
+
+  % Stage 4
+  \node[stage, fill=dogmalight, draw=dogmablue] (s4) at (-4, 3.5) {\textbf{Stage 4:} Codon Translation\\$64 \to 21$, $T \to T/3$};
+
+  % Stage 5
+  \node[stage, fill=dogmawarm, draw=dogmared] (s5) at (-4, 1.5) {\textbf{Stage 5:} Strand Attention\\$\Delta G$ thermodynamic scores};
+
+  % Stage 6
+  \node[stage, fill=dogmamint, draw=dogmateal] (s6) at (-4, -0.5) {\textbf{Stage 6:} Epigenetic + Allosteric\\$O(TM)$ + $O(Tk)$};
+
+  % Expression Folder
+  \node[stage, fill=dogmalight, draw=dogmablue] (fold) at (-4, -2.5) {Expression Folder\\Phenotype $\Phi$};
+
+  % Output
+  \node[stage, fill=white, draw=dogmared, thick] (out) at (-4, -4.5) {Realization Head\\$y_t$};
+
+  % Pipeline arrows
+  \draw[bigarrow, dogmablue] (input) -- (s1);
+  \draw[bigarrow, dogmateal] (s1) -- (s2);
+  \draw[bigarrow, dogmagold] (s2) -- (s3);
+  \draw[bigarrow, dogmateal] (s3) -- (s4);
+  \draw[bigarrow, dogmablue] (s4) -- (s5);
+  \draw[bigarrow, dogmared] (s5) -- (s6);
+  \draw[bigarrow, dogmateal] (s6) -- (fold);
+  \draw[bigarrow, dogmablue] (fold) -- (out);
+
+  % ===== RIGHT SIDE: DNA Computing Block Detail =====
+  \node[label, color=dogmagold] at (5, 13) {\large DNA Computing Block Detail};
+
+  % Expanded view bracket
+  \draw[thick, dogmagold, decorate, decoration={brace, amplitude=8pt}]
+    (-1.5, 8.2) -- (-1.5, 6.8);
+
+  % Detail input
+  \node[detail, fill=dogmalight] (dinput) at (5, 10.5) {Input $\mathbf{x}$};
+
+  % Four paths
+  \node[detail, fill=dogmamint] (p1) at (2.5, 8.5) {(i) Strand\\Displacement};
+  \node[detail, fill=dogmawarm] (p2) at (5, 8.5) {(ii) Parallel\\Scan / SSM};
+  \node[detail, fill=dogmalight] (p3) at (7.5, 8.5) {(iii) Stochastic\\Computing};
+  \node[detail, fill=white, draw=dogmablue] (p4) at (5, 6.8) {(iv) Double Strand};
+
+  % Gate
+  \node[detail, fill=dogmawarm, draw=dogmared, minimum width=4cm] (dgate) at (5, 5) {Softmax Gate $\boldsymbol{\alpha}$};
+
+  % Detail output
+  \node[detail, fill=dogmamint] (dout) at (5, 3.5) {Gated Output $\mathbf{y}$};
+
+  % Detail arrows
+  \draw[arrow, dogmablue] (dinput.south) -| (p1.north);
+  \draw[arrow, dogmablue] (dinput.south) -- (p2.north);
+  \draw[arrow, dogmablue] (dinput.south) -| (p3.north);
+  \draw[arrow, dogmablue] (dinput.south) -- ++(0,-1.5) -| (p4.west);
+
+  \draw[arrow, dogmateal] (p1.south) |- (dgate.west);
+  \draw[arrow, dogmateal] (p2.south) -- (dgate.north -| p2);
+  \draw[arrow, dogmateal] (p3.south) |- (dgate.east);
+  \draw[arrow, dogmateal] (p4.south) -- (dgate.north -| p4);
+
+  \draw[arrow, dogmared] (dgate.south) -- (dout.north);
+
+  % Turing-complete annotations
+  \node[font=\tiny, color=dogmared] at (2.5, 7.7) {Turing-complete};
+  \node[font=\tiny, color=dogmared] at (5, 7.7) {Turing-complete};
+  \node[font=\tiny, color=dogmared] at (5, 6.1) {Turing-complete};
+\end{tikzpicture}
+\caption{Complete DOGMA architecture. \textbf{Left:} The six-stage pipeline from input tokens to output realization, passing through TetraMemory, the DNA Computing Block, Regulation Gate, Codon Translation, Strand Attention, and Epigenetic+Allosteric mechanisms, followed by the Expression Folder. \textbf{Right:} Detailed view of the DNA Computing Block showing four parallel paths merged by a learned softmax gate. Three of the four paths are independently Turing-complete.}
+\label{fig:full-dogma-architecture}
+\end{figure}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{The DogmaBlock: Complete Forward Pass}
+\label{sec:dogma-code}
+
+Algorithm~\ref{alg:dogma-forward} presents the complete forward pass of a single DogmaBlock as pseudocode.
+
+\begin{algorithm}[H]
+\caption{DogmaBlock Forward Pass}
+\label{alg:dogma-forward}
+\begin{algorithmic}[1]
+\Require Input $\mathbf{x} \in \mathbb{R}^{T \times d}$, context $\mathbf{c} \in \mathbb{R}^{d_c}$, memory bank $\mathbf{M} \in \mathbb{R}^{M \times d_m}$
+\Ensure Output $\mathbf{y} \in \mathbb{R}^{T' \times d}$, updated memory $\mathbf{M}'$
+\Statex
+\State \textbf{// Stage 1: TetraMemory}
+\State Reshape $\mathbf{x}$ into tetrahedra: $\mathbf{X}_k \gets \mathbf{x}[4k{:}4k{+}4]$ for $k = 0, \ldots, \lfloor T/4 \rfloor - 1$
+\State $\mathbf{Y}_k \gets \mathrm{LocalAttn}_{K_4}(\mathbf{X}_k)$ for each tetrahedron \Comment{$4 \times 4$ attention}
+\State $\mathbf{h}_1 \gets \mathrm{FacePropagate}(\mathbf{Y}_0, \mathbf{Y}_1, \ldots)$ \Comment{$O(T \cdot d)$}
+\Statex
+\State \textbf{// Stage 2: DNA Computing Block (4 parallel paths)}
+\State $\mathbf{p}_{\text{SD}} \gets \mathrm{StrandDisplacement}(\mathbf{h}_1)$ \Comment{Toehold gating + causal conv}
+\State $\mathbf{p}_{\text{SSM}} \gets \mathrm{ParallelScan}(\mathbf{h}_1)$ \Comment{Selective SSM, $O(T \log T)$}
+\State $\mathbf{p}_{\text{SC}} \gets \mathrm{StochasticCompute}(\mathbf{h}_1)$ \Comment{Bernoulli sampling + bitstream ops}
+\State $\mathbf{p}_{\text{DS}} \gets \mathrm{DoubleStrand}(\mathbf{h}_1)$ \Comment{Forward + reverse complement}
+\State $\boldsymbol{\alpha} \gets \mathrm{softmax}(\mathbf{W}_g \mathbf{h}_1 + \mathbf{b}_g)$ \Comment{Per-position gate weights}
+\State $\mathbf{h}_2 \gets \sum_{p} \alpha_p \cdot \mathbf{p}_p$ \Comment{Gated fusion}
+\Statex
+\State \textbf{// Stage 3: Regulation Gate}
+\State $\mathbf{g}_e \gets \sigma(\mathbf{h}_2 \mathbf{W}_e + \mathbf{c} \mathbf{U}_e + \mathbf{b}_e)$ \Comment{Express signal}
+\State $\mathbf{g}_s \gets \sigma(\mathbf{h}_2 \mathbf{W}_s + \mathbf{c} \mathbf{U}_s + \mathbf{b}_s)$ \Comment{Suppress signal}
+\State $\mathbf{h}_3 \gets \mathbf{h}_2 \odot \mathbf{g}_e \odot (1 - \mathbf{g}_s)$ \Comment{Element-wise gating}
+\Statex
+\State \textbf{// Stage 4: Codon Translation}
+\State Group triples: $\mathbf{c}_k \gets [\mathbf{h}_{3,3k-2} \| \mathbf{h}_{3,3k-1} \| \mathbf{h}_{3,3k}]$
+\State $\mathbf{h}_4 \gets \mathrm{CodonTranslate}(\mathbf{c}_k)$ for $k = 1, \ldots, \lfloor T/3 \rfloor$ \Comment{$64 \to 21$ soft mapping, $T \to T/3$}
+\Statex
+\State \textbf{// Stage 5: Strand Attention}
+\State $\mathbf{Q}, \mathbf{K}, \mathbf{V} \gets \mathbf{h}_4 \mathbf{W}_Q,\; \mathbf{h}_4 \mathbf{W}_K,\; \mathbf{h}_4 \mathbf{W}_V$
+\State $\Delta G_{ij} \gets \mathbf{q}_i^\top \mathbf{W}_{\Delta H} \mathbf{k}_j - \tau_{\text{phys}} \cdot \mathbf{q}_i^\top \mathbf{W}_{\Delta S} \mathbf{k}_j + \beta(\tau_i, \tau_j)$
+\State $\mathbf{h}_5 \gets \mathrm{softmax}(\Delta G / \tau) \cdot \mathbf{V}$ \Comment{$O(T'^2 d)$ where $T' = T/3$}
+\Statex
+\State \textbf{// Stage 6: Epigenetic + Allosteric}
+\State $\mathbf{v}_{\text{epi}} \gets \mathrm{EpiRead}(\mathbf{h}_5, \mathbf{M})$; \quad $\mathbf{M}' \gets \mathrm{EpiUpdate}(\mathbf{h}_5, \mathbf{M})$ \Comment{$O(T'M)$}
+\State $\text{sites} \gets \mathrm{TopK}(\mathbf{h}_5 \mathbf{w}_{\text{sel}}, k)$; \quad $\mathbf{s} \gets \frac{1}{k}\sum_{j \in \text{sites}} \mathbf{h}_{5,j}$ \Comment{$O(T'k)$}
+\State $\mathbf{h}_6 \gets \mathbf{h}_5 + \mathbf{v}_{\text{epi}} + \mathrm{MLP}(\mathbf{s})$
+\Statex
+\State \textbf{// Expression Folder}
+\State $\mathbf{y} \gets \mathrm{MLP}_{\text{fold}}(\mathrm{LayerNorm}(\mathbf{h}_6))$
+\State \Return $\mathbf{y}, \mathbf{M}'$
+\end{algorithmic}
+\end{algorithm}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Architecture Comparison: DOGMA vs.\ Alternatives}
+\label{sec:formal-comparison}
+
+Table~\ref{tab:architecture-comparison} provides a detailed comparison of DOGMA with three major competing architectures: the Transformer \citep{vaswani2017}, Mamba (a state-space model) \citep{gu2023mamba}, and RWKV (a linear-attention RNN).
+
+\begin{table}[H]
+\centering
+\caption{Detailed architecture comparison: DOGMA vs.\ Transformer vs.\ Mamba vs.\ RWKV.}
+\label{tab:architecture-comparison}
+\renewcommand{\arraystretch}{1.2}
+\footnotesize
+\begin{tabularx}{\textwidth}{L{2.8cm} L{2.6cm} L{2.6cm} L{2.6cm} Y}
+\toprule
+\textbf{Property} & \textbf{Transformer} & \textbf{Mamba} & \textbf{RWKV} & \textbf{DOGMA} \\
+\midrule
+\textbf{Time complexity} (per layer) & $O(T^2 d)$ & $O(T d)$ & $O(T d)$ & $O(T d)$ to $O(T'^2 d)$\newline ($T' = T/3$) \\
+\textbf{Space complexity} & $O(T^2 + Td)$ & $O(Td)$ & $O(Td)$ & $O(T'd + TM)$ \\
+\textbf{Turing-complete?} & Yes (with pos.\ enc.) & Debated & No (finite state) & Yes (3 of 4 paths) \\
+\textbf{Parallel paths} & 1 (attention) & 1 (SSM) & 1 (linear attn) & 4 (gated) \\
+\textbf{Persistent memory} & None (context only) & Hidden state & Hidden state & Epigenetic bank ($M$ slots) \\
+\textbf{Bidirectional} & Full & No (causal) & No (causal) & Yes (Double Strand path) \\
+\textbf{Regulation / gating} & None & Selective SSM & Time-decay & Express/suppress gate \\
+\textbf{Biological basis} & None & Inspired by control theory & None & DNA computing, Central Dogma \\
+\textbf{Information compression} & None & Via state bottleneck & Via state bottleneck & Codon Translation ($3:1$) \\
+\textbf{Attention mechanism} & Dot-product & None & Linear attention & $\Delta G$ thermodynamic \\
+\textbf{Global context} & Full attention & Recurrent propagation & Recurrent propagation & Allosteric broadcast ($k$ sites) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Complexity Summary}
+
+To summarize the per-layer complexity of a single DogmaBlock:
+
+\begin{align}
+\text{Stage 1 (TetraMemory):} \quad & O(T \cdot d), \\
+\text{Stage 2 (DNA Block):} \quad & O(T \cdot d) \quad \text{(Parallel Scan dominates)}, \\
+\text{Stage 3 (Regulation):} \quad & O(T \cdot d), \\
+\text{Stage 4 (Codon Translation):} \quad & O(T \cdot d), \\
+\text{Stage 5 (Strand Attention):} \quad & O(T'^2 \cdot d) \quad \text{where } T' = T/3, \\
+\text{Stage 6 (Epi + Allo):} \quad & O(T' \cdot M \cdot d_m + T' \cdot k \cdot d).
+\end{align}
+
+The bottleneck is Stage 5 (Strand Attention) at $O(T'^2 d) = O(T^2 d / 9)$. This is $9\times$ cheaper than standard self-attention on the full sequence, and further reduced when regulation sparsity is applied. When $T' \leq T/3$ after regulation-induced sparsity, the effective complexity can approach linear.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Worked Example: Tracing Data Through All Six Stages}
+\label{sec:worked-example}
+
+To make the pipeline concrete, let us trace a small example through all six stages. Suppose we have an input sequence of $T = 12$ tokens with embedding dimension $d = 8$ (vastly simplified from production dimensions, but sufficient to illustrate the data flow).
+
+\begin{example}[Tracing 12 Tokens Through DOGMA]
+\label{ex:full-trace}
+\textbf{Input:} $\mathbf{x} \in \mathbb{R}^{12 \times 8}$ (12 tokens, 8-dimensional embeddings).
+
+\paragraph{Stage 1: TetraMemory.}
+Partition into $12 / 4 = 3$ tetrahedra:
+\begin{align*}
+\Delta_0 &= (x_1, x_2, x_3, x_4), \\
+\Delta_1 &= (x_3, x_4, x_5, x_6), \quad \text{(shares face } \{x_3, x_4\} \text{ with } \Delta_0\text{)} \\
+\Delta_2 &= (x_5, x_6, x_7, x_8). \quad \text{(shares face } \{x_5, x_6\} \text{ with } \Delta_1\text{)}
+\end{align*}
+Wait---with 12 tokens and groups of 4, we get tetrahedra with overlapping boundaries:
+$\Delta_0 = (x_1, x_2, x_3, x_4)$, $\Delta_1 = (x_4, x_5, x_6, x_7)$, $\Delta_2 = (x_7, x_8, x_9, x_{10})$, $\Delta_3 = (x_{10}, x_{11}, x_{12})$ (padded).
+
+Within each tetrahedron, a $4 \times 4$ attention matrix is computed. After face propagation, the output shape is still $\mathbb{R}^{12 \times 8}$, but each token now carries information from its local tetrahedral neighborhood.
+
+\textbf{Output shape:} $\mathbf{h}_1 \in \mathbb{R}^{12 \times 8}$.
+
+\paragraph{Stage 2: DNA Computing Block.}
+Four parallel paths process $\mathbf{h}_1$:
+\begin{itemize}[leftmargin=1.5em]
+  \item Strand Displacement: $\mathbf{p}_{\text{SD}} \in \mathbb{R}^{12 \times 8}$ (toehold gating selects 8 of 12 positions).
+  \item Parallel Scan: $\mathbf{p}_{\text{SSM}} \in \mathbb{R}^{12 \times 8}$ (all positions, linear recurrence).
+  \item Stochastic: $\mathbf{p}_{\text{SC}} \in \mathbb{R}^{12 \times 8}$ (mean over $S=16$ samples).
+  \item Double Strand: $\mathbf{p}_{\text{DS}} \in \mathbb{R}^{12 \times 8}$ (forward + reverse complement).
+\end{itemize}
+Gate weights: $\boldsymbol{\alpha} = (0.35, 0.30, 0.10, 0.25)$ (example values).
+
+\textbf{Output shape:} $\mathbf{h}_2 \in \mathbb{R}^{12 \times 8}$.
+
+\paragraph{Stage 3: Regulation Gate.}
+Context embedding $\mathbf{c} \in \mathbb{R}^{16}$ encodes the task. The express/suppress gates produce:
+\begin{align*}
+\mathbf{g}_e &\approx (0.9, 0.8, 0.95, 0.1, 0.05, 0.7, 0.85, 0.9, 0.6, 0.1, 0.8, 0.75), \\
+\mathbf{g}_s &\approx (0.1, 0.1, 0.05, 0.8, 0.9, 0.2, 0.1, 0.05, 0.3, 0.85, 0.1, 0.15).
+\end{align*}
+Positions 4, 5, and 10 are effectively suppressed ($r \approx 0$). Only 9 of 12 positions survive with significant activation.
+
+\textbf{Output shape:} $\mathbf{h}_3 \in \mathbb{R}^{12 \times 8}$ (but 3 positions near-zero).
+
+\paragraph{Stage 4: Codon Translation.}
+Group into $\lfloor 12/3 \rfloor = 4$ codons:
+\begin{align*}
+\text{Codon 1} &= [\mathbf{h}_{3,1} \| \mathbf{h}_{3,2} \| \mathbf{h}_{3,3}] \in \mathbb{R}^{24}, \\
+\text{Codon 2} &= [\mathbf{h}_{3,4} \| \mathbf{h}_{3,5} \| \mathbf{h}_{3,6}] \in \mathbb{R}^{24}, \\
+\text{Codon 3} &= [\mathbf{h}_{3,7} \| \mathbf{h}_{3,8} \| \mathbf{h}_{3,9}] \in \mathbb{R}^{24}, \\
+\text{Codon 4} &= [\mathbf{h}_{3,10} \| \mathbf{h}_{3,11} \| \mathbf{h}_{3,12}] \in \mathbb{R}^{24}.
+\end{align*}
+Each codon is translated via the soft $64 \to 21$ mapping.
+
+\textbf{Output shape:} $\mathbf{h}_4 \in \mathbb{R}^{4 \times 8}$. Sequence length reduced from 12 to 4.
+
+\paragraph{Stage 5: Strand Attention.}
+Compute thermodynamic attention on $T' = 4$ positions: a $4 \times 4$ attention matrix using $\Delta G$ scores.
+
+\textbf{Output shape:} $\mathbf{h}_5 \in \mathbb{R}^{4 \times 8}$.
+
+\paragraph{Stage 6: Epigenetic + Allosteric.}
+With $M = 3$ memory slots and $k = 2$ broadcast sites:
+\begin{itemize}[leftmargin=1.5em]
+  \item Epigenetic: read/write from 3 memory slots, $O(4 \cdot 3 \cdot 8) = O(96)$ operations.
+  \item Allosteric: select top-2 positions, broadcast their mean to all 4 positions.
+\end{itemize}
+
+\textbf{Output shape:} $\mathbf{h}_6 \in \mathbb{R}^{4 \times 8}$.
+
+\paragraph{Expression Folder.}
+Apply LayerNorm and MLP to produce the phenotype.
+
+\textbf{Final output shape:} $\Phi \in \mathbb{R}^{4 \times 8}$. From 12 input tokens, we have 4 phenotype vectors ready for realization.
+\end{example}
+
+\begin{table}[H]
+\centering
+\caption{Tensor shapes through the six-stage pipeline for the worked example ($T=12$, $d=8$).}
+\label{tab:shape-trace}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\textwidth}{C{1cm} L{3.5cm} C{2.5cm} C{2cm} Y}
+\toprule
+\textbf{Stage} & \textbf{Operation} & \textbf{Input Shape} & \textbf{Output Shape} & \textbf{Key Change} \\
+\midrule
+--- & Input embedding & --- & $12 \times 8$ & --- \\
+1 & TetraMemory & $12 \times 8$ & $12 \times 8$ & Local $K_4$ interactions \\
+2 & DNA Computing Block & $12 \times 8$ & $12 \times 8$ & 4-path gated fusion \\
+3 & Regulation Gate & $12 \times 8$ & $12 \times 8$ & 3 positions suppressed \\
+4 & Codon Translation & $12 \times 8$ & $4 \times 8$ & $3:1$ compression \\
+5 & Strand Attention & $4 \times 8$ & $4 \times 8$ & $\Delta G$ attention \\
+6 & Epi + Allosteric & $4 \times 8$ & $4 \times 8$ & Memory read/write \\
+--- & Expression Folder & $4 \times 8$ & $4 \times 8$ & Phenotype \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The Evolutor State}
+\label{sec:evolutor-state}
+
+The complete state of a DOGMA system at time $t$ is captured by the \emph{Evolutor state}:
+
+\begin{definition}[Evolutor State]
+\label{def:evolutor-state}
+The \emph{Evolutor state} at time $t$ is the tuple:
+\begin{equation}
+\mathcal{E}_t = (\Gamma_t, H_t, \mathcal{A}_t, \mathcal{L}_t),
+\end{equation}
+where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $\Gamma_t$ is the current genome.
+  \item $H_t$ is the Tera hidden regime state (Chapter~\ref{ch:tera}).
+  \item $\mathcal{A}_t$ is the HelixHash archive of structural signatures (Chapter~\ref{ch:helixhash}).
+  \item $\mathcal{L}_t$ is the lineage history (record of evolutionary modifications).
+\end{itemize}
+\end{definition}
+
+The Evolutor state encapsulates everything needed to reproduce the system's behavior and continue its evolution. It is the DOGMA analogue of a cell's complete state: genome + epigenome + cellular memory.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Why DOGMA Is Not Just a Modified Transformer}
+\label{sec:not-transformer}
+
+It is tempting to view DOGMA as ``a transformer with extra steps.'' This misses the fundamental architectural difference. Consider three levels of distinction:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Ontological:} In a transformer, the primary computational object is the token sequence. In DOGMA, the primary computational object is the \emph{genome}---a persistent, typed, structured state from which tokens are merely one possible output.
+
+  \item \textbf{Control flow:} In a transformer, all tokens interact uniformly through attention. In DOGMA, interaction is \emph{regulated}---controlled by context-dependent activation maps that determine which regions participate.
+
+  \item \textbf{Evolutionary:} A transformer's parameters are fixed after training. A DOGMA genome can be \emph{evolved}---modified through mutation, selection, and synthesis---enabling open-ended improvement without full retraining.
+\end{enumerate}
+
+The relationship between DOGMA and transformers is analogous to the relationship between cells and chemical reactions. A cell \emph{contains} chemical reactions, but a cell is not merely ``chemistry with extra steps.'' The organizational structure---membranes, organelles, regulatory networks, genetic programs---is what makes a cell fundamentally different from a random mixture of the same chemicals.
+
+Similarly, DOGMA may \emph{contain} attention mechanisms (within its Strand Attention stage or DNA Computing Block modules), but the organizational structure---TetraMemory, four-path DNA computing, regulation gating, codon translation, thermodynamic attention, epigenetic memory---is what makes it architecturally distinct.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Exercises}
+\label{sec:ch7-exercises}
+
+\begin{enumerate}[label=\textbf{7.\arabic*.}, leftmargin=2.5em]
+
+\item \textbf{[Fundamentals]} For each of the six DOGMA stages (TetraMemory, DNA Computing Block, Regulation Gate, Codon Translation, Strand Attention, Epigenetic+Allosteric), identify the corresponding step in the biological Central Dogma and explain the mapping.
+
+\item \textbf{[Analysis]} Consider a DOGMA system processing a sequence of $T = 4096$ tokens with embedding dimension $d = 512$.
+\begin{enumerate}[label=(\alph*)]
+  \item How many tetrahedra does Stage 1 create?
+  \item What is the sequence length after Stage 4 (Codon Translation)?
+  \item Compare the cost of Stage 5 Strand Attention (on the compressed sequence) with standard self-attention on the original 4096 tokens.
+\end{enumerate}
+
+\item \textbf{[Design]} The DNA Computing Block uses a learned softmax gate to merge four path outputs. Design an experiment to test whether all four paths are necessary. Describe what you would measure when ablating each path individually, and predict which path's removal would cause the largest performance drop for (a) a language modeling task, (b) a protein structure prediction task.
+
+\item \textbf{[Coding]} Implement the Regulation Gate (Equations~\ref{eq:express-gate}--\ref{eq:regulated-output}) in PyTorch. Create a test that verifies:
+\begin{enumerate}[label=(\alph*)]
+  \item The output has the same shape as the input.
+  \item When the suppress gate outputs all ones, the regulated output is all zeros.
+  \item When both gates output 0.5, the net regulation is $0.5 \times 0.5 = 0.25$ per element.
+\end{enumerate}
+
+\item \textbf{[Theory]} Prove that if the regulation stage produces an activation map with at most $k$ nonzero entries (hard sparsity), then the computational cost of Stage 5 Strand Attention is $O(k'^2 d)$ where $k' = k/3$, rather than $O((T/3)^2 d)$.
+
+\item \textbf{[Research]} Read about Mixture-of-Experts (MoE) architectures \citep{brown2020}. Compare the MoE routing mechanism with DOGMA's Regulation Gate. What are the key similarities and differences? Which approach offers better interpretability, and why?
+
+\item \textbf{[Analysis]} The Codon Translation stage uses a $64 \to 21$ soft mapping initialized from the biological genetic code. Discuss:
+\begin{enumerate}[label=(\alph*)]
+  \item Why is degeneracy (multiple codons $\to$ same amino acid) beneficial for robustness?
+  \item Should the codon embeddings be frozen at their biological initialization or fine-tuned? Argue both sides.
+\end{enumerate}
+
+\item \textbf{[Advanced]} The Evolutor state $\mathcal{E}_t = (\Gamma_t, H_t, \mathcal{A}_t, \mathcal{L}_t)$ maintains lineage history $\mathcal{L}_t$. Discuss the computational and memory tradeoffs of maintaining full lineage vs.\ compressed lineage (keeping only the most recent $m$ checkpoints). Under what conditions would compressed lineage lose important information?
+
+\item \textbf{[Worked Example]} Trace a sequence of $T = 24$ tokens through the six-stage pipeline, showing tensor shapes at each stage. How many codons are produced? What is the final phenotype length?
+
+\item \textbf{[Comparison]} Using Table~\ref{tab:architecture-comparison}, explain why DOGMA is better suited than Mamba for tasks requiring bidirectional context, and why Mamba might be preferred for pure autoregressive generation at very long sequence lengths.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Key Takeaways}
+
+\keytakeaway{
+\begin{itemize}[leftmargin=1.5em]
+  \item DOGMA's six-stage pipeline processes data through TetraMemory $\to$ DNA Computing Block $\to$ Regulation Gate $\to$ Codon Translation $\to$ Strand Attention $\to$ Epigenetic+Allosteric, followed by an Expression Folder that produces the phenotype.
+  \item The genomic base $b_i = (\sigma_i, \tau_i, \rho_i, \omega_i)$ is DOGMA's atomic unit, carrying a base embedding, type tag, compatibility vector, and weight.
+  \item Four base types (A, C, G, T) provide functional roles (Activation, Composition, Generation, Termination) with complementary pairing and Klein four-group symmetry.
+  \item TetraMemory achieves $O(T)$ complexity by computing $K_4$ local attention within groups of 4 tokens and propagating information through shared faces.
+  \item The DNA Computing Block runs four parallel paths (Strand Displacement, Parallel Scan, Stochastic Computing, Double Strand), three of which are independently Turing-complete, merged by a learned softmax gate.
+  \item The Regulation Gate implements express/suppress gating analogous to gene regulation, producing sparse activation patterns that reduce downstream computation.
+  \item Codon Translation compresses the sequence $3:1$ through a differentiable $64 \to 21$ mapping initialized from the biological genetic code.
+  \item Strand Attention uses thermodynamic $\Delta G$ binding energies (inspired by SantaLucia nearest-neighbor parameters) instead of dot-product scores.
+  \item Epigenetic memory ($O(TM)$) provides persistent state across time steps; allosteric broadcast ($O(Tk)$) provides fast global context from $k$ selected sites.
+  \item The Expression Folder converts the final representation into a phenotype that can be realized into text, code, structured data, or other modalities.
+  \item DOGMA is not a modified transformer but a fundamentally different organizational paradigm: genome-first, regulation-controlled, evolution-capable, with built-in redundancy through multiple Turing-complete paths.
+\end{itemize}
+}
+
+\section*{Suggested Reading}
+\begin{itemize}[leftmargin=1.5em]
+  \item \citet{crick1970}: The original Central Dogma, DOGMA's biological inspiration.
+  \item \citet{vaswani2017}: The transformer architecture, for comparison.
+  \item \citet{gu2023mamba}: State-space models, related to DOGMA's ParallelScan path.
+  \item \citet{zhang2011}: DNA strand displacement, the basis for DOGMA's Strand Displacement path.
+  \item \citet{encode2012}: The ENCODE project on gene regulation and expression sparsity.
+  \item Chapters~\ref{ch:helixhash}--\ref{ch:codonforge} of this book: detailed treatments of DOGMA's subsystems.
+\end{itemize}

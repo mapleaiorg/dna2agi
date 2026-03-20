@@ -1,0 +1,1433 @@
+% ═══════════════════════════════════════════════════════════════════════════════
+% Chapter 2: A History of DNA Computing (v1.1 — Expanded)
+% Part I: The Biological Computer
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\chapter{A History of DNA Computing --- From Adleman to Molecular Programming}
+\label{ch:dna-computing}
+
+\chapterepigraph{The molecule does the work; the scientist sets up the problem.}{Leonard Adleman, 1994}
+
+\noindent
+On a November day in 1994, Leonard Adleman walked into his laboratory at the University of Southern California and solved an instance of the Hamiltonian path problem---not on a computer, but in a test tube. Using carefully designed DNA oligonucleotides, enzymatic reactions, and gel electrophoresis, he demonstrated that molecules could perform meaningful computation \citep{adleman1994}. The paper, published in \textit{Science}, launched an entirely new field.
+
+Three decades later, DNA computing has evolved from a provocative demonstration into a mature discipline with its own programming languages, compiler toolchains, and a growing library of implemented algorithms. This chapter traces that evolution in detail, building the intuition and technical foundations that underpin DOGMA's architecture.
+
+For the DOGMA reader, this chapter serves a specific purpose: it establishes that the computational primitives of DNA---pairing, displacement, catalysis, self-assembly---are not merely biological curiosities. They are \emph{computational operations} that can be formalized, abstracted, and reimplemented on silicon. DOGMA is the architecture that performs that reimplementation.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Adleman's Breakthrough (1994)}
+\label{sec:adleman}
+
+\subsection{The Hamiltonian Path Problem}
+
+The Hamiltonian path problem asks: given a directed graph $G = (V, E)$ with designated start and end vertices, does there exist a path that visits every vertex exactly once? The problem is NP-complete, meaning no polynomial-time algorithm is known for the general case.
+
+\begin{example}[A Simple Hamiltonian Path]
+Consider a directed graph with four vertices $\{A, B, C, D\}$ and edges $A \to B$, $A \to C$, $B \to C$, $B \to D$, $C \to D$. Starting from $A$ and ending at $D$, is there a path visiting every vertex exactly once?
+
+\begin{center}
+\begin{tikzpicture}[node distance=2cm, every node/.style={circle, draw, minimum size=0.8cm, font=\small}]
+  \node[fill=dogmalight] (A) {$A$};
+  \node[fill=dogmalight, right of=A] (B) {$B$};
+  \node[fill=dogmalight, below of=A] (C) {$C$};
+  \node[fill=dogmalight, below of=B] (D) {$D$};
+  \draw[-{Latex}, thick] (A) -- (B);
+  \draw[-{Latex}, thick] (A) -- (C);
+  \draw[-{Latex}, thick] (B) -- (C);
+  \draw[-{Latex}, thick] (B) -- (D);
+  \draw[-{Latex}, thick] (C) -- (D);
+\end{tikzpicture}
+\end{center}
+
+The answer is yes: $A \to B \to C \to D$ visits all four vertices exactly once. But how would we find this using DNA?
+\end{example}
+
+\subsection{Encoding Graphs in DNA}
+
+Adleman's key insight was to encode the graph structure directly into DNA sequences, exploiting Watson-Crick complementarity to ``explore'' all possible paths simultaneously.
+
+\paragraph{Step 1: Assign vertex sequences.}
+Each vertex receives a random 20-nucleotide DNA sequence. For our four-vertex example:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{ll}
+\toprule
+\textbf{Vertex} & \textbf{DNA Sequence (20-mer)} \\
+\midrule
+$A$ & \texttt{5'-GCTAGCAATTCCGGAATCGA-3'} \\
+$B$ & \texttt{5'-TTACGGATCAAGCCTTAGAC-3'} \\
+$C$ & \texttt{5'-CGGAATCCGTTAAGGCCATA-3'} \\
+$D$ & \texttt{5'-AAGCTTGATCCGGAATTACG-3'} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Step 2: Encode edges as bridging strands.}
+Each edge $(v_i, v_j)$ is encoded as a 20-nucleotide oligo whose \emph{first half} (10 nt) is complementary to the \emph{3$'$ end} of $v_i$ and whose \emph{second half} (10 nt) is complementary to the \emph{5$'$ end} of $v_j$. This creates a molecular ``bridge'' that physically links vertex $v_i$ to vertex $v_j$:
+
+\begin{center}
+\begin{tikzpicture}[every node/.style={font=\small}, scale=0.85]
+  % Vertex A
+  \node[draw, rounded corners, fill=red!10, minimum width=4cm, minimum height=0.7cm] (vA) at (0, 1.5) {\texttt{GCTAGCAA|TTCCGGAATCGA}};
+  \node[above=0.15cm of vA, font=\footnotesize\bfseries] {Vertex $A$};
+  % Edge oligo
+  \node[draw, rounded corners, fill=yellow!20, minimum width=4cm, minimum height=0.7cm] (edge) at (0, 0) {\texttt{AGGCCTTAGC|AATGCCTAGTT}};
+  \node[below=0.15cm of edge, font=\footnotesize\bfseries\color{dogmagold}] {Edge $A \to B$ (complement bridge)};
+  % Vertex B
+  \node[draw, rounded corners, fill=blue!10, minimum width=4cm, minimum height=0.7cm] (vB) at (0, -1.5) {\texttt{TTACGGATCA|AGCCTTAGAC}};
+  \node[below=0.15cm of vB, font=\footnotesize\bfseries] {Vertex $B$};
+  % Arrows
+  \draw[<->, thick, dashed, dogmateal] (vA.south west) -- (edge.north west) node[midway, left, font=\scriptsize] {binds 3' of $A$};
+  \draw[<->, thick, dashed, dogmateal] (edge.south east) -- (vB.north east) node[midway, right, font=\scriptsize] {binds 5' of $B$};
+\end{tikzpicture}
+\end{center}
+
+\paragraph{Step 3: Mix and hybridize.}
+When all vertex and edge oligonucleotides are mixed in solution, complementary sequences spontaneously hybridize. Each edge oligo acts as a ``splint'' that connects two vertex strands, creating double-stranded bridges. In a single test tube, \emph{all possible paths through the graph assemble simultaneously}.
+
+\paragraph{Step 4: Filter.}
+Adleman then used three biochemical techniques to extract the correct answer:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{PCR amplification:} Using primers specific to vertex $A$ (start) and vertex $D$ (end), amplify only paths beginning at $A$ and ending at $D$.
+  \item \textbf{Gel electrophoresis:} Select paths of the correct length. A path visiting all 4 vertices contains 4 vertex sequences = 80 nucleotides. Paths of the wrong length (too short = missing vertices; too long = cycles) are discarded.
+  \item \textbf{Affinity purification:} For each vertex, use a complementary strand bound to a magnetic bead to ``fish out'' only those paths containing that vertex. Repeat for all vertices. Only paths containing all vertices survive.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[every node/.style={font=\small}, scale=0.78]
+  % ── Left: Graph ──
+  \node[font=\bfseries\color{dogmablue}] at (-5.5, 5.5) {Graph};
+  \node[circle, draw, thick, fill=red!15, minimum size=0.9cm] (gA) at (-7, 4) {$A$};
+  \node[circle, draw, thick, fill=blue!15, minimum size=0.9cm] (gB) at (-5, 4) {$B$};
+  \node[circle, draw, thick, fill=green!15, minimum size=0.9cm] (gC) at (-7, 2) {$C$};
+  \node[circle, draw, thick, fill=orange!15, minimum size=0.9cm] (gD) at (-5, 2) {$D$};
+  \draw[-{Latex}, thick] (gA) -- (gB);
+  \draw[-{Latex}, thick] (gA) -- (gC);
+  \draw[-{Latex}, thick] (gB) -- (gC);
+  \draw[-{Latex}, thick] (gB) -- (gD);
+  \draw[-{Latex}, thick] (gC) -- (gD);
+
+  % ── Right: DNA encoding ──
+  \node[font=\bfseries\color{dogmablue}] at (2.5, 5.5) {DNA Encoding};
+
+  % Vertex sequences (split into two halves)
+  \node[draw, rounded corners, minimum width=3.5cm, minimum height=0.55cm, fill=red!10, align=center, text width=3.3cm, font=\tiny\ttfamily] (vA) at (2, 4.5)
+    {GCTAGCAATT|CCGGAATCGA};
+  \node[font=\tiny, left] at (0, 4.5) {$A$:};
+
+  \node[draw, rounded corners, minimum width=3.5cm, minimum height=0.55cm, fill=blue!10, align=center, text width=3.3cm, font=\tiny\ttfamily] (vB) at (2, 3.8)
+    {TTACGGATCA|AGCCTTAGAC};
+  \node[font=\tiny, left] at (0, 3.8) {$B$:};
+
+  \node[draw, rounded corners, minimum width=3.5cm, minimum height=0.55cm, fill=green!10, align=center, text width=3.3cm, font=\tiny\ttfamily] (vC) at (2, 3.1)
+    {CGGAATCCGT|TAAGGCCATA};
+  \node[font=\tiny, left] at (0, 3.1) {$C$:};
+
+  \node[draw, rounded corners, minimum width=3.5cm, minimum height=0.55cm, fill=orange!10, align=center, text width=3.3cm, font=\tiny\ttfamily] (vD) at (2, 2.4)
+    {AAGCTTGATC|CGGAATTACG};
+  \node[font=\tiny, left] at (0, 2.4) {$D$:};
+
+  \node[font=\tiny, align=center, text width=3cm] at (2, 1.7) {$|$ marks the midpoint\\(10 nt $+$ 10 nt)};
+
+  % Edge oligo example
+  \draw[dashed, thick, gray] (-8, 0.8) -- (5, 0.8);
+  \node[font=\bfseries\color{dogmagold}] at (-1.5, 0.3) {Edge $A \to B$: bridge oligo};
+
+  % Show how edge bridges
+  \node[draw, rounded corners, fill=red!10, minimum width=2cm, minimum height=0.5cm, font=\tiny\ttfamily] (a3) at (-4.5, -0.4) {CCGGAATCGA};
+  \node[font=\tiny] at (-4.5, -0.9) {3$'$ half of $A$};
+
+  \node[draw, rounded corners, fill=yellow!15, minimum width=4cm, minimum height=0.5cm, align=center, text width=3.8cm, font=\tiny\ttfamily] (edge) at (0, -0.4) {GGCCTTAGC\,AATGCCTAGTT};
+  \node[font=\tiny, text=dogmagold] at (0, -0.9) {Edge oligo (complement bridge)};
+
+  \node[draw, rounded corners, fill=blue!10, minimum width=2cm, minimum height=0.5cm, font=\tiny\ttfamily] (b5) at (4.5, -0.4) {TTACGGATCA};
+  \node[font=\tiny] at (4.5, -0.9) {5$'$ half of $B$};
+
+  \draw[<->, thick, dashed, dogmared] (a3.east) -- (edge.west) node[midway, above, font=\tiny] {binds};
+  \draw[<->, thick, dashed, dogmablue] (edge.east) -- (b5.west) node[midway, above, font=\tiny] {binds};
+
+  % Filtering pipeline
+  \draw[dashed, thick, gray] (-8, -1.5) -- (5, -1.5);
+  \node[font=\bfseries\color{dogmateal}] at (-1.5, -2.0) {Filtering Pipeline};
+
+  \node[draw, rounded corners, fill=dogmalight, minimum width=2.2cm, minimum height=0.7cm, align=center, text width=2cm, font=\tiny] (pcr) at (-5, -3.0) {PCR\\(primers for\\$A$ start, $D$ end)};
+  \node[draw, rounded corners, fill=dogmamint, minimum width=2.2cm, minimum height=0.7cm, align=center, text width=2cm, font=\tiny] (gel) at (-1.5, -3.0) {Gel electro-\\phoresis\\(select 80\,nt)};
+  \node[draw, rounded corners, fill=dogmawarm, minimum width=2.2cm, minimum height=0.7cm, align=center, text width=2cm, font=\tiny] (aff) at (2, -3.0) {Affinity\\purification\\(check all $V$)};
+
+  \draw[-{Latex}, thick] (pcr) -- (gel);
+  \draw[-{Latex}, thick] (gel) -- (aff);
+  \node[draw, rounded corners, fill=green!20, minimum width=1.8cm, font=\tiny\bfseries] (ans) at (5, -3.0) {Answer!};
+  \draw[-{Latex}, thick, dogmateal] (aff) -- (ans);
+\end{tikzpicture}
+\caption{Adleman's experiment: a directed graph is encoded in DNA by assigning 20-mer sequences to vertices and complement-bridge oligos to edges. After self-assembly in solution, three filtering steps extract the Hamiltonian path \citep{adleman1994}.}
+\label{fig:adleman-full}
+\end{figure}
+
+\begin{keyinsight}[Massive Parallelism]
+The crucial advantage of DNA computation is \emph{massive parallelism}. A test tube containing $10^{18}$ molecules simultaneously explores $10^{18}$ candidate solutions. This is a SIMD (Single Instruction, Multiple Data) architecture taken to an extreme that silicon cannot match in raw parallelism. Where a classical computer tries one path at a time, DNA tries them all at once.
+\end{keyinsight}
+
+\subsection{Why It Worked---And Why It Didn't Scale}
+
+Adleman's experiment worked because the search space was small ($7! = 5040$ possible paths for his actual 7-vertex graph) and the molecular encoding was reliable at that scale. However, the approach faces fundamental scaling challenges:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Exponential material requirements.} For $n$ vertices, the number of candidate paths grows exponentially. A 70-vertex graph would require more DNA mass than exists on Earth.
+  \item \textbf{Error accumulation.} Hybridization errors, incomplete reactions, and PCR artifacts compound with problem size.
+  \item \textbf{Readout bottleneck.} Extracting the answer from the molecular mixture requires multiple biochemical steps, each with finite yield.
+\end{itemize}
+
+Despite these limitations, Adleman's work established a fundamental principle: \emph{molecules can compute}. The question became not whether molecular computation is possible, but how to make it reliable, scalable, and programmable.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{DNA Logic Gates and Boolean Computation}
+\label{sec:dna-logic-gates}
+
+Perhaps the most important question for understanding DOGMA is: \emph{How can DNA implement the basic building blocks of all digital computation---logic gates?} In this section, we build up DNA logic gates from first principles, with complete truth tables and worked examples.
+
+\subsection{Binary Encoding in DNA}
+
+Before building logic gates, we need to represent binary values (0 and 1) in molecular terms. The convention used in DNA computing is \emph{concentration-based encoding}:
+
+\begin{definition}[Molecular Binary Encoding]
+A binary signal is encoded as the concentration of a specific DNA species $S$:
+\begin{equation}
+\text{Value} = \begin{cases}
+\mathbf{0} & \text{if } [S] < \theta \quad \text{(concentration below threshold)} \\
+\mathbf{1} & \text{if } [S] \geq \theta \quad \text{(concentration at or above threshold)}
+\end{cases}
+\end{equation}
+where $[S]$ denotes the molar concentration of species $S$ and $\theta$ is a detection threshold (typically $\sim$100~nM).
+\end{definition}
+
+This is analogous to voltage-based encoding in silicon: in CMOS logic, ``0'' corresponds to low voltage ($< 0.8$V) and ``1'' corresponds to high voltage ($> 2.0$V).
+
+\subsection{The AND Gate}
+
+An AND gate produces output 1 only when \emph{both} inputs are 1.
+
+\paragraph{Truth table:}
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{cc|c}
+\toprule
+\textbf{Input $A$} & \textbf{Input $B$} & \textbf{Output $A \wedge B$} \\
+\midrule
+0 & 0 & 0 \\
+0 & 1 & 0 \\
+1 & 0 & 0 \\
+1 & 1 & \textbf{1} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{DNA implementation:}
+The AND gate is implemented using \emph{two sequential strand displacement reactions}. The output strand is released only after both input strands have participated:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Gate complex 1:} Contains a toehold for input strand $A$. When $A$ binds, it releases an intermediate strand $I$.
+  \item \textbf{Gate complex 2:} Contains a toehold for the intermediate strand $I$, but can only release the output strand $O$ when input strand $B$ is \emph{also} present.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[every node/.style={font=\small}, scale=0.85]
+  % Gate 1
+  \node[draw, rounded corners, fill=red!10, minimum width=2.5cm, minimum height=0.8cm] (g1) at (-3, 2) {Gate 1};
+  \node[draw, rounded corners, fill=blue!10, minimum width=1.5cm, minimum height=0.6cm] (inA) at (-3, 3.5) {Input $A$};
+  \draw[-{Latex}, thick] (inA) -- (g1) node[midway, right, font=\scriptsize] {displaces};
+
+  % Intermediate
+  \node[draw, rounded corners, fill=yellow!20, minimum width=2cm, minimum height=0.6cm] (inter) at (0, 2) {Intermediate $I$};
+  \draw[-{Latex}, thick, dogmagold] (g1) -- (inter) node[midway, above, font=\scriptsize] {releases};
+
+  % Gate 2
+  \node[draw, rounded corners, fill=red!10, minimum width=2.5cm, minimum height=0.8cm] (g2) at (3, 2) {Gate 2};
+  \node[draw, rounded corners, fill=blue!10, minimum width=1.5cm, minimum height=0.6cm] (inB) at (3, 3.5) {Input $B$};
+  \draw[-{Latex}, thick] (inB) -- (g2) node[midway, right, font=\scriptsize] {displaces};
+  \draw[-{Latex}, thick, dogmagold] (inter) -- (g2);
+
+  % Output
+  \node[draw, rounded corners, fill=green!15, minimum width=2cm, minimum height=0.6cm] (out) at (3, 0.5) {Output $O$};
+  \draw[-{Latex}, thick, dogmateal] (g2) -- (out) node[midway, right, font=\scriptsize] {releases};
+
+  % Labels
+  \node[font=\footnotesize, text width=6cm, align=center] at (0, -0.5) {\textbf{AND gate:} Output $O$ is only released when both $A$ and $B$ are present.\\Both displacement reactions must complete.};
+\end{tikzpicture}
+\caption{DNA AND gate using two sequential strand displacement reactions.}
+\label{fig:dna-and-gate}
+\end{figure}
+
+\paragraph{Step-by-step walkthrough:}
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Both inputs absent ($A=0, B=0$):} No strand displacement occurs at Gate~1. Intermediate $I$ is never released. Gate~2 remains closed. Output = 0. \checkmark
+  \item \textbf{Only $A$ present ($A=1, B=0$):} Input $A$ displaces Gate~1, releasing intermediate $I$. But $I$ alone cannot open Gate~2 (which also requires $B$). Output = 0. \checkmark
+  \item \textbf{Only $B$ present ($A=0, B=1$):} Gate~1 never fires (no $A$). Even though $B$ is available, there is no intermediate $I$ to co-trigger Gate~2. Output = 0. \checkmark
+  \item \textbf{Both present ($A=1, B=1$):} Input $A$ displaces Gate~1, releasing $I$. Then $I$ and $B$ together open Gate~2, releasing output $O$. Output = 1. \checkmark
+\end{enumerate}
+
+\paragraph{Concrete DNA sequences for an AND gate.}
+To make this tangible, here are real DNA sequences that implement the AND gate above. Each strand has a specific nucleotide sequence---not abstract labels---so that Watson-Crick complementarity governs the computation \citep{daleykari2002,seelig2006}:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lll}
+\toprule
+\textbf{Strand} & \textbf{Sequence ($5' \to 3'$)} & \textbf{Role} \\
+\midrule
+Input $A$ & \texttt{CTAGGC\,ATTCGAATGCCTA} & 6-nt toehold + 14-nt displacement \\
+Input $B$ & \texttt{GCCTAA\,TGGCAATTCCGGA} & 6-nt toehold + 14-nt displacement \\
+Gate 1 top & \texttt{TAGGCATTCGAATGCCTA} & Binds $A$; protects intermediate $I$ \\
+Intermediate $I$ & \texttt{ATGCCTAAGGCCTTAGGA} & Released by Gate 1; triggers Gate 2 \\
+Gate 2 top & \texttt{TGGCAATTCCGGA\,TAGGA} & Binds $B$ \emph{and} $I$; protects output \\
+Output $O$ & \texttt{GCCTTAAGGCCTAATCCGG} & Released only when both gates fire \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The 6-nucleotide toehold on each input (shown with a small space) initiates binding.  Once the toehold domain hybridises, branch migration displaces the next strand along the gate complex.  Gate~1 fires only when input~$A$ is present (its toehold \texttt{CTAGGC} is complementary to Gate~1's overhang \texttt{GATCCG}); Gate~2 requires \emph{both} the intermediate strand released by Gate~1 \emph{and} input~$B$.  No single strand alone can release the output.  This is the same principle used in the abstract diagram of Figure~\ref{fig:dna-and-gate}, but now written in the language of real chemistry.
+
+\begin{implnote}[AND Gate in DOGMA]
+DOGMA's Strand Displacement path (Chapter~\ref{ch:dogma-supreme}) implements a differentiable AND gate using learned toehold scores. Two input features must both have high activation (analogous to high concentration) to produce a non-zero output through a multiplicative gating mechanism: $\text{out} = \sigma(W_A x_A) \odot \sigma(W_B x_B)$, where $\odot$ is elementwise multiplication.
+\end{implnote}
+
+\subsection{The OR Gate}
+
+An OR gate produces output 1 when \emph{at least one} input is 1.
+
+\paragraph{Truth table:}
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{cc|c}
+\toprule
+\textbf{Input $A$} & \textbf{Input $B$} & \textbf{Output $A \vee B$} \\
+\midrule
+0 & 0 & 0 \\
+0 & 1 & \textbf{1} \\
+1 & 0 & \textbf{1} \\
+1 & 1 & \textbf{1} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{DNA implementation:}
+The OR gate uses \emph{two parallel gates}, each producing the same output strand:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Gate A:} Has a toehold for input $A$. When $A$ is present, it releases output strand $O$.
+  \item \textbf{Gate B:} Has a toehold for input $B$. When $B$ is present, it also releases output strand $O$.
+  \item Since both gates produce the \emph{same} output species $O$, the presence of \emph{either} input (or both) results in high output concentration.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[every node/.style={font=\small}, scale=0.85]
+  % Gate A
+  \node[draw, rounded corners, fill=red!10, minimum width=2.5cm, minimum height=0.7cm] (gA) at (-2, 1.5) {Gate A};
+  \node[draw, rounded corners, fill=blue!10, minimum width=1.5cm, minimum height=0.6cm] (inA) at (-2, 3) {Input $A$};
+  \draw[-{Latex}, thick] (inA) -- (gA);
+
+  % Gate B
+  \node[draw, rounded corners, fill=red!10, minimum width=2.5cm, minimum height=0.7cm] (gB) at (2, 1.5) {Gate B};
+  \node[draw, rounded corners, fill=blue!10, minimum width=1.5cm, minimum height=0.6cm] (inB) at (2, 3) {Input $B$};
+  \draw[-{Latex}, thick] (inB) -- (gB);
+
+  % Output
+  \node[draw, rounded corners, fill=green!15, minimum width=2.5cm, minimum height=0.7cm] (out) at (0, -0.5) {Output $O$};
+  \draw[-{Latex}, thick, dogmateal] (gA) -- (out);
+  \draw[-{Latex}, thick, dogmateal] (gB) -- (out);
+
+  \node[font=\footnotesize, text width=6cm, align=center] at (0, -1.8) {\textbf{OR gate:} Either Gate A or Gate B (or both) can produce the same output $O$.};
+\end{tikzpicture}
+\caption{DNA OR gate using two parallel strand displacement gates producing the same output.}
+\label{fig:dna-or-gate}
+\end{figure}
+
+\paragraph{Concrete DNA sequences for an OR gate.}
+In the OR gate, both Gate~A and Gate~B release the \emph{same} output species.  Here is a concrete realisation:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lll}
+\toprule
+\textbf{Strand} & \textbf{Sequence ($5' \to 3'$)} & \textbf{Role} \\
+\midrule
+Input $A$ & \texttt{TAGCCA\,GCCAATTGCCTAG} & Toehold binds Gate~A overhang \\
+Input $B$ & \texttt{ACGTCG\,TTAACCGGAATCG} & Toehold binds Gate~B overhang \\
+Gate A top & \texttt{ATCGGT\,GCCAATTGCCTAG} & Protects shared output $O_1$ \\
+Gate B top & \texttt{TGCAGC\,TTAACCGGAATCG} & Protects shared output $O_2$ \\
+Output $O$ & \texttt{CGGTTAACCGGATTAGCC} & \emph{Same} strand released by either gate \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Because $O_1$ and $O_2$ are identical sequences, the presence of \emph{either} input produces high $[O]$.  This is the molecular implementation of Boolean OR: the output reporter fluoresces whenever at least one input strand is at high concentration.
+
+\subsection{The NOT Gate (Inverter)}
+
+A NOT gate inverts its input: input 1 produces output 0, and input 0 produces output 1.
+
+\paragraph{Truth table:}
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{c|c}
+\toprule
+\textbf{Input $A$} & \textbf{Output $\neg A$} \\
+\midrule
+0 & \textbf{1} \\
+1 & 0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{DNA implementation:}
+The NOT gate is more challenging because it requires producing a signal in the \emph{absence} of an input. The solution uses a \emph{threshold mechanism}:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item A ``fuel'' strand continuously produces output $O$ at a baseline rate.
+  \item When input $A$ is present, $A$ acts as an \emph{annihilator}: it reacts with the output strand, consuming $O$ and reducing its concentration below the threshold.
+  \item The fuel reaction is calibrated so that without $A$, the concentration of $O$ exceeds $\theta$ (output = 1), and with $A$, the annihilation brings $[O]$ below $\theta$ (output = 0).
+\end{enumerate}
+
+\begin{keyinsight}[The NOT Gate Challenge]
+In molecular computing, NOT gates are fundamentally harder than AND/OR gates. AND and OR gates are \emph{signal-triggered}: they respond to the \emph{presence} of a signal. NOT gates must respond to the \emph{absence} of a signal. This asymmetry has deep implications---it means molecular circuits naturally favor \emph{positive logic} (signal presence), which influenced DOGMA's design choice to use activation-based regulation rather than inhibition-based regulation as the default pathway.
+\end{keyinsight}
+
+\subsection{NAND and Universal Computation}
+
+A single gate type---NAND (NOT-AND)---is \emph{functionally complete}: any Boolean function can be built from NAND gates alone.
+
+\paragraph{NAND truth table:}
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{cc|c}
+\toprule
+\textbf{Input $A$} & \textbf{Input $B$} & \textbf{Output $\overline{A \wedge B}$} \\
+\midrule
+0 & 0 & \textbf{1} \\
+0 & 1 & \textbf{1} \\
+1 & 0 & \textbf{1} \\
+1 & 1 & 0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Building other gates from NAND:}
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{NOT from NAND:} $\neg A = A \text{ NAND } A$. Connect the same input to both terminals.
+  \item \textbf{AND from NAND:} $A \wedge B = \neg(A \text{ NAND } B) = (A \text{ NAND } B) \text{ NAND } (A \text{ NAND } B)$.
+  \item \textbf{OR from NAND:} $A \vee B = (A \text{ NAND } A) \text{ NAND } (B \text{ NAND } B)$.
+\end{itemize}
+
+This means that if DNA can implement a NAND gate, then \emph{DNA can compute any Boolean function}. Since CRNs are Turing complete (Section~\ref{sec:crn}), DNA computing is at least as powerful as silicon computing.
+
+\subsection{XOR Gate and Parity Detection}
+
+The XOR (exclusive OR) gate is particularly useful for arithmetic (it computes the sum bit in binary addition).
+
+\paragraph{XOR truth table:}
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{cc|c}
+\toprule
+\textbf{Input $A$} & \textbf{Input $B$} & \textbf{Output $A \oplus B$} \\
+\midrule
+0 & 0 & 0 \\
+0 & 1 & \textbf{1} \\
+1 & 0 & \textbf{1} \\
+1 & 1 & 0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+XOR can be expressed using AND, OR, and NOT: $A \oplus B = (A \vee B) \wedge \neg(A \wedge B)$. In DNA, this requires combining an OR gate and an AND gate with an annihilation reaction that suppresses the output when both inputs are high.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{DNA Arithmetic: Computing with Molecules}
+\label{sec:dna-arithmetic}
+
+Now that we have logic gates, we can build arithmetic circuits. This section shows how DNA can perform binary addition, subtraction, and comparison---the foundations of all digital computation.
+
+\subsection{The Half Adder}
+
+A \emph{half adder} adds two single-bit binary numbers and produces a \emph{sum} bit and a \emph{carry} bit.
+
+\paragraph{Half adder truth table:}
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{cc|cc}
+\toprule
+\textbf{Input $A$} & \textbf{Input $B$} & \textbf{Sum $S$} & \textbf{Carry $C$} \\
+\midrule
+0 & 0 & 0 & 0 \\
+0 & 1 & 1 & 0 \\
+1 & 0 & 1 & 0 \\
+1 & 1 & 0 & 1 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Notice that \textbf{Sum = XOR} and \textbf{Carry = AND}:
+\begin{align}
+S &= A \oplus B \label{eq:half-add-sum} \\
+C &= A \wedge B \label{eq:half-add-carry}
+\end{align}
+
+\paragraph{DNA implementation:}
+A DNA half adder requires two sub-circuits operating in parallel:
+\begin{itemize}[leftmargin=1.8em]
+  \item A DNA XOR circuit (from Section~\ref{sec:dna-logic-gates}) produces the sum output $S$.
+  \item A DNA AND circuit produces the carry output $C$.
+  \item Both circuits share the same input strands $A$ and $B$.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[every node/.style={font=\small}, scale=0.85]
+  % Inputs
+  \node[draw, rounded corners, fill=blue!10, minimum width=1.5cm] (inA) at (-1, 3) {$A$};
+  \node[draw, rounded corners, fill=blue!10, minimum width=1.5cm] (inB) at (1, 3) {$B$};
+
+  % XOR circuit
+  \node[draw, rounded corners, fill=orange!15, minimum width=2.5cm, minimum height=1cm] (xor) at (-2, 1) {XOR};
+  \draw[-{Latex}, thick] (inA) -- (xor);
+  \draw[-{Latex}, thick] (inB) -- (xor);
+
+  % AND circuit
+  \node[draw, rounded corners, fill=purple!15, minimum width=2.5cm, minimum height=1cm] (and) at (2, 1) {AND};
+  \draw[-{Latex}, thick] (inA) -- (and);
+  \draw[-{Latex}, thick] (inB) -- (and);
+
+  % Outputs
+  \node[draw, rounded corners, fill=green!15, minimum width=2cm] (sum) at (-2, -0.8) {Sum $S$};
+  \node[draw, rounded corners, fill=green!15, minimum width=2cm] (carry) at (2, -0.8) {Carry $C$};
+  \draw[-{Latex}, thick, dogmateal] (xor) -- (sum);
+  \draw[-{Latex}, thick, dogmateal] (and) -- (carry);
+\end{tikzpicture}
+\caption{DNA half adder: parallel XOR and AND circuits sharing input strands.}
+\label{fig:dna-half-adder}
+\end{figure}
+
+\subsection{The Full Adder}
+
+A \emph{full adder} extends the half adder by accepting a carry-in bit $C_{\text{in}}$ from a previous stage:
+
+\paragraph{Full adder truth table:}
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{ccc|cc}
+\toprule
+\textbf{$A$} & \textbf{$B$} & \textbf{$C_{\text{in}}$} & \textbf{Sum $S$} & \textbf{Carry $C_{\text{out}}$} \\
+\midrule
+0 & 0 & 0 & 0 & 0 \\
+0 & 0 & 1 & 1 & 0 \\
+0 & 1 & 0 & 1 & 0 \\
+0 & 1 & 1 & 0 & 1 \\
+1 & 0 & 0 & 1 & 0 \\
+1 & 0 & 1 & 0 & 1 \\
+1 & 1 & 0 & 0 & 1 \\
+1 & 1 & 1 & 1 & 1 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The full adder equations are:
+\begin{align}
+S &= A \oplus B \oplus C_{\text{in}} \\
+C_{\text{out}} &= (A \wedge B) \vee (C_{\text{in}} \wedge (A \oplus B))
+\end{align}
+
+A full adder can be built from two half adders and one OR gate. By chaining $n$ full adders (with each carry-out feeding the next carry-in), we obtain an \emph{$n$-bit ripple-carry adder}---capable of adding any two $n$-bit binary numbers.
+
+\begin{example}[4-Bit DNA Addition: $5 + 3 = 8$]
+To compute $0101_2 + 0011_2 = 1000_2$ (i.e., $5 + 3 = 8$):
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Bit 0:} $A_0 = 1, B_0 = 1, C_{\text{in}} = 0$. Sum = 0, Carry = 1.
+  \item \textbf{Bit 1:} $A_1 = 0, B_1 = 1, C_{\text{in}} = 1$. Sum = 0, Carry = 1.
+  \item \textbf{Bit 2:} $A_2 = 1, B_2 = 0, C_{\text{in}} = 1$. Sum = 0, Carry = 1.
+  \item \textbf{Bit 3:} $A_3 = 0, B_3 = 0, C_{\text{in}} = 1$. Sum = 1, Carry = 0.
+\end{enumerate}
+Result: $1000_2 = 8_{10}$. \checkmark
+
+Each bit position would use a separate DNA full adder circuit, with the carry output strand of one circuit acting as the carry input strand of the next.
+\end{example}
+
+\subsection{DNA Subtraction via Two's Complement}
+
+Subtraction can be implemented using addition and bitwise inversion. To compute $A - B$:
+\begin{enumerate}[leftmargin=1.8em]
+  \item Invert each bit of $B$ using NOT gates: $\bar{B}$.
+  \item Add 1 to the result: $\bar{B} + 1$ (this is the two's complement of $B$).
+  \item Add to $A$: $A + (\bar{B} + 1) = A - B$.
+\end{enumerate}
+
+This means a DNA subtraction circuit requires only NOT gates, AND gates, OR gates, and XOR gates---all of which we have shown can be implemented in DNA.
+
+\subsection{Comparison and Decision Making}
+
+A comparator determines whether $A > B$, $A = B$, or $A < B$. For single-bit comparison:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{cc|ccc}
+\toprule
+\textbf{$A$} & \textbf{$B$} & \textbf{$A > B$} & \textbf{$A = B$} & \textbf{$A < B$} \\
+\midrule
+0 & 0 & 0 & \textbf{1} & 0 \\
+0 & 1 & 0 & 0 & \textbf{1} \\
+1 & 0 & \textbf{1} & 0 & 0 \\
+1 & 1 & 0 & \textbf{1} & 0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+These outputs can be computed as:
+\begin{align}
+(A > B) &= A \wedge \neg B \\
+(A = B) &= \neg(A \oplus B) = (A \wedge B) \vee (\neg A \wedge \neg B) \\
+(A < B) &= \neg A \wedge B
+\end{align}
+
+\begin{bioinsight}[Biological Decision Making]
+Cells make ``greater-than'' comparisons all the time through competitive binding. When two transcription factors compete for the same promoter site, the one at higher concentration wins---implementing a molecular comparator. DOGMA's Regulation Gate (Chapter~\ref{ch:dogma-architecture}) uses exactly this principle: competing activation and suppression signals determine whether a genomic region is expressed.
+\end{bioinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Strand Displacement Cascades}
+\label{sec:strand-displacement}
+
+The logic gates and arithmetic circuits above use a common molecular mechanism: \emph{toehold-mediated strand displacement}. This section explains the mechanism in full detail.
+
+\subsection{The Three-Strand Mechanism}
+
+A strand displacement reaction involves three DNA strands:
+\begin{itemize}[leftmargin=1.8em]
+  \item A \emph{gate complex}: a double-stranded region with a short single-stranded \emph{toehold} overhang.
+  \item An \emph{input strand}: complementary to both the toehold and the full gate strand.
+  \item An \emph{output strand}: released when the input strand displaces it from the gate.
+\end{itemize}
+
+The process occurs in three phases:
+
+\paragraph{Phase 1: Toehold binding.}
+The input strand recognizes and binds to the exposed toehold region. This initial binding is weak (5--8 base pairs) but sufficient to bring the input strand into close proximity with the gate complex.
+
+\paragraph{Phase 2: Branch migration.}
+Once the toehold is bound, the input strand begins replacing the output strand through a random walk process called \emph{branch migration}. At each step, one base pair of the old duplex is broken and replaced by a base pair with the incoming strand. This is energetically neutral (breaking and forming equivalent base pairs), so it proceeds by diffusion.
+
+\paragraph{Phase 3: Output release.}
+When branch migration reaches the end of the gate, the output strand is completely displaced and released into solution. The gate now forms a stable duplex with the input strand.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[every node/.style={font=\small}, scale=0.9]
+  % Phase 1
+  \node[font=\bfseries\color{dogmablue}] at (-5, 3.5) {Phase 1: Toehold Binding};
+  \node[draw, rounded corners, fill=dogmalight, minimum width=4cm, minimum height=0.7cm] (gate1) at (-3.5, 2.5) {Gate strand};
+  \node[draw, rounded corners, fill=dogmamint, minimum width=3cm, minimum height=0.7cm] (out1) at (-3, 1.6) {Output strand};
+  \node[draw, rounded corners, fill=dogmawarm, minimum width=0.8cm, minimum height=0.7cm] (toe1) at (-5.8, 2.5) {\tiny Toe};
+  \node[draw, rounded corners, fill=white, minimum width=1cm, minimum height=0.5cm] (inp1) at (-5.8, 1.3) {\tiny Input};
+  \draw[-{Latex}, dashed, thick] (inp1) -- (toe1);
+
+  % Phase 2
+  \node[font=\bfseries\color{dogmagold}] at (0.5, 3.5) {Phase 2: Branch Migration};
+  \node[draw, rounded corners, fill=dogmalight, minimum width=4cm, minimum height=0.7cm] (gate2) at (2, 2.5) {Gate strand};
+  \node[draw, rounded corners, fill=dogmamint, minimum width=1.5cm, minimum height=0.7cm] (out2) at (3.5, 1.6) {\tiny Output};
+  \node[draw, rounded corners, fill=white, minimum width=2.5cm, minimum height=0.7cm] (inp2) at (0.8, 1.6) {Input (migrating)};
+  \draw[<->, thick, dogmagold] (1.8, 1.2) -- (3.0, 1.2) node[midway, below, font=\scriptsize] {random walk};
+
+  % Phase 3
+  \node[font=\bfseries\color{dogmateal}] at (-3, -0.3) {Phase 3: Output Release};
+  \node[draw, rounded corners, fill=dogmalight, minimum width=4cm, minimum height=0.7cm] (gate3) at (-2, -1.3) {Gate strand};
+  \node[draw, rounded corners, fill=white, minimum width=4cm, minimum height=0.7cm] (inp3) at (-2, -2.2) {Input strand (fully bound)};
+  \node[draw, rounded corners, fill=dogmamint, minimum width=2.5cm, minimum height=0.7cm] (out3) at (3.5, -1.8) {Output (free!)};
+  \draw[-{Latex}, thick, dogmateal] (0.5, -1.8) -- (out3);
+\end{tikzpicture}
+\caption{The three phases of toehold-mediated strand displacement.}
+\label{fig:strand-displacement-phases}
+\end{figure}
+
+\subsection{Kinetic Control via Toehold Length}
+
+The reaction rate is \emph{exponentially sensitive} to toehold length \citep{zhang2011}:
+
+\begin{equation}
+k_{\text{forward}} \approx k_{\text{max}} \cdot e^{-\Delta G_{\text{toehold}} / RT}
+\end{equation}
+
+where $\Delta G_{\text{toehold}}$ is the free energy of toehold hybridization, $R$ is the gas constant, and $T$ is the temperature. Typical values:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{cc}
+\toprule
+\textbf{Toehold Length (nt)} & \textbf{Approx.\ Rate ($\text{M}^{-1}\text{s}^{-1}$)} \\
+\midrule
+0 (no toehold) & $\sim 1$ (background) \\
+3 & $\sim 10^2$ \\
+5 & $\sim 10^4$ \\
+7 & $\sim 10^6$ (maximum) \\
+10+ & $\sim 10^6$ (saturated) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+This exponential control enables precise timing in molecular circuits---analogous to clock frequency control in digital electronics.
+
+\begin{implnote}[Toehold Length as Attention Score]
+In DOGMA's strand displacement path, the toehold binding energy $\Delta G$ becomes a \emph{learned attention score}. Stronger ``toeholds'' (higher attention scores) produce faster ``displacement'' (stronger feature propagation). This maps the four-order-of-magnitude kinetic range of real toeholds into a continuous attention weight:
+\begin{equation}
+\alpha_{ij} = \text{softmax}\left(\frac{-\Delta G(q_i, k_j)}{RT}\right)
+\end{equation}
+\end{implnote}
+
+\subsection{Seesaw Gates: Scalable Digital Logic}
+
+\citet{qian2011seesaw} introduced \emph{seesaw gates}, a simplified strand displacement motif that enables large-scale digital circuits. A seesaw gate has a threshold and an amplification mechanism:
+
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Threshold:} A fixed amount of threshold strand absorbs input below a cutoff level. Only excess input above the threshold produces output (digital ``1'').
+  \item \textbf{Amplification:} A catalytic mechanism (fuel strand) amplifies weak signals to full output level, restoring signal strength at each gate.
+  \item \textbf{Integration:} Multiple input strands are summed (by hybridization to the gate strand), implementing weighted addition.
+\end{itemize}
+
+Qian and Winfree demonstrated circuits with over 100 DNA strands implementing a \textbf{4-bit square root computation}---the largest DNA circuit at the time. The circuit reads a 4-bit binary number and outputs its integer square root.
+
+\begin{example}[4-Bit Square Root Circuit]
+The circuit computes $\lfloor\sqrt{n}\rfloor$ for 4-bit inputs $n \in \{0, 1, \ldots, 15\}$:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{cccc|cc|l}
+\toprule
+$b_3$ & $b_2$ & $b_1$ & $b_0$ & Decimal $n$ & $\lfloor\sqrt{n}\rfloor$ & Output (binary) \\
+\midrule
+0 & 0 & 0 & 0 & 0 & 0 & 00 \\
+0 & 0 & 0 & 1 & 1 & 1 & 01 \\
+0 & 1 & 0 & 0 & 4 & 2 & 10 \\
+1 & 0 & 0 & 1 & 9 & 3 & 11 \\
+1 & 1 & 1 & 1 & 15 & 3 & 11 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+This was implemented entirely in DNA using 130 distinct DNA strands!
+\end{example}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Restriction Enzyme Computing and Splicing Systems}
+\label{sec:restriction-splicing}
+
+While strand displacement uses designed synthetic strands, a complementary approach exploits \emph{restriction enzymes}---nature's own ``molecular scissors''---to cut DNA at specific recognition sites and recombine the fragments.  This section follows the framework surveyed by \citet{daleykari2002}.
+
+\subsection{Restriction Enzymes as Programmable Cutters}
+
+A Type~II restriction endonuclease recognises a short palindromic DNA sequence (typically 4--8\,bp) and cleaves both strands.  The cut may leave \emph{sticky ends} (overhangs) or \emph{blunt ends}.  Two commonly used enzymes:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{llll}
+\toprule
+\textbf{Enzyme} & \textbf{Recognition (sense strand)} & \textbf{Cut Pattern} & \textbf{Overhang} \\
+\midrule
+\emph{TaqI}  & \texttt{5'-T{$\downarrow$}CGA-3'} / \texttt{3'-AGC{$\uparrow$}T-5'} & 5' overhang: \texttt{CG} & 2-nt sticky \\
+\emph{SciNI} & \texttt{5'-G{$\downarrow$}CGC-3'} / \texttt{3'-CGC{$\uparrow$}G-5'} & 5' overhang: \texttt{GC} & 2-nt sticky \\
+\emph{EcoRI} & \texttt{5'-G{$\downarrow$}AATTC-3'} / \texttt{3'-CTTAA{$\uparrow$}G-5'} & 5' overhang: \texttt{AATT} & 4-nt sticky \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The arrows ($\downarrow$ / $\uparrow$) mark the phosphodiester bonds that are cleaved.  After cutting, the sticky ends can hybridise with any compatible overhang, and DNA ligase seals the new backbone.  This cut-and-paste cycle is the molecular basis of \emph{splicing}.
+
+\subsection{Splicing: DNA Recombination as Computation}
+
+\citet{head1987} formalised the cut-and-paste action of restriction enzymes into a computational model called a \emph{splicing system}.  The key idea: start with a finite set of DNA strings (the \emph{axioms}) and a set of \emph{splicing rules} (each corresponding to a restriction enzyme + ligase pair); the \emph{language} generated by the system is all strings obtainable by iterated splicing.
+
+\begin{example}[Restriction-Enzyme Splicing with Real Sequences]
+Consider two double-stranded DNA molecules and two restriction enzymes (\emph{TaqI} and \emph{SciNI}), following the example of \citet{daleykari2002}:
+
+\textbf{Strand~1} contains a \emph{TaqI} site (\texttt{TCGA}):
+\begin{center}
+\texttt{5'-CCCCCTCGACCCCC-3'} \\
+\texttt{3'-GGGGGAGCTGGGGG-5'}
+\end{center}
+
+\textbf{Strand~2} contains a \emph{SciNI} site (\texttt{GCGC}):
+\begin{center}
+\texttt{5'-AAAAAGCGCAAAAA-3'} \\
+\texttt{3'-TTTTTCGCGTTTTT-5'}
+\end{center}
+
+\textbf{Step 1 --- Cut.}  Each enzyme recognises its site and cleaves both backbones:
+\begin{center}
+\texttt{5'-CCCCCT~~CGACCCCC-3'} \quad\quad \texttt{5'-AAAAAG~~CGCAAAAA-3'} \\
+\texttt{3'-GGGGGAGC~~TGGGGG-5'} \quad\quad \texttt{3'-TTTTTCGC~~GTTTTT-5'}
+\end{center}
+
+After cutting, four fragments are produced.  The sticky end \texttt{CG} from Strand~1's right fragment is complementary to the sticky end from Strand~2's left fragment (both are 2-nt 5' overhangs).
+
+\textbf{Step 2 --- Crosswise ligation.}  DNA ligase seals the compatible sticky ends in a crosswise fashion, producing two \emph{recombinant} molecules:
+\begin{center}
+\texttt{5'-CCCCCTCGCAAAAA-3'} \quad\quad \texttt{5'-AAAAAGCGACCCCC-3'} \\
+\texttt{3'-GGGGGAGCGTTTTT-5'} \quad\quad \texttt{3'-TTTTTCGCTGGGGG-5'}
+\end{center}
+
+The left half of Strand~1 is now joined to the right half of Strand~2, and vice versa.  This is a single \emph{splicing step} --- and it is a computation, because the output strings encode information derived from both inputs.
+\end{example}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[every node/.style={font=\small}, scale=0.82]
+  % ── Step 1: Two original strands ──
+  \node[font=\bfseries\color{dogmablue}] at (-4.5, 7.2) {Step 1: Two DNA strands with restriction sites};
+
+  % Strand 1
+  \node[font=\footnotesize\bfseries] at (-4.5, 6.5) {Strand 1 (\emph{TaqI} site)};
+  \draw[very thick, dogmablue] (-7, 6) -- (7, 6);
+  \draw[very thick, dogmablue] (-7, 5.5) -- (7, 5.5);
+  \node[font=\scriptsize\ttfamily] at (-4, 6.25) {CCCCC};
+  % Recognition site highlighted
+  \fill[red!20, rounded corners=2pt] (-1.2, 5.35) rectangle (1.2, 6.15);
+  \node[font=\scriptsize\ttfamily\bfseries, text=dogmared] at (0, 6.25) {TCGA};
+  \node[font=\scriptsize\ttfamily\bfseries, text=dogmared] at (0, 5.75) {AGCT};
+  \node[font=\scriptsize\ttfamily] at (-4, 5.75) {GGGGG};
+  \node[font=\scriptsize\ttfamily] at (4, 6.25) {CCCCC};
+  \node[font=\scriptsize\ttfamily] at (4, 5.75) {GGGGG};
+  \node[font=\scriptsize, text=dogmared] at (0, 5.0) {\emph{TaqI} recognition: \texttt{T$\downarrow$CGA}};
+
+  % Strand 2
+  \node[font=\footnotesize\bfseries] at (-4.5, 4.0) {Strand 2 (\emph{SciNI} site)};
+  \draw[very thick, dogmateal] (-7, 3.5) -- (7, 3.5);
+  \draw[very thick, dogmateal] (-7, 3.0) -- (7, 3.0);
+  \node[font=\scriptsize\ttfamily] at (-4, 3.75) {AAAAA};
+  \fill[yellow!30, rounded corners=2pt] (-1.2, 2.85) rectangle (1.2, 3.65);
+  \node[font=\scriptsize\ttfamily\bfseries, text=dogmagold] at (0, 3.75) {GCGC};
+  \node[font=\scriptsize\ttfamily\bfseries, text=dogmagold] at (0, 3.25) {CGCG};
+  \node[font=\scriptsize\ttfamily] at (-4, 3.25) {TTTTT};
+  \node[font=\scriptsize\ttfamily] at (4, 3.75) {AAAAA};
+  \node[font=\scriptsize\ttfamily] at (4, 3.25) {TTTTT};
+  \node[font=\scriptsize, text=dogmagold] at (0, 2.5) {\emph{SciNI} recognition: \texttt{G$\downarrow$CGC}};
+
+  % ── Step 2: Cut ──
+  \draw[dashed, thick, gray] (-7, 1.8) -- (7, 1.8);
+  \node[font=\bfseries\color{dogmared}] at (-4.5, 1.4) {Step 2: Restriction enzymes cut at recognition sites};
+
+  % Strand 1 cut
+  \draw[very thick, dogmablue] (-7, 0.8) -- (-0.8, 0.8);
+  \draw[very thick, dogmablue] (0.8, 0.8) -- (7, 0.8);
+  \draw[very thick, dogmablue] (-7, 0.3) -- (-0.3, 0.3);
+  \draw[very thick, dogmablue] (0.3, 0.3) -- (7, 0.3);
+  % Sticky ends
+  \fill[red!15, rounded corners=1pt] (-0.8, 0.65) rectangle (0.3, 0.95);
+  \node[font=\tiny\ttfamily\bfseries, text=dogmared] at (-0.25, 0.8) {CG};
+  \fill[red!15, rounded corners=1pt] (-0.3, 0.15) rectangle (0.8, 0.45);
+  \node[font=\tiny\ttfamily\bfseries, text=dogmared] at (0.25, 0.3) {GC};
+  \node[font=\tiny, text=dogmared] at (-3.5, 0.0) {$\leftarrow$ Left fragment};
+  \node[font=\tiny, text=dogmared] at (3.5, 0.0) {Right fragment $\rightarrow$};
+  % Scissors icon
+  \node[font=\scriptsize] at (0, 1.15) {$\leftarrow\!\!\shortmid\!\!\rightarrow$};
+
+  % Strand 2 cut
+  \draw[very thick, dogmateal] (-7, -0.7) -- (-0.8, -0.7);
+  \draw[very thick, dogmateal] (0.8, -0.7) -- (7, -0.7);
+  \draw[very thick, dogmateal] (-7, -1.2) -- (-0.3, -1.2);
+  \draw[very thick, dogmateal] (0.3, -1.2) -- (7, -1.2);
+  \fill[yellow!25, rounded corners=1pt] (-0.8, -0.85) rectangle (0.3, -0.55);
+  \node[font=\tiny\ttfamily\bfseries, text=dogmagold] at (-0.25, -0.7) {CG};
+  \fill[yellow!25, rounded corners=1pt] (-0.3, -1.35) rectangle (0.8, -1.05);
+  \node[font=\tiny\ttfamily\bfseries, text=dogmagold] at (0.25, -1.2) {GC};
+  \node[font=\scriptsize] at (0, -0.35) {$\leftarrow\!\!\shortmid\!\!\rightarrow$};
+
+  % ── Step 3: Crosswise ligation ──
+  \draw[dashed, thick, gray] (-7, -1.8) -- (7, -1.8);
+  \node[font=\bfseries\color{dogmateal}] at (-4.5, -2.2) {Step 3: Sticky ends match $\to$ crosswise ligation};
+
+  % Arrows showing crosswise matching
+  \draw[-{Latex}, very thick, dogmared, dashed] (-0.25, -0.1) .. controls (-2, -1.0) .. (-0.25, -1.55);
+  \draw[-{Latex}, very thick, dogmagold, dashed] (0.25, -0.85) .. controls (2, 0.0) .. (0.25, 0.65);
+
+  % Recombinant 1
+  \node[font=\footnotesize\bfseries] at (-4.5, -3.0) {Recombinant 1};
+  \draw[very thick, dogmablue] (-7, -3.5) -- (-0.5, -3.5);
+  \draw[very thick, dogmateal] (-0.5, -3.5) -- (7, -3.5);
+  \draw[very thick, dogmablue] (-7, -4.0) -- (-0.5, -4.0);
+  \draw[very thick, dogmateal] (-0.5, -4.0) -- (7, -4.0);
+  \node[font=\tiny\ttfamily] at (-4, -3.25) {\textcolor{dogmablue}{CCCCC\,T}};
+  \node[font=\tiny\ttfamily] at (0.5, -3.25) {\textcolor{dogmateal}{CGC\,AAAAA}};
+  \node[font=\tiny\ttfamily] at (-4, -4.25) {\textcolor{dogmablue}{GGGGG\,AGC}};
+  \node[font=\tiny\ttfamily] at (0.5, -4.25) {\textcolor{dogmateal}{G\,TTTTT}};
+
+  % Recombinant 2
+  \node[font=\footnotesize\bfseries] at (-4.5, -4.8) {Recombinant 2};
+  \draw[very thick, dogmateal] (-7, -5.3) -- (-0.5, -5.3);
+  \draw[very thick, dogmablue] (-0.5, -5.3) -- (7, -5.3);
+  \draw[very thick, dogmateal] (-7, -5.8) -- (-0.5, -5.8);
+  \draw[very thick, dogmablue] (-0.5, -5.8) -- (7, -5.8);
+  \node[font=\tiny\ttfamily] at (-4, -5.05) {\textcolor{dogmateal}{AAAAA\,G}};
+  \node[font=\tiny\ttfamily] at (0.5, -5.05) {\textcolor{dogmablue}{CGA\,CCCCC}};
+  \node[font=\tiny\ttfamily] at (-4, -6.05) {\textcolor{dogmateal}{TTTTT\,CGC}};
+  \node[font=\tiny\ttfamily] at (0.5, -6.05) {\textcolor{dogmablue}{T\,GGGGG}};
+\end{tikzpicture}
+\caption{Step-by-step splicing: restriction enzymes cut two DNA strands at their recognition sites, producing sticky ends that recombine crosswise to form two new recombinant molecules.}
+\label{fig:splicing-tikz}
+\end{figure}
+
+\subsection{How Splicing Achieves Turing Completeness}
+
+To understand \emph{why} splicing is computationally powerful, we follow the argument of \citet{head1987}, refined by \citet{daleykari2002}.
+
+\begin{dogmadef}[Splicing System]
+A \emph{splicing system} is a triple $\sigma = (\Sigma, I, R)$ where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $\Sigma$ is a finite alphabet (e.g., $\{A, C, G, T\}$),
+  \item $I \subseteq \Sigma^*$ is a finite set of \emph{axiom} strings (initial DNA molecules),
+  \item $R$ is a finite set of \emph{splicing rules} of the form $r = (u_1, u_2; u_3, u_4)$.
+\end{itemize}
+A rule $r$ applies to strings $x = x_1 u_1 u_2 x_2$ and $y = y_1 u_3 u_4 y_2$, producing the recombinants $x_1 u_1 u_4 y_2$ and $y_1 u_3 u_2 x_2$. The \emph{language} $L(\sigma)$ is the set of all strings obtainable by iterated application of rules in $R$ to strings in $I$.
+\end{dogmadef}
+
+\paragraph{Concrete example: simulating a Turing machine transition.}
+Consider a Turing machine with states $\{q_0, q_1, q_H\}$, tape alphabet $\{0, 1, B\}$ (where $B$ is blank), and the transition rule $\delta(q_0, 1) = (q_1, 0, R)$ (in state $q_0$, reading $1$: write $0$, move right, go to $q_1$). We show how a single splicing step simulates this transition.
+
+\begin{example}[Simulating a Turing Machine Step with Splicing]
+\textbf{Step 1: Encode the tape configuration as a string.}
+The tape configuration ``$\ldots B\, 1\, \underline{1}\, 0\, B \ldots$'' with head on the underlined cell in state $q_0$ is encoded as:
+\[
+w = B\, 1\, q_0\, 1\, 0\, B
+\]
+The state symbol $q_0$ is inserted immediately \emph{before} the cell the head is reading.
+
+\textbf{Step 2: Define the splicing rule for this transition.}
+We use the axiom string (``helper oligo''):
+\[
+h = X\, q_1\, 0\, Y
+\]
+where $X$ and $Y$ are flanking markers. The splicing rule corresponding to $\delta(q_0, 1) = (q_1, 0, R)$ is:
+\[
+r = (q_0,\; 1;\; q_1,\; 0)
+\]
+
+\textbf{Step 3: Apply the splice.}
+We have $w = B\, 1\, \underbrace{q_0}_{\mathclap{u_1}} \underbrace{1}_{\mathclap{u_2}}\, 0\, B$ and $h = X\, \underbrace{q_1}_{\mathclap{u_3}} \underbrace{0}_{\mathclap{u_4}}\, Y$.
+
+Cutting $w$ between $q_0$ and $1$, and cutting $h$ between $q_1$ and $0$, then crosswise ligation gives:
+\[
+w' = B\, 1\, q_1\, 0\, Y \qquad \text{(new tape: head has moved right, wrote 0, now in } q_1 \text{)}
+\]
+
+The head is now before the cell containing $0$ (the old value at the next position) and the state is $q_1$. After trimming the marker $Y$, the result encodes the tape after one Turing machine step:
+\[
+B\, 1\, 0\, q_1\, 0\, B
+\]
+\end{example}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[every node/.style={font=\small}, scale=0.85]
+  % ── Turing machine tape ──
+  \node[font=\bfseries\color{dogmablue}] at (0, 5.5) {Turing Machine Tape Mapped to DNA String};
+
+  % Tape cells (before)
+  \foreach \i/\sym in {0/B, 1/1, 2/1, 3/0, 4/B} {
+    \node[draw, minimum size=0.9cm, fill=dogmalight] (t\i) at (\i*1.1 - 2.2, 4.3) {\texttt{\sym}};
+  }
+  % Head indicator
+  \draw[very thick, dogmared, -{Latex}] (2*1.1 - 2.2, 3.2) -- (2*1.1 - 2.2, 3.65);
+  \node[font=\footnotesize\bfseries, text=dogmared] at (2*1.1 - 2.2, 2.9) {$q_0$ (head)};
+  \node[font=\footnotesize] at (5, 4.3) {$\Longleftrightarrow$};
+
+  % DNA encoding
+  \node[draw, rounded corners, fill=dogmamint, minimum width=5.5cm, minimum height=0.8cm, align=center, text width=5cm] (dna) at (8.5, 4.3) {\texttt{B\,1\,\textcolor{dogmared}{$q_0$}\,1\,0\,B}};
+  \node[font=\footnotesize] at (8.5, 3.5) {State symbol inserted at head position};
+
+  % Arrow down
+  \draw[-{Latex}, very thick, dogmagold] (3, 2.2) -- (3, 1.2) node[midway, right, font=\footnotesize] {Splice with rule $r = (q_0, 1; q_1, 0)$};
+
+  % Tape cells (after)
+  \foreach \i/\sym in {0/B, 1/1, 2/0, 3/0, 4/B} {
+    \node[draw, minimum size=0.9cm, fill=dogmawarm] (a\i) at (\i*1.1 - 2.2, 0.3) {\texttt{\sym}};
+  }
+  \draw[very thick, dogmateal, -{Latex}] (3*1.1 - 2.2, -0.8) -- (3*1.1 - 2.2, -0.35);
+  \node[font=\footnotesize\bfseries, text=dogmateal] at (3*1.1 - 2.2, -1.1) {$q_1$ (head moved R)};
+  \node[font=\footnotesize] at (5, 0.3) {$\Longleftrightarrow$};
+
+  \node[draw, rounded corners, fill=dogmawarm, minimum width=5.5cm, minimum height=0.8cm, align=center, text width=5cm] (dna2) at (8.5, 0.3) {\texttt{B\,1\,0\,\textcolor{dogmateal}{$q_1$}\,0\,B}};
+  \node[font=\footnotesize] at (8.5, -0.5) {After splicing: wrote 0, moved right, state $q_1$};
+\end{tikzpicture}
+\caption{A Turing machine tape configuration encoded as a DNA string. One splicing step simulates one Turing machine transition: the state symbol moves, the tape cell is rewritten, and the head advances.}
+\label{fig:tm-to-dna}
+\end{figure}
+
+\paragraph{From single steps to Turing completeness.}
+Each Turing machine transition $\delta(q, a) = (q', b, D)$ corresponds to one splicing rule.  A Turing machine with $k$ transitions requires $k$ splicing rules and $k$ helper axiom strings.  Since every computation is a finite sequence of transitions, iterated splicing can simulate every computation that a Turing machine can perform.
+
+\citet{head1987} showed that with a \emph{finite} axiom set and \emph{finite} splicing rules, the generated language is always \emph{regular} (a relatively weak class).  However, \citet{daleykari2002} observed that when the axiom set is allowed to be a \emph{recursively enumerable language} (or when multisets with copy counts are used, reflecting the reality of molecular concentrations), splicing systems generate \emph{all recursively enumerable languages}---making them Turing complete.
+
+\begin{keyinsight}[Why Splicing is Turing Complete]
+The key to Turing completeness lies in the \emph{interaction} between splicing rules.  A single rule performs a simple cut-and-paste.  But when recombinant products from one rule become inputs to another rule, the system can chain together arbitrarily long computations.  This is analogous to how a Turing machine chains transition steps: each step is trivial, but the composition of steps produces universal computation.  In molecular terms, the test tube acts as a ``memory'' that accumulates intermediate results, and the enzyme-ligase cycles act as the ``clock'' that drives computation forward \citep{head1987, daleykari2002}.
+\end{keyinsight}
+
+\begin{keyinsight}[Splicing Systems Are Turing Complete]
+\citet{head1987} proved that finite splicing systems (finite axioms + finite rules) generate regular languages.  However, \citet{daleykari2002} note that splicing systems with \emph{multisets} (where each string has a copy count that changes during splicing) generate the \emph{entire class of computable languages}---making them Turing complete.  This is remarkable: the cut-and-paste chemistry of restriction enzymes, formalised appropriately, has the same computational power as any silicon computer.
+\end{keyinsight}
+
+\subsection{Rothemund's DNA Turing Machine (1996)}
+
+\citet{rothemund1996turing} proposed a direct implementation of a Turing machine using circular DNA and restriction enzymes.  The Turing tape is encoded as a circular single-stranded DNA molecule; the head position and state are encoded as the spacing between a restriction enzyme recognition site and the ``current symbol.''
+
+A single computation step consists of six biochemical operations:
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Cut} the circular DNA with two restriction enzymes (\emph{state} enzyme and \emph{invariant} enzyme), linearising the tape and exposing a sticky end unique to the current state + symbol.
+  \item \textbf{Ligate} the correct \emph{transition oligonucleotide} (one of four per rule, each encoding a new state, symbol, and head direction) to the unique sticky end.
+  \item \textbf{Remove} the protective cap from the other end of the transition oligo.
+  \item \textbf{Re-circularise} the tape by ligating the exposed ends.
+  \item \textbf{Excise} the old symbol using a symbol-excision enzyme.
+  \item \textbf{Re-circularise} again, leaving the tape in the new configuration.
+\end{enumerate}
+
+After each cycle, a small aliquot is amplified by \textbf{PCR} using a primer matching the \emph{Halt} state.  Only halted tapes are amplified, making detection straightforward.  This elegant model proves that restriction enzymes, ligase, and PCR---three workhorse techniques of molecular biology---are sufficient for universal computation.
+
+\subsection{Surface-Based DNA Computing}
+
+\citet{liu2000surface} demonstrated a practical alternative where DNA strands are affixed to a \emph{gold surface} rather than floating freely in solution.  The encoding uses single bases for bits: \texttt{A} and \texttt{C} for $0$, \texttt{G} and \texttt{T} for $1$.
+
+The computation uses a simple set of operations:
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Mark$(i,b)$:} Hybridise a complementary strand to all surface strands where bit $i$ has value $b$ (single $\to$ double stranded).
+  \item \textbf{Destroy-marked / Destroy-unmarked:} Wash with exonucleases that selectively digest either double-stranded or single-stranded DNA.
+  \item \textbf{Unmark:} Apply distilled water (low salinity denatures the marking strand).
+  \item \textbf{Test-if-empty:} Remove remaining DNA, amplify with \textbf{PCR}, check for product.
+\end{itemize}
+
+Using these operations, \citet{liu2000surface} solved a 4-variable, 4-clause 3-SAT instance.  The approach was later scaled to a 20-variable SAT problem---the largest DNA computation of its era.
+
+\begin{bioinsight}[PCR as a Computational Amplifier]
+Polymerase Chain Reaction (PCR) appears in nearly every DNA computing protocol---not as a gate, but as a \emph{readout amplifier}.  Just as a sense amplifier in DRAM converts a tiny charge difference into a digital 1 or 0, PCR exponentially amplifies the molecular ``answer'' ($2^n$ copies after $n$ cycles) so it can be detected by gel electrophoresis or fluorescence.  DOGMA abstracts this idea as the \emph{Express} stage: amplifying selected features for downstream readout.
+\end{bioinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Whiplash PCR: Hairpin-Based State Machines}
+\label{sec:whiplash-pcr}
+
+All the models above are \emph{multi-strand}: the computation happens between distinct DNA molecules.  \emph{Whiplash PCR} \citep{sakamoto2000} takes a radically different approach: a \emph{single} DNA strand acts as both the program \emph{and} the data.
+
+\subsection{The Hairpin State Machine}
+
+The state machine is encoded in a single-stranded DNA molecule.  The 3$'$ end of the molecule represents the \emph{current state}.  The body of the strand contains the transition table, encoded as a series of subsequences in the format:
+
+\begin{center}
+\texttt{[stop]--[new\_state]--[old\_state]}
+\end{center}
+
+Because the molecule is single-stranded, the 3$'$ tail (current state) will attempt to fold back and hybridise with a complementary \texttt{old\_state} subsequence within the same molecule, forming a \emph{hairpin} structure:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[every node/.style={font=\small}, scale=0.85]
+  % Linear strand
+  \draw[very thick, dogmablue] (-5, 2) -- (5, 2);
+  \node[above, font=\footnotesize] at (-3.5, 2.1) {\texttt{stop$_1$|new$_1$|old$_1$}};
+  \node[above, font=\footnotesize] at (0, 2.1) {\texttt{stop$_2$|new$_2$|old$_2$}};
+  \node[above, font=\footnotesize] at (3.5, 2.1) {\texttt{stop$_3$|new$_3$|old$_3$}};
+  \node[left, font=\footnotesize\bfseries] at (-5.2, 2) {5'};
+  \node[right, font=\footnotesize\bfseries] at (5.2, 2) {3'};
+
+  % Hairpin fold-back
+  \draw[very thick, dogmared, -{Latex}] (5, 2) .. controls (5.5, 0) and (1, -0.5) .. (0.5, 1.7);
+  \node[font=\footnotesize, text=dogmared, right] at (4, 0.5) {3' tail folds back};
+  \node[font=\scriptsize, fill=yellow!20, rounded corners, inner sep=2pt, align=center] at (0.5, 0.5) {Hairpin forms when\\3' matches \texttt{old$_2$}};
+
+  % DNA polymerase arrow
+  \draw[-{Latex}, very thick, dogmateal, dashed] (0.5, -0.5) -- (-2, -0.5) node[midway, below, font=\footnotesize] {Polymerase extends $\to$ new state};
+\end{tikzpicture}
+\caption{Whiplash PCR: a single DNA strand folds into a hairpin when the 3$'$ tail (current state) recognises a complementary transition entry.  DNA polymerase extends the tail, copying the new-state sequence and advancing the computation.}
+\label{fig:whiplash-pcr}
+\end{figure}
+
+\subsection{Computation Cycle}
+
+Each ``clock cycle'' of the Whiplash PCR machine consists of three thermal steps:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Anneal} ($\sim$55$^\circ$ C): The 3$'$ tail folds back, scanning the strand for a complementary \texttt{old\_state} subsequence.  When found, a hairpin forms.
+  \item \textbf{Extend} ($\sim$72$^\circ$ C): DNA polymerase extends the 3$'$ end, copying the \texttt{new\_state} sequence.  A \texttt{stop} signal (e.g., a non-standard base or a hairpin in the template) halts extension.
+  \item \textbf{Denature} ($\sim$95$^\circ$ C): Heat melts the hairpin, releasing the 3$'$ tail---which now encodes the \emph{new state}.
+\end{enumerate}
+
+After one thermal cycle, the state has transitioned from \texttt{old\_state} to \texttt{new\_state}.  By running $n$ cycles in a standard PCR thermocycler, the machine executes $n$ state transitions.
+
+\begin{keyinsight}[Massive Parallelism in a Single Pot]
+Whiplash PCR is \emph{autonomous}: each molecule independently executes its own state machine.  If $10^{12}$ copies of the same program strand are present in a 10\,\textmu L tube, all $10^{12}$ machines execute in parallel.  Moreover, different program strands can coexist in the same tube, implementing distinct computations simultaneously---a molecular form of MIMD (Multiple Instruction, Multiple Data) computing.
+\end{keyinsight}
+
+\begin{implnote}[Whiplash PCR and DOGMA's Synthesise Stage]
+DOGMA's Synthesise stage (Chapter~\ref{ch:dogma-architecture}) mirrors the Whiplash PCR principle.  The model maintains an internal ``state'' (hidden vector) that is iteratively updated by scanning learned transition rules (weight matrices).  Each forward-pass step is analogous to one thermal cycle: the current state ``folds back'' to find the best-matching rule, which then extends the state to produce the next hidden representation.
+\end{implnote}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{DNA Nanotechnology and Structural Computing}
+\label{sec:dna-nanotech}
+
+Beyond logic circuits, DNA can serve as a structural material for building nanoscale architectures.
+
+\subsection{DNA Origami}
+
+\citet{rothemund2006} demonstrated \emph{DNA origami}: a long single-stranded ``scaffold'' strand ($\sim$7000 nucleotides, typically from the M13 bacteriophage genome) is folded into a target shape by $\sim$200 short ``staple'' strands ($\sim$32 nt each). Each staple binds to specific non-contiguous regions of the scaffold, physically pulling those regions together.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[every node/.style={font=\small}, scale=0.85]
+  % Scaffold
+  \draw[thick, dogmablue, decorate, decoration={snake, amplitude=1mm, segment length=3mm}] (-4, 1) -- (4, 1);
+  \node[above, font=\footnotesize, dogmablue] at (0, 1.3) {Long scaffold strand ($\sim$7000 nt)};
+
+  % Staples
+  \foreach \x in {-3, -1.5, 0, 1.5, 3} {
+    \draw[thick, dogmared] (\x-0.4, 0.7) -- (\x-0.4, 0.3) -- (\x+0.4, 0.3) -- (\x+0.4, 0.7);
+  }
+  \node[below, font=\footnotesize, dogmared] at (0, 0.1) {Short staple strands ($\sim$32 nt each)};
+
+  % Arrow to folded
+  \draw[-{Latex}, very thick, dogmagold] (0, -0.3) -- (0, -1.2) node[midway, right] {\footnotesize self-assembly};
+
+  % Folded shape
+  \draw[thick, fill=dogmalight, rounded corners] (-2, -2.5) -- (-1, -1.5) -- (0, -2.5) -- (1, -1.5) -- (2, -2.5) -- (2, -3.5) -- (-2, -3.5) -- cycle;
+  \node[font=\footnotesize] at (0, -3) {Target 2D shape};
+\end{tikzpicture}
+\caption{DNA origami: staple strands fold a long scaffold into a prescribed 2D shape.}
+\label{fig:dna-origami}
+\end{figure}
+
+DNA origami demonstrates that \emph{structure can be programmed through sequence}: a designer specifies the desired geometry, and a compiler computes the staple sequences needed to fold the scaffold into that shape.
+
+\subsection{Tile Self-Assembly and Turing Completeness}
+
+\citet{winfree1998} showed that DNA tiles---small DNA structures with programmable sticky ends---can self-assemble into two-dimensional crystals that implement computational patterns.
+
+\begin{definition}[Wang Tile System]
+A \emph{Wang tile system} consists of a finite set of tile types $T$, each with four labeled edges (north, south, east, west). Tiles are placed on the integer lattice $\mathbb{Z}^2$ such that adjacent edges must carry the same label. A tile system is \emph{computationally universal} if it can simulate any Turing machine through its growth pattern.
+\end{definition}
+
+Winfree showed that DNA tiles physically instantiate Wang tiles, proving that \emph{self-assembly can compute}. The growth pattern of a DNA crystal can encode the execution trace of a Turing machine.
+
+This principle---\emph{local interactions producing global computation}---reappears in DOGMA's TetraMemory (Chapter~\ref{ch:tetradata}), where local tetrahedral interactions propagate information without global attention.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Chemical Reaction Networks: Turing-Complete Chemistry}
+\label{sec:crn}
+
+\subsection{Formal Definition}
+
+Chemical Reaction Networks (CRNs) provide a mathematical abstraction that captures the computational essence of molecular systems.
+
+\begin{definition}[Chemical Reaction Network]
+\label{def:crn-ch2}
+A \emph{Chemical Reaction Network} (CRN) is a pair $(\mathcal{S}, \mathcal{R})$ where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $\mathcal{S} = \{S_1, S_2, \ldots, S_n\}$ is a finite set of \emph{species}.
+  \item $\mathcal{R} = \{R_1, R_2, \ldots, R_m\}$ is a finite set of \emph{reactions}, each of the form:
+  \begin{equation}
+  \alpha_1 S_1 + \alpha_2 S_2 + \cdots \xrightarrow{k} \beta_1 S_1 + \beta_2 S_2 + \cdots
+  \end{equation}
+  where $\alpha_i, \beta_i \in \mathbb{N}_0$ are stoichiometric coefficients and $k > 0$ is the rate constant.
+\end{itemize}
+\end{definition}
+
+Under \emph{mass-action kinetics}, the rate of each reaction is proportional to the product of reactant concentrations:
+\begin{equation}
+\label{eq:mass-action-ch2}
+v_j = k_j \prod_{i : \alpha_{ij} > 0} [S_i]^{\alpha_{ij}}
+\end{equation}
+
+\subsection{Computing with CRNs: Step-by-Step Examples}
+
+\paragraph{Addition:} The reaction $A + B \xrightarrow{k} C$ computes $[C] = [A]_0 + [B]_0$ when the reaction goes to completion (assuming $[C]_0 = 0$ and $A$, $B$ are not consumed elsewhere).
+
+Actually, proper CRN addition uses \emph{catalytic reactions}:
+\begin{align}
+A &\xrightarrow{k} A + C \quad \text{(A produces C without being consumed)} \\
+B &\xrightarrow{k} B + C \quad \text{(B produces C without being consumed)}
+\end{align}
+After time $t$, $[C](t) \approx k \cdot t \cdot ([A]_0 + [B]_0)$. By calibrating time, this computes addition.
+
+\paragraph{Multiplication:} The catalytic reaction system:
+\begin{equation}
+A + B \xrightarrow{k} A + B + C
+\end{equation}
+produces $C$ at a rate proportional to $[A] \cdot [B]$. At equilibrium, $[C] \propto [A]_0 \cdot [B]_0$, computing multiplication.
+
+\paragraph{Max (comparison):} A ``winner-take-all'' annihilation reaction:
+\begin{equation}
+A + B \xrightarrow{k} \emptyset
+\end{equation}
+When $[A]_0 > [B]_0$, species $B$ is completely consumed and $[A]$ remains at $[A]_0 - [B]_0 > 0$. When $[B]_0 > [A]_0$, species $A$ is consumed. The surviving species indicates which initial concentration was larger.
+
+\begin{example}[CRN Toggle Switch (Memory)]
+A bistable toggle switch remembers a binary state using two mutually repressing species:
+\begin{align}
+A + B &\xrightarrow{k_1} A \quad \text{($A$ consumes $B$)} \\
+B + A &\xrightarrow{k_2} B \quad \text{($B$ consumes $A$)}
+\end{align}
+The system settles into one of two stable states: high $[A]$/low $[B]$ (storing ``1'') or low $[A]$/high $[B]$ (storing ``0''). External signals can flip the state, implementing molecular memory \citep{gardner2000}.
+\end{example}
+
+\subsection{Turing Completeness of CRNs}
+
+\begin{theorem}[CRN Turing Completeness \citep{soloveichik2010}]
+For any Turing machine $M$, there exists a CRN $(\mathcal{S}, \mathcal{R})$ that simulates $M$ with arbitrarily high probability. The CRN can be made \emph{rate-independent}: the final output depends only on initial species concentrations and the reaction graph, not on the specific rate constants.
+\end{theorem}
+
+This result is profound: \emph{chemistry itself is computationally universal}. Any computation that a silicon chip can perform, a properly designed set of molecular reactions can also perform (though much more slowly).
+
+\subsection{Deterministic vs.\ Stochastic Semantics}
+
+CRNs can be analyzed under two semantics:
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Deterministic:} Species concentrations evolve as continuous quantities governed by ordinary differential equations (Equation~\ref{eq:mass-action-ch2}). Accurate for large molecule counts ($> 10^3$).
+  \item \textbf{Stochastic:} Individual molecular events are modeled as a continuous-time Markov chain via the Chemical Master Equation. Accurate for small molecule counts, where individual reaction events matter.
+\end{enumerate}
+
+\begin{keyinsight}[Why CRNs Matter for DOGMA]
+DOGMA uses CRNs as neural network layers (Chapter~\ref{ch:dogma-supreme}, Paper VI). The key insight is that mass-action kinetics (Equation~\ref{eq:mass-action-ch2}) is \emph{differentiable}---we can compute gradients through it. By parameterizing the rate constants $k_j$ and learning them via backpropagation, DOGMA turns chemistry into a trainable computation. The reactions encode the \emph{structure} of computation; the rate constants encode the \emph{learned parameters}.
+\end{keyinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{DNA Neural Networks}
+\label{sec:dna-neural-networks}
+
+\citet{cherry2018} achieved a landmark result: a DNA-based neural network that performs pattern recognition entirely in molecular form.
+
+\subsection{Architecture}
+
+The network classifies handwritten digits using three layers:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Input layer:} Each pixel of a simplified $10 \times 10$ binary image is encoded as the concentration of a specific DNA species. A ``bright'' pixel has high concentration; a ``dark'' pixel has zero concentration.
+  \item \textbf{Weight layer:} Each weight $w_{ij}$ connecting input $i$ to output $j$ is encoded as the concentration of a gate strand. The gate strand releases output species $j$ when triggered by input species $i$, with the amount released proportional to $w_{ij}$.
+  \item \textbf{Winner-take-all (WTA) layer:} Output species compete through mutual annihilation reactions. The species with the highest weighted sum survives, representing the network's classification.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[every node/.style={font=\small}, scale=0.8]
+  % Input pixels
+  \foreach \i in {0,...,4} {
+    \node[draw, circle, fill=blue!15, minimum size=0.5cm, inner sep=0] (p\i) at (\i*0.7 - 1.4, 3) {\tiny $x_\i$};
+  }
+  \node[font=\footnotesize] at (3, 3) {$\cdots$};
+  \node[below=0.1cm, font=\footnotesize\bfseries, text=dogmablue] at (0.7, 2.5) {Input pixels (DNA concentrations)};
+
+  % Weight gates
+  \foreach \j in {0,...,3} {
+    \node[draw, rounded corners, fill=yellow!15, minimum width=0.8cm, minimum height=0.6cm] (w\j) at (\j*1.2 - 0.6, 1) {\tiny $w_\j$};
+  }
+  \node[below=0.1cm, font=\footnotesize\bfseries, text=dogmagold] at (1.2, 0.3) {Weighted gate strands};
+
+  % Draw connections
+  \foreach \i in {0,...,4} {
+    \foreach \j in {0,...,3} {
+      \draw[thin, gray!40] (p\i) -- (w\j);
+    }
+  }
+
+  % WTA layer
+  \node[draw, rounded corners, fill=red!10, minimum width=4cm, minimum height=0.7cm] (wta) at (1.2, -1) {Winner-Take-All (annihilation)};
+  \foreach \j in {0,...,3} {
+    \draw[-{Latex}, thin] (w\j) -- (wta);
+  }
+
+  % Output
+  \node[draw, rounded corners, fill=green!15, minimum width=2cm] (out) at (1.2, -2.5) {Classification};
+  \draw[-{Latex}, thick, dogmateal] (wta) -- (out);
+\end{tikzpicture}
+\caption{Architecture of a DNA neural network for pattern classification.}
+\label{fig:dna-neural-net}
+\end{figure}
+
+\subsection{How the Winner-Take-All Works}
+
+The WTA mechanism is particularly elegant. Suppose we have three output species $Y_1, Y_2, Y_3$ representing three possible digits:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item After the weight layer, concentrations might be: $[Y_1] = 80$~nM, $[Y_2] = 40$~nM, $[Y_3] = 20$~nM.
+  \item Annihilation reactions run: $Y_1 + Y_2 \to \text{waste}$, $Y_1 + Y_3 \to \text{waste}$, $Y_2 + Y_3 \to \text{waste}$.
+  \item Because $[Y_1]$ is highest, it survives the competition. After all reactions complete: $[Y_1] = 20$~nM, $[Y_2] = 0$, $[Y_3] = 0$.
+  \item A reporter fluorescent strand bound to $Y_1$ glows green $\to$ the digit is classified as ``1''.
+\end{enumerate}
+
+\begin{implnote}[WTA in DOGMA]
+DOGMA's Regulation Gate implements a differentiable analogue of WTA. Competing expression and suppression signals determine which genomic regions are ``expressed'' (active) and which are ``silenced''. The competitive dynamics are captured by softmax: $\text{softmax}(\mathbf{z})_i = e^{z_i} / \sum_j e^{z_j}$, which is the continuous-valued generalization of WTA.
+\end{implnote}
+
+\subsection{Significance for DOGMA}
+
+The Cherry--Qian DNA neural network demonstrates three principles central to DOGMA:
+
+\begin{enumerate}[leftmargin=1.8em]
+  \item \textbf{Computation through molecular interaction.} Strand displacement implements weighted summation and competitive selection---the core operations of neural networks---without any silicon.
+
+  \item \textbf{Thermodynamic binding as attention.} The specificity of strand displacement (controlled by toehold sequence and length) is functionally equivalent to attention scores in transformers. Strong toeholds produce high attention; weak toeholds produce low attention.
+
+  \item \textbf{Winner-take-all as selection.} The competitive annihilation mechanism is analogous to softmax followed by argmax.
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Molecular Programming Languages}
+\label{sec:mol-programming}
+
+As DNA computing matured, researchers developed software tools that abstract away molecular details.
+
+\subsection{Visual DSD}
+
+The DNA Strand Displacement (DSD) language provides a domain-specific programming language for specifying strand displacement circuits \citep{zhang2011}. A DSD program describes species, domains, and reactions; a compiler translates this into specific DNA sequences and predicts system dynamics through simulation.
+
+\subsection{NUPACK}
+
+NUPACK (Nucleic Acid Package) performs thermodynamic analysis of nucleic acid systems \citep{zadeh2011nupack}:
+\begin{itemize}[leftmargin=1.8em]
+  \item Minimum free energy (MFE) secondary structures
+  \item Partition functions and base-pairing probabilities
+  \item Equilibrium concentrations of multi-strand complexes
+  \item Sequence design to achieve target structures
+\end{itemize}
+
+\subsection{The Compiler Analogy}
+
+The molecular programming toolchain follows the same architecture as a software compiler:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.95\textwidth}{L{3.5cm} L{3.5cm} Y}
+\toprule
+\textbf{Software Compiler} & \textbf{Molecular Compiler} & \textbf{DOGMA Analogue} \\
+\midrule
+High-level language & Circuit specification (DSD) & Prompt bundle \\
+Intermediate repr. & Domain-level design & Genomic sequence \\
+Assembly & Nucleotide sequences & Codon opcodes \\
+Machine code & Synthesized DNA & Compiled execution plan \\
+Hardware execution & Wet-lab experiment & Neural forward pass \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+DOGMA's CodonForge compiler (Chapter~\ref{ch:codonforge}) follows this architecture explicitly.
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{From Molecules to Silicon: The DOGMA Bridge}
+\label{sec:dogma-bridge}
+
+This chapter has established that DNA can implement logic gates, arithmetic circuits, neural networks, and Turing-complete computation. The following table summarizes how each molecular computing primitive maps to a DOGMA component:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.18}
+\begin{tabularx}{0.98\textwidth}{L{3.2cm} L{3.5cm} Y}
+\toprule
+\textbf{DNA Primitive} & \textbf{Molecular Mechanism} & \textbf{DOGMA Component} \\
+\midrule
+Watson-Crick pairing & Complementary base binding & Thermodynamic attention scores \\
+Toehold binding & Kinetically-controlled initiation & Learned attention weights \\
+Strand displacement & Signal transduction cascade & Strand Displacement path \\
+Branch migration & Random walk replacement & Feature propagation \\
+AND gate & Sequential displacement & Multiplicative gating \\
+OR gate & Parallel displacement & Additive pooling \\
+NOT gate & Threshold + annihilation & Regulation gate suppression \\
+CRN computation & Mass-action ODEs & CRN neural layers \\
+Winner-take-all & Competitive annihilation & Softmax selection \\
+Self-assembly & Local tile rules & TetraMemory propagation \\
+Codon translation & 64 $\to$ 21 mapping & CodonForge opcode table \\
+Gene regulation & Promoter/enhancer control & Epigenetic memory \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{keyinsight}[The DOGMA Thesis]
+DOGMA does not simulate DNA computing on silicon. It \emph{abstracts} the computational principles of molecular systems---massive parallelism, thermodynamic binding, competitive selection, self-organized structure---and reimplements them using linear algebra, differentiable programming, and gradient-based optimization. The \emph{architecture} is biological; the \emph{substrate} is silicon.
+\end{keyinsight}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{The State of the Art and Open Challenges}
+\label{sec:dna-computing-sota}
+
+As of 2026, DNA computing has achieved:
+\begin{itemize}[leftmargin=1.8em]
+  \item Circuits with hundreds of distinct molecular species
+  \item Neural network inference on molecular substrates \citep{cherry2018}
+  \item Programmable molecular robots that walk on DNA origami surfaces
+  \item In vivo computation inside living cells (using CRISPR-based logic)
+  \item DNA data storage with random access at the petabyte scale
+\end{itemize}
+
+Fundamental challenges remain:
+\begin{itemize}[leftmargin=1.8em]
+  \item \textbf{Speed:} DNA reactions operate on timescales of minutes to hours, vs.\ nanoseconds for silicon.
+  \item \textbf{Error rates:} Molecular interactions have inherent stochasticity.
+  \item \textbf{Scalability:} Crosstalk between strands increases with circuit complexity.
+  \item \textbf{Readout:} Extracting results from molecular mixtures remains slow and expensive.
+\end{itemize}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Exercises}
+\label{sec:ch2-exercises}
+
+\begin{enumerate}[label=\textbf{2.\arabic*.}, leftmargin=2.5em]
+
+\item \textbf{[Truth Table]} Complete the truth table for a 3-input majority gate (output is 1 when at least 2 of 3 inputs are 1). Express the output as a Boolean formula using AND and OR. How many DNA strand displacement gates would you need?
+
+\item \textbf{[Design]} Design (on paper) a DNA strand displacement AND gate. Specify the sequences for two input strands, a gate complex, and the expected output strand. Explain how the gate fails if only one input is present.
+
+\item \textbf{[Arithmetic]} Using the half adder and full adder circuits described in this chapter, trace the computation of $7 + 5 = 12$ in binary ($0111 + 0101 = 1100$). Show the sum and carry at each bit position.
+
+\item \textbf{[Analysis]} In Adleman's 1994 experiment, how many distinct path encodings existed for his 7-vertex graph? Estimate the mass of DNA needed if the experiment were scaled to 20 vertices.
+
+\item \textbf{[CRN Programming]} Design a CRN that computes the minimum of two concentrations: given initial concentrations $[A]_0$ and $[B]_0$, produce an output species $C$ with $[C] = \min([A]_0, [B]_0)$. \textit{Hint:} Use mutual annihilation followed by catalytic production.
+
+\item \textbf{[Theory]} Prove that a CRN consisting of the reactions $A + B \to C$ and $C \to A + B$ implements a reversible binary counter for species $C$ (in the deterministic regime).
+
+\item \textbf{[Coding]} Implement a simple CRN simulator in Python that takes a set of reactions and initial concentrations, and integrates the mass-action ODEs using Euler's method. Test it on a toggle switch circuit with two mutually repressing species.
+
+\item \textbf{[Conceptual]} Compare the ``winner-take-all'' mechanism in Cherry and Qian's DNA neural network with the softmax function in transformers. What are the key similarities and differences?
+
+\item \textbf{[Research]} Read \citet{qian2011seesaw}. How does the seesaw gate architecture achieve modularity? Why is modularity important for scaling molecular circuits?
+
+\item \textbf{[Challenge]} Design a DNA circuit that computes the XOR of \emph{three} inputs ($A \oplus B \oplus C$). Provide the complete truth table and sketch the gate-level architecture.
+
+\item \textbf{[Splicing]} Given the two double-stranded DNA molecules \texttt{5'-AAAGAATTCBBB-3'} and \texttt{5'-CCCGAATTCDDD-3'}, and the restriction enzyme \emph{EcoRI} (recognition site \texttt{G$\downarrow$AATTC}), write out all four fragments produced by cutting, then show the two recombinant molecules produced by crosswise ligation.  Which parts of the original strands are now combined?
+
+\item \textbf{[Whiplash PCR]} Design a Whiplash PCR program strand that implements a 3-state counter (states $q_0 \to q_1 \to q_2 \to q_0$).  Write out the transition table segments (\texttt{stop--new--old}) and sketch the hairpin that forms when the 3$'$ tail is in state $q_1$.  How many thermal cycles are needed to return to $q_0$?
+
+\end{enumerate}
+
+% ───────────────────────────────────────────────────────────────────────────────
+\section{Key Takeaways}
+
+\keytakeaway{
+\begin{itemize}[leftmargin=1.5em]
+  \item DNA computing began with Adleman's 1994 Hamiltonian path experiment, demonstrating massive molecular parallelism with $10^{18}$ simultaneous computations.
+  \item DNA logic gates (AND, OR, NOT, NAND, XOR) are implemented using real DNA sequences with toehold-mediated strand displacement; each gate uses specific nucleotide strands with 6--8\,nt toeholds controlling reaction kinetics.
+  \item From logic gates, DNA can build complete arithmetic circuits: half adders, full adders, and multi-bit ripple-carry adders capable of binary addition, subtraction, and comparison.
+  \item Strand displacement is the key computational primitive: toehold length provides exponential kinetic control (analogous to clock speed in silicon).
+  \item Restriction enzymes provide programmable molecular scissors: splicing systems (Head, 1987) formalise the cut-and-paste recombination of real enzyme sites (TaqI, EcoRI, SciNI) into a Turing-complete computational model.
+  \item Whiplash PCR enables autonomous single-molecule state machines: each DNA strand encodes both program and data, executing transitions through hairpin formation and polymerase extension in a standard thermocycler.
+  \item Chemical Reaction Networks (CRNs) are provably Turing complete, establishing molecular computation as fundamentally universal.
+  \item DNA neural networks demonstrate that thermodynamic binding can implement attention-like weighted computation with winner-take-all classification.
+  \item DOGMA reimplements these biological computational principles on silicon, mapping each molecular mechanism to a differentiable neural component.
+\end{itemize}
+}
+
+\section*{Suggested Reading}
+\begin{itemize}[leftmargin=1.5em]
+  \item \citet{adleman1994}: The founding paper of DNA computing.
+  \item \citet{daleykari2002}: Comprehensive survey of DNA computing models and implementations (splicing systems, Whiplash PCR, surface-based computing, equality machines).
+  \item \citet{zhang2011}: Comprehensive review of strand displacement.
+  \item \citet{soloveichik2010}: CRN Turing completeness proof.
+  \item \citet{cherry2018}: DNA-based neural networks.
+  \item \citet{qian2011seesaw}: Seesaw gates and the 4-bit square root circuit.
+  \item \citet{head1987}: The original formal model of splicing systems.
+  \item \citet{seeman2003}: DNA nanotechnology foundations.
+  \item \citet{rothemund2006}: DNA origami.
+  \item \citet{sakamoto2000}: Whiplash PCR and hairpin-based molecular computation.
+\end{itemize}
