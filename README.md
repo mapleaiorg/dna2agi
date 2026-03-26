@@ -10,6 +10,9 @@ The book explores biological computation, genomic intelligence, and the DOGMA (D
 - **Version:** v1.1
 - **Date:** March 2026
 - **Author:** Wenyan Qin
+- **Pages:** 541
+- **Chapters:** 19 (across 6 parts)
+- **Companion papers:** 7 (the DOGMA Series)
 - **Primary output:** [`FromDNAtoAGI.pdf`](./FromDNAtoAGI.pdf)
 
 ## Book Structure
@@ -30,7 +33,8 @@ The manuscript is organized into six parts:
 |-- main.tex                 # Master document
 |-- dogma-book.sty           # Shared textbook style package
 |-- references.bib           # Bibliography database
-|-- chapters/                # Main chapter sources
+|-- chapters/                # Main chapter sources (19 chapters)
+|-- papers/                  # DOGMA research paper series (7 PDFs)
 |-- appendices/              # Appendix sources
 `-- FromDNAtoAGI.pdf         # Compiled release PDF
 ```
@@ -89,6 +93,20 @@ makeindex main
 pdflatex main.tex
 pdflatex main.tex
 ```
+
+## The DOGMA Paper Series
+
+The textbook is accompanied by seven research papers in the [`papers/`](papers/) directory:
+
+| # | Paper | Focus |
+|---|-------|-------|
+| I | **A Genomic Architecture of Intelligence** | The flagship paper. TetraMemory, Genomic Embedding, DNA Strand Attention, four-path DNA Computing Block, Epigenetic Memory. Three independent Turing-completeness proofs. 224.7M params, test PPL 47.7. |
+| II | **HelixSim: DNA Algebraic Neural Simulation** | Formal equivalence between genomic computation and neural networks via SDANS. Constructive simulation proofs for feed-forward, convolutional, and recurrent architectures. |
+| III | **TetraMesh: Linked-Tetrahedron Spatial Representation** | Unified 3D-to-sequence encoding via linked tetrahedra. Converts point clouds, meshes, proteins, and molecules into DNA base sequences. Universal approximation theorem. |
+| IV | **Thermodynamic Attention** | Attention weights derived from SantaLucia nearest-neighbor DNA binding free energies. Every weight is physically interpretable (kcal/mol). Lipschitz continuity and universality proofs. |
+| V | **Epigenetic Transformers** | Persistent cross-block memory via epigenetic marks (O(TM)) and sparse non-local communication via allosteric regulation (O(Tk)). |
+| VI | **CRN Neural Layers** | Chemical Reaction Network layers as differentiable neural components. Mass-action kinetics, Boolean seesaw gates, stochastic majority computing as trainable PyTorch modules. |
+| VII | **DOGMA at Scale** | Training methodology, scaling laws, and empirical results. Benchmark comparisons with GPT-2 and TinyLlama, FLOPs-normalized evaluation, multimodal pipeline via TetraMesh. |
 
 ## Notes for Contributors
 
