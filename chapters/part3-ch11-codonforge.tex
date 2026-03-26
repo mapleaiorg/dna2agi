@@ -76,15 +76,15 @@ Let us walk through translation in detail, as each step has a computational anal
   \node[box, fill=dogmawarm, right=1.5cm of ribosome] (trna) {tRNA + \\Amino Acid};
   \node[box, fill=white, draw=dogmared, right=1.5cm of trna] (protein) {Protein};
 
-  \draw[arrow, color=dogmablue] (mrna) -- node[above, font=\scriptsize] {read codon} (ribosome);
-  \draw[arrow, color=dogmateal] (ribosome) -- node[above, font=\scriptsize] {match anticodon} (trna);
-  \draw[arrow, color=dogmagold] (trna) -- node[above, font=\scriptsize] {add amino acid} (protein);
+  \draw[arrow, color=dogmablue] (mrna) -- node[above=5mm, font=\scriptsize] {read codon} (ribosome);
+  \draw[arrow, color=dogmateal] (ribosome) -- node[above=5mm, font=\scriptsize] {match anticodon} (trna);
+  \draw[arrow, color=dogmagold] (trna) -- node[above=5mm, font=\scriptsize] {add amino acid} (protein);
 
   % Analogies below
-  \node[below=0.6cm of mrna, font=\scriptsize\itshape, text=dogmagray] {(CodonForge program)};
-  \node[below=0.6cm of ribosome, font=\scriptsize\itshape, text=dogmagray] {(Interpreter)};
-  \node[below=0.6cm of trna, font=\scriptsize\itshape, text=dogmagray] {(Opcode dispatch)};
-  \node[below=0.6cm of protein, font=\scriptsize\itshape, text=dogmagray] {(Output)};
+  \node[below=4mm of mrna, font=\scriptsize\itshape, text=dogmagray] {(CodonForge program)};
+  \node[below=4mm of ribosome, font=\scriptsize\itshape, text=dogmagray] {(Interpreter)};
+  \node[below=4mm of trna, font=\scriptsize\itshape, text=dogmagray] {(Opcode dispatch)};
+  \node[below=4mm of protein, font=\scriptsize\itshape, text=dogmagray] {(Output)};
 \end{tikzpicture}
 \caption{Biological translation and its CodonForge analogy. The ribosome reads mRNA codons sequentially, just as CodonForge's interpreter reads codon opcodes.}
 \label{fig:bio-translation}
@@ -1192,10 +1192,10 @@ CodonForge and SDANS do not exist in isolation; they are critical components of 
   % Arrows
   \draw[arrow] (prompt) -- node[above, font=\scriptsize] {parse} (codon);
   \draw[arrow] (codon) -- node[above, font=\scriptsize] {DNA seqs} (helix);
-  \draw[arrow] (codon) -- node[right, font=\scriptsize] {SDANS compile} (supreme);
+  \draw[arrow] ([xshift=-5mm]codon.south) -- node[left, font=\scriptsize] {SDANS compile} ([xshift=-5mm]supreme.north);
   \draw[arrow] (tera) -- node[above, font=\scriptsize] {eval} (supreme);
   \draw[arrow] (tetra) -- node[above, font=\scriptsize] {data} (supreme);
-  \draw[arrow, dashed] (supreme) -- node[right, font=\scriptsize, text=dogmagray] {feedback} (codon);
+  \draw[arrow, dashed] ([xshift=5mm]supreme.north) -- node[right, font=\scriptsize, text=dogmagray] {feedback} ([xshift=5mm]codon.south);
 \end{tikzpicture}
 \caption{CodonForge's position in the DOGMA architecture. It receives PromptBundles and produces both DNA sequences (for HelixHash) and neural architectures (for DOGMA-Supreme via SDANS).}
 \label{fig:dogma-pipeline-codonforge}

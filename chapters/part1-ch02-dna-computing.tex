@@ -74,7 +74,7 @@ Each edge $(v_i, v_j)$ is encoded as a 20-nucleotide oligo whose \emph{first hal
   \node[above=0.15cm of vA, font=\footnotesize\bfseries] {Vertex $A$};
   % Edge oligo
   \node[draw, rounded corners, fill=yellow!20, minimum width=4cm, minimum height=0.7cm] (edge) at (0, 0) {\texttt{AGGCCTTAGC|AATGCCTAGTT}};
-  \node[below=0.15cm of edge, font=\footnotesize\bfseries\color{dogmagold}] {Edge $A \to B$ (complement bridge)};
+  \node[below left=0.15cm and -3.0cm of edge, font=\footnotesize\bfseries\color{dogmagold}] {Edge $A \to B$ (complement bridge)};
   % Vertex B
   \node[draw, rounded corners, fill=blue!10, minimum width=4cm, minimum height=0.7cm] (vB) at (0, -1.5) {\texttt{TTACGGATCA|AGCCTTAGAC}};
   \node[below=0.15cm of vB, font=\footnotesize\bfseries] {Vertex $B$};
@@ -117,19 +117,19 @@ Adleman then used three biochemical techniques to extract the correct answer:
   % Vertex sequences (split into two halves)
   \node[draw, rounded corners, minimum width=3.5cm, minimum height=0.55cm, fill=red!10, align=center, text width=3.3cm, font=\tiny\ttfamily] (vA) at (2, 4.5)
     {GCTAGCAATT|CCGGAATCGA};
-  \node[font=\tiny, left] at (0, 4.5) {$A$:};
+  \node[font=\tiny, left] at (-0.6, 4.5) {$A$:};
 
   \node[draw, rounded corners, minimum width=3.5cm, minimum height=0.55cm, fill=blue!10, align=center, text width=3.3cm, font=\tiny\ttfamily] (vB) at (2, 3.8)
     {TTACGGATCA|AGCCTTAGAC};
-  \node[font=\tiny, left] at (0, 3.8) {$B$:};
+  \node[font=\tiny, left] at (-0.6, 3.8) {$B$:};
 
   \node[draw, rounded corners, minimum width=3.5cm, minimum height=0.55cm, fill=green!10, align=center, text width=3.3cm, font=\tiny\ttfamily] (vC) at (2, 3.1)
     {CGGAATCCGT|TAAGGCCATA};
-  \node[font=\tiny, left] at (0, 3.1) {$C$:};
+  \node[font=\tiny, left] at (-0.6, 3.1) {$C$:};
 
   \node[draw, rounded corners, minimum width=3.5cm, minimum height=0.55cm, fill=orange!10, align=center, text width=3.3cm, font=\tiny\ttfamily] (vD) at (2, 2.4)
     {AAGCTTGATC|CGGAATTACG};
-  \node[font=\tiny, left] at (0, 2.4) {$D$:};
+  \node[font=\tiny, left] at (-0.6, 2.4) {$D$:};
 
   \node[font=\tiny, align=center, text width=3cm] at (2, 1.7) {$|$ marks the midpoint\\(10 nt $+$ 10 nt)};
 
@@ -138,11 +138,11 @@ Adleman then used three biochemical techniques to extract the correct answer:
   \node[font=\bfseries\color{dogmagold}] at (-1.5, 0.3) {Edge $A \to B$: bridge oligo};
 
   % Show how edge bridges
-  \node[draw, rounded corners, fill=red!10, minimum width=2cm, minimum height=0.5cm, font=\tiny\ttfamily] (a3) at (-4.5, -0.4) {CCGGAATCGA};
-  \node[font=\tiny] at (-4.5, -0.9) {3$'$ half of $A$};
+  \node[draw, rounded corners, fill=red!10, minimum width=2cm, minimum height=0.5cm, font=\tiny\ttfamily] (a3) at (-5.5, -0.4) {CCGGAATCGA};
+  \node[font=\tiny] at (-5.5, -0.9) {3$'$ half of $A$};
 
-  \node[draw, rounded corners, fill=yellow!15, minimum width=4cm, minimum height=0.5cm, align=center, text width=3.8cm, font=\tiny\ttfamily] (edge) at (0, -0.4) {GGCCTTAGC\,AATGCCTAGTT};
-  \node[font=\tiny, text=dogmagold] at (0, -0.9) {Edge oligo (complement bridge)};
+  \node[draw, rounded corners, fill=yellow!15, minimum width=4cm, minimum height=0.5cm, align=center, text width=3.8cm, font=\tiny\ttfamily] (edge) at (-0.5, -0.4) {GGCCTTAGC\,AATGCCTAGTT};
+  \node[font=\tiny, text=dogmagold] at (-0.5, -0.9) {Edge oligo (complement bridge)};
 
   \node[draw, rounded corners, fill=blue!10, minimum width=2cm, minimum height=0.5cm, font=\tiny\ttfamily] (b5) at (4.5, -0.4) {TTACGGATCA};
   \node[font=\tiny] at (4.5, -0.9) {5$'$ half of $B$};
@@ -237,8 +237,8 @@ The AND gate is implemented using \emph{two sequential strand displacement react
 \centering
 \begin{tikzpicture}[every node/.style={font=\small}, scale=0.85]
   % Gate 1
-  \node[draw, rounded corners, fill=red!10, minimum width=2.5cm, minimum height=0.8cm] (g1) at (-3, 2) {Gate 1};
-  \node[draw, rounded corners, fill=blue!10, minimum width=1.5cm, minimum height=0.6cm] (inA) at (-3, 3.5) {Input $A$};
+  \node[draw, rounded corners, fill=red!10, minimum width=2.5cm, minimum height=0.8cm] (g1) at (-4.5, 2) {Gate 1};
+  \node[draw, rounded corners, fill=blue!10, minimum width=1.5cm, minimum height=0.6cm] (inA) at (-4.5, 3.5) {Input $A$};
   \draw[-{Latex}, thick] (inA) -- (g1) node[midway, right, font=\scriptsize] {displaces};
 
   % Intermediate
@@ -246,17 +246,17 @@ The AND gate is implemented using \emph{two sequential strand displacement react
   \draw[-{Latex}, thick, dogmagold] (g1) -- (inter) node[midway, above, font=\scriptsize] {releases};
 
   % Gate 2
-  \node[draw, rounded corners, fill=red!10, minimum width=2.5cm, minimum height=0.8cm] (g2) at (3, 2) {Gate 2};
-  \node[draw, rounded corners, fill=blue!10, minimum width=1.5cm, minimum height=0.6cm] (inB) at (3, 3.5) {Input $B$};
+  \node[draw, rounded corners, fill=red!10, minimum width=2.5cm, minimum height=0.8cm] (g2) at (4, 2) {Gate 2};
+  \node[draw, rounded corners, fill=blue!10, minimum width=1.5cm, minimum height=0.6cm] (inB) at (4, 3.5) {Input $B$};
   \draw[-{Latex}, thick] (inB) -- (g2) node[midway, right, font=\scriptsize] {displaces};
   \draw[-{Latex}, thick, dogmagold] (inter) -- (g2);
 
   % Output
-  \node[draw, rounded corners, fill=green!15, minimum width=2cm, minimum height=0.6cm] (out) at (3, 0.5) {Output $O$};
+  \node[draw, rounded corners, fill=green!15, minimum width=2cm, minimum height=0.6cm] (out) at (4, 0.5) {Output $O$};
   \draw[-{Latex}, thick, dogmateal] (g2) -- (out) node[midway, right, font=\scriptsize] {releases};
 
   % Labels
-  \node[font=\footnotesize, text width=6cm, align=center] at (0, -0.5) {\textbf{AND gate:} Output $O$ is only released when both $A$ and $B$ are present.\\Both displacement reactions must complete.};
+  \node[font=\footnotesize, text width=10cm, align=center] at (0, -1.5) {\textbf{AND gate:} Output $O$ is only released when both $A$ and $B$ are present.\\Both displacement reactions must complete.};
 \end{tikzpicture}
 \caption{DNA AND gate using two sequential strand displacement reactions.}
 \label{fig:dna-and-gate}
@@ -626,24 +626,24 @@ When branch migration reaches the end of the gate, the output strand is complete
 \centering
 \begin{tikzpicture}[every node/.style={font=\small}, scale=0.9]
   % Phase 1
-  \node[font=\bfseries\color{dogmablue}] at (-5, 3.5) {Phase 1: Toehold Binding};
-  \node[draw, rounded corners, fill=dogmalight, minimum width=4cm, minimum height=0.7cm] (gate1) at (-3.5, 2.5) {Gate strand};
-  \node[draw, rounded corners, fill=dogmamint, minimum width=3cm, minimum height=0.7cm] (out1) at (-3, 1.6) {Output strand};
-  \node[draw, rounded corners, fill=dogmawarm, minimum width=0.8cm, minimum height=0.7cm] (toe1) at (-5.8, 2.5) {\tiny Toe};
-  \node[draw, rounded corners, fill=white, minimum width=1cm, minimum height=0.5cm] (inp1) at (-5.8, 1.3) {\tiny Input};
+  \node[font=\bfseries\color{dogmablue}] at (-6, 3.5) {Phase 1: Toehold Binding};
+  \node[draw, rounded corners, fill=dogmalight, minimum width=4.5cm, minimum height=0.7cm] (gate1) at (-5.2, 2.5) {Gate strand};
+  \node[draw, rounded corners, fill=dogmamint, minimum width=3cm, minimum height=0.7cm] (out1) at (-4.4, 1.6) {Output strand};
+  \node[draw, rounded corners, fill=dogmawarm, minimum width=0.8cm, minimum height=0.7cm] (toe1) at (-8.0, 2.5) {\tiny Toe};
+  \node[draw, rounded corners, fill=white, minimum width=1cm, minimum height=0.5cm] (inp1) at (-8.0, 1.3) {\tiny Input};
   \draw[-{Latex}, dashed, thick] (inp1) -- (toe1);
 
   % Phase 2
-  \node[font=\bfseries\color{dogmagold}] at (0.5, 3.5) {Phase 2: Branch Migration};
-  \node[draw, rounded corners, fill=dogmalight, minimum width=4cm, minimum height=0.7cm] (gate2) at (2, 2.5) {Gate strand};
-  \node[draw, rounded corners, fill=dogmamint, minimum width=1.5cm, minimum height=0.7cm] (out2) at (3.5, 1.6) {\tiny Output};
-  \node[draw, rounded corners, fill=white, minimum width=2.5cm, minimum height=0.7cm] (inp2) at (0.8, 1.6) {Input (migrating)};
-  \draw[<->, thick, dogmagold] (1.8, 1.2) -- (3.0, 1.2) node[midway, below, font=\scriptsize] {random walk};
+  \node[font=\bfseries\color{dogmagold}] at (1.5, 3.5) {Phase 2: Branch Migration};
+  \node[draw, rounded corners, fill=dogmalight, minimum width=4.5cm, minimum height=0.7cm] (gate2) at (2, 2.5) {Gate strand};
+  \node[draw, rounded corners, fill=dogmamint, minimum width=1.3cm, minimum height=0.7cm] (out2) at (3.8, 1.6) {\tiny Output};
+  \node[draw, rounded corners, fill=white, minimum width=2.5cm, minimum height=0.7cm] (inp2) at (1.2, 1.6) {Input (migrating)};
+  \draw[<->, thick, dogmagold] (2.3, 1.2) -- (3.5, 1.2) node[midway, below, font=\scriptsize] {random walk};
 
   % Phase 3
   \node[font=\bfseries\color{dogmateal}] at (-3, -0.3) {Phase 3: Output Release};
-  \node[draw, rounded corners, fill=dogmalight, minimum width=4cm, minimum height=0.7cm] (gate3) at (-2, -1.3) {Gate strand};
-  \node[draw, rounded corners, fill=white, minimum width=4cm, minimum height=0.7cm] (inp3) at (-2, -2.2) {Input strand (fully bound)};
+  \node[draw, rounded corners, fill=dogmalight, minimum width=4.5cm, minimum height=0.7cm] (gate3) at (-2.6, -1.3) {Gate strand};
+  \node[draw, rounded corners, fill=white, minimum width=4.5cm, minimum height=0.7cm] (inp3) at (-2.6, -2.2) {Input strand (fully bound)};
   \node[draw, rounded corners, fill=dogmamint, minimum width=2.5cm, minimum height=0.7cm] (out3) at (3.5, -1.8) {Output (free!)};
   \draw[-{Latex}, thick, dogmateal] (0.5, -1.8) -- (out3);
 \end{tikzpicture}

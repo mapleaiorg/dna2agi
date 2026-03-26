@@ -229,6 +229,208 @@ A \emph{genomic region} $R = (\Gamma[i:j], \mu)$ is a contiguous subsequence of 
 \end{center}
 \end{definition}
 
+% ═══════════════════════════════════════════════════════════════════════════════
+\subsection{Genomic Embedding: From Raw Bytes to the 4-Tuple Base Representation}
+\label{sec:genomic-embedding}
+
+Before DOGMA can operate on input data, raw bytes must be converted into genomic bases. This section provides a step-by-step account of the \emph{Genomic Embedding} process---the transformation that maps each input byte to the structured 4-tuple $b_i = (\sigma_i, \tau_i, \rho_i, \omega_i)$.
+
+\subsubsection{Step 1: Byte-to-Base Mapping}
+
+Every input byte has a value in $\{0, 1, \ldots, 255\}$. DOGMA maps each byte value to one of the four bases $\{\mathsf{A}, \mathsf{C}, \mathsf{G}, \mathsf{T}\}$ using modular arithmetic:
+\begin{equation}
+\tau(v) = \begin{cases}
+\mathsf{A} & \text{if } v \bmod 4 = 0, \\
+\mathsf{C} & \text{if } v \bmod 4 = 1, \\
+\mathsf{G} & \text{if } v \bmod 4 = 2, \\
+\mathsf{T} & \text{if } v \bmod 4 = 3.
+\end{cases}
+\label{eq:byte-to-base}
+\end{equation}
+
+Table~\ref{tab:byte-base-mapping} shows this mapping for representative ASCII values.
+
+\begin{table}[H]
+\centering
+\caption{Byte-to-base mapping for selected ASCII values. The base type is determined by $v \bmod 4$.}
+\label{tab:byte-base-mapping}
+\renewcommand{\arraystretch}{1.1}
+\footnotesize
+\begin{tabular}{cccc|cccc}
+\toprule
+\textbf{Char} & \textbf{ASCII} & $v \bmod 4$ & \textbf{Base} & \textbf{Char} & \textbf{ASCII} & $v \bmod 4$ & \textbf{Base} \\
+\midrule
+NUL & 0   & 0 & A & H & 72  & 0 & A \\
+SOH & 1   & 1 & C & e & 101 & 1 & C \\
+STX & 2   & 2 & G & l & 108 & 0 & A \\
+ETX & 3   & 3 & T & l & 108 & 0 & A \\
+SP  & 32  & 0 & A & o & 111 & 3 & T \\
+A   & 65  & 1 & C & t & 116 & 0 & A \\
+a   & 97  & 1 & C & w & 119 & 3 & T \\
+0   & 48  & 0 & A & ! & 33  & 1 & C \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{implnote}[Why Modular Arithmetic?]
+The choice of $v \bmod 4$ ensures a balanced distribution of base types across all possible byte values: exactly 64 byte values map to each base type. This balance prevents pathological inputs from starving any of the four computational roles. Alternative mappings (e.g., based on bit patterns or frequency-optimal codes \citep{church2012}) are possible but sacrifice simplicity without measurable benefit in practice.
+\end{implnote}
+
+\subsubsection{Step 2: Strand Identity $\sigma_i$ --- The Base Embedding}
+
+The strand identity $\sigma_i \in \mathbb{R}^d$ is the primary informational payload of each base. It is computed in two stages:
+
+\paragraph{(a) Type-specific learned embedding.} Each base type $\tau \in \{\mathsf{A}, \mathsf{C}, \mathsf{G}, \mathsf{T}\}$ has an associated embedding matrix $\mathbf{E}_\tau \in \mathbb{R}^{256 \times d}$. The byte value $v_i$ indexes into the embedding matrix for its assigned type:
+\begin{equation}
+\sigma_i^{(\text{raw})} = \mathbf{E}_{\tau_i}[v_i] \in \mathbb{R}^d.
+\label{eq:sigma-raw}
+\end{equation}
+
+Having four separate embedding tables (one per type) means that even if two bytes map to the same base type, their embeddings can differ based on the actual byte value. The embedding dimension $d$ is structured: the first $d/4$ dimensions encode type-specific features, while the remaining $3d/4$ encode content.
+
+\paragraph{(b) Positional enrichment.} The raw embedding is enriched with positional information from the backbone position $\rho_i$ (described below) via addition:
+\begin{equation}
+\sigma_i = \sigma_i^{(\text{raw})} + \rho_i.
+\label{eq:sigma-final}
+\end{equation}
+
+This is analogous to how transformer embeddings add token and positional embeddings, but with a key difference: $\rho_i$ is not sinusoidal---it encodes backbone geometry.
+
+\subsubsection{Step 3: Base Type $\tau_i$ --- Learned Embedding Lookup}
+
+The base type $\tau_i \in \{\mathsf{A}, \mathsf{C}, \mathsf{G}, \mathsf{T}\}$ is determined by the byte-to-base mapping (Equation~\ref{eq:byte-to-base}). Beyond its discrete role in routing computation, $\tau_i$ also contributes a learned type embedding $\mathbf{t}_{\tau_i} \in \mathbb{R}^{d_\tau}$ that is concatenated into downstream representations:
+\begin{equation}
+\mathbf{t}_{\tau_i} = \mathbf{E}_{\text{type}}[\tau_i], \quad \mathbf{E}_{\text{type}} \in \mathbb{R}^{4 \times d_\tau}.
+\label{eq:type-embedding}
+\end{equation}
+
+The type embedding serves two purposes: (1) it provides a continuous representation of the discrete type tag for use in differentiable operations, and (2) it allows the model to learn type-specific biases that evolve during training. The type embedding dimension $d_\tau$ is typically $d/4$, matching the type-specific partition of the base embedding.
+
+\subsubsection{Step 4: Backbone Position $\rho_i$ --- Replacing Sinusoidal Encoding}
+
+In a standard transformer, positional information is injected via sinusoidal functions of the position index \citep{vaswani2017}:
+\begin{equation}
+\text{PE}(i, 2j) = \sin\!\left(\frac{i}{10000^{2j/d}}\right), \quad \text{PE}(i, 2j+1) = \cos\!\left(\frac{i}{10000^{2j/d}}\right).
+\label{eq:sinusoidal-pe}
+\end{equation}
+
+DOGMA replaces this with \emph{backbone position encoding}, inspired by the sugar-phosphate backbone of DNA. The backbone position $\rho_i \in \mathbb{R}^d$ encodes both absolute position and local structural context:
+\begin{equation}
+\rho_i = \mathbf{W}_{\text{pos}} \cdot \phi(i) + \mathbf{W}_{\text{local}} \cdot \psi(\tau_{i-1}, \tau_i, \tau_{i+1}),
+\label{eq:backbone-position}
+\end{equation}
+where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $\phi(i) \in \mathbb{R}^{d_p}$ is a learned absolute position embedding (similar to learned positional embeddings in GPT-2 \citep{radford2019}, but extended to support arbitrary lengths via interpolation).
+  \item $\psi(\tau_{i-1}, \tau_i, \tau_{i+1}) \in \mathbb{R}^{d_l}$ is a learned \emph{trinucleotide context embedding} that encodes the local type pattern. There are $4^3 = 64$ possible trinucleotide contexts, each with its own learned embedding.
+  \item $\mathbf{W}_{\text{pos}} \in \mathbb{R}^{d \times d_p}$ and $\mathbf{W}_{\text{local}} \in \mathbb{R}^{d \times d_l}$ are learned projection matrices.
+\end{itemize}
+
+\begin{keyinsight}[Why Backbone Position Beats Sinusoidal Encoding]
+Sinusoidal positional encodings treat positions as points on a number line. Backbone position encodings treat positions as nucleotides in a polymer chain, where local context (the neighboring bases) affects the geometry. This means that the ``position'' of a base depends not only on \emph{where} it is but also on \emph{what surrounds it}---just as in real DNA, where the backbone geometry depends on the stacking interactions between adjacent bases.
+\end{keyinsight}
+
+\subsubsection{Step 5: Complementarity Weight $\omega_i$ --- Watson-Crick Pairing}
+
+The weight $\omega_i \in \mathbb{R}_{\ge 0}$ controls how strongly each base contributes to downstream computation. At initialization, $\omega_i$ is derived from Watson-Crick base-pairing statistics:
+\begin{equation}
+\omega_i^{(0)} = \frac{1}{|N(i)|} \sum_{j \in N(i)} \mathbb{1}\!\left[\tau_j = \overline{\tau_i}\right],
+\label{eq:omega-init}
+\end{equation}
+where $N(i)$ is a local window of positions around $i$, $\overline{\tau_i}$ is the Watson-Crick complement of $\tau_i$ (Equation~\ref{eq:complement}), and $\mathbb{1}[\cdot]$ is the indicator function. This initial weight is high when a base has many complementary partners nearby (suggesting it participates in double-stranded structure) and low when it is isolated.
+
+During the forward pass, $\omega_i$ is modulated by the Regulation Gate (Stage 3), which can amplify or suppress individual bases based on context.
+
+\begin{bioinsight}[Watson-Crick Complementarity]
+In molecular biology, the specificity of DNA replication and transcription depends on Watson-Crick base pairing: A pairs with T (via two hydrogen bonds), and C pairs with G (via three hydrogen bonds). The stronger C-G pairing provides greater thermal stability. DOGMA's complementarity weight mirrors this: bases involved in strong pairing interactions receive higher initial weights, biasing the network toward utilizing structurally important positions \citep{watson1953}.
+\end{bioinsight}
+
+\subsubsection{Complete Worked Example: Encoding ``Hello''}
+
+Let us trace the complete genomic embedding for the ASCII string ``Hello'' with embedding dimension $d = 8$. The five characters have byte values:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{cccccc}
+\toprule
+\textbf{Position} & \textbf{Char} & \textbf{ASCII} & $v \bmod 4$ & \textbf{Base Type $\tau_i$} & \textbf{Complement $\overline{\tau_i}$} \\
+\midrule
+1 & H & 72  & 0 & A & T \\
+2 & e & 101 & 1 & C & G \\
+3 & l & 108 & 0 & A & T \\
+4 & l & 108 & 0 & A & T \\
+5 & o & 111 & 3 & T & A \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Step A: Base type assignment.} Applying Equation~\ref{eq:byte-to-base}:
+\[
+\tau_1 = \mathsf{A}, \quad \tau_2 = \mathsf{C}, \quad \tau_3 = \mathsf{A}, \quad \tau_4 = \mathsf{A}, \quad \tau_5 = \mathsf{T}.
+\]
+
+The genomic sequence spells out the base string: \texttt{A-C-A-A-T}.
+
+\paragraph{Step B: Raw embeddings $\sigma^{(\text{raw})}$.} Each byte value indexes into its type-specific embedding table. Using $d = 8$, suppose the (randomly initialized, pre-training) embeddings are:
+\begin{align*}
+\sigma_1^{(\text{raw})} &= \mathbf{E}_{\mathsf{A}}[72] = (+0.12,\; -0.34,\; +0.56,\; +0.78,\; -0.23,\; +0.45,\; -0.67,\; +0.11), \\
+\sigma_2^{(\text{raw})} &= \mathbf{E}_{\mathsf{C}}[101] = (-0.41,\; +0.22,\; +0.63,\; -0.18,\; +0.55,\; -0.31,\; +0.42,\; -0.09), \\
+\sigma_3^{(\text{raw})} &= \mathbf{E}_{\mathsf{A}}[108] = (+0.33,\; +0.15,\; -0.28,\; +0.61,\; +0.14,\; -0.52,\; +0.39,\; +0.27), \\
+\sigma_4^{(\text{raw})} &= \mathbf{E}_{\mathsf{A}}[108] = (+0.33,\; +0.15,\; -0.28,\; +0.61,\; +0.14,\; -0.52,\; +0.39,\; +0.27), \\
+\sigma_5^{(\text{raw})} &= \mathbf{E}_{\mathsf{T}}[111] = (-0.55,\; +0.47,\; +0.19,\; -0.36,\; +0.72,\; +0.08,\; -0.44,\; +0.61).
+\end{align*}
+Note that positions 3 and 4 (both ``l'', ASCII 108, type A) receive \emph{identical} raw embeddings---they will be distinguished by their backbone positions.
+
+\paragraph{Step C: Backbone positions $\rho_i$.} The backbone position combines absolute position and trinucleotide context. For position $i=3$, the trinucleotide context is $(\tau_2, \tau_3, \tau_4) = (\mathsf{C}, \mathsf{A}, \mathsf{A})$, while for position $i=4$, it is $(\tau_3, \tau_4, \tau_5) = (\mathsf{A}, \mathsf{A}, \mathsf{T})$. These different contexts produce different local embeddings:
+\begin{align*}
+\rho_3 &= \mathbf{W}_{\text{pos}} \cdot \phi(3) + \mathbf{W}_{\text{local}} \cdot \psi(\mathsf{C}, \mathsf{A}, \mathsf{A}) \\
+       &= (+0.05,\; +0.11,\; -0.08,\; +0.03,\; +0.15,\; -0.02,\; +0.07,\; -0.13), \\
+\rho_4 &= \mathbf{W}_{\text{pos}} \cdot \phi(4) + \mathbf{W}_{\text{local}} \cdot \psi(\mathsf{A}, \mathsf{A}, \mathsf{T}) \\
+       &= (+0.09,\; -0.06,\; +0.12,\; -0.04,\; +0.18,\; +0.10,\; -0.05,\; +0.03).
+\end{align*}
+
+\paragraph{Step D: Final embeddings $\sigma_i$.} Adding backbone positions to raw embeddings (Equation~\ref{eq:sigma-final}):
+\begin{align*}
+\sigma_3 &= \sigma_3^{(\text{raw})} + \rho_3 = (+0.38,\; +0.26,\; -0.36,\; +0.64,\; +0.29,\; -0.54,\; +0.46,\; +0.14), \\
+\sigma_4 &= \sigma_4^{(\text{raw})} + \rho_4 = (+0.42,\; +0.09,\; -0.16,\; +0.57,\; +0.32,\; -0.42,\; +0.34,\; +0.30).
+\end{align*}
+The two ``l'' characters now have \emph{different} embeddings due to their different backbone positions, even though they share the same raw embedding.
+
+\paragraph{Step E: Complementarity weights $\omega_i$.} Using a window of size 3 centered at each position:
+\begin{align*}
+\omega_1 &: N(1) = \{2, 3\}. \;\text{Complements of A are T. Neither C nor A is T.} \;\Rightarrow\; \omega_1 = 0/2 = 0.0. \\
+\omega_2 &: N(2) = \{1, 3\}. \;\text{Complements of C are G. Neither A nor A is G.} \;\Rightarrow\; \omega_2 = 0/2 = 0.0. \\
+\omega_3 &: N(3) = \{2, 4\}. \;\text{Complements of A are T. Neither C nor A is T.} \;\Rightarrow\; \omega_3 = 0/2 = 0.0. \\
+\omega_4 &: N(4) = \{3, 5\}. \;\text{Complements of A are T. Position 5 is T!} \;\Rightarrow\; \omega_4 = 1/2 = 0.5. \\
+\omega_5 &: N(5) = \{4\}. \;\text{Complements of T are A. Position 4 is A!} \;\Rightarrow\; \omega_5 = 1/1 = 1.0.
+\end{align*}
+
+Position 4 has moderate weight ($\omega_4 = 0.5$) because one of its two neighbors is complementary, while position 5 has full weight ($\omega_5 = 1.0$) because its only neighbor is complementary. Positions 1--3 have zero initial weight---they lack nearby complementary partners.
+
+\paragraph{Step F: Final 4-tuple representation.} The complete genomic bases for ``Hello'' are:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\footnotesize
+\begin{tabularx}{\textwidth}{C{1cm} L{6cm} C{1.2cm} C{1.5cm}}
+\toprule
+\textbf{$i$} & \textbf{$\sigma_i$ (8-dim embedding)} & \textbf{$\tau_i$} & \textbf{$\omega_i$} \\
+\midrule
+1 & $(+0.17,\; -0.23,\; +0.48,\; +0.81,\; -0.08,\; +0.43,\; -0.60,\; +0.18)$ & A & 0.0 \\
+2 & $(-0.36,\; +0.28,\; +0.55,\; -0.14,\; +0.62,\; -0.27,\; +0.48,\; -0.03)$ & C & 0.0 \\
+3 & $(+0.38,\; +0.26,\; -0.36,\; +0.64,\; +0.29,\; -0.54,\; +0.46,\; +0.14)$ & A & 0.0 \\
+4 & $(+0.42,\; +0.09,\; -0.16,\; +0.57,\; +0.32,\; -0.42,\; +0.34,\; +0.30)$ & A & 0.5 \\
+5 & $(-0.48,\; +0.53,\; +0.25,\; -0.30,\; +0.80,\; +0.14,\; -0.38,\; +0.67)$ & T & 1.0 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The compatibility vector $\rho_i$ (in its role as the $[0,1]^c$ inter-base interaction affinity) is computed later during the pipeline; at embedding time, $\rho_i$ serves as the backbone position vector that enriches $\sigma_i$.
+
+\begin{keyinsight}[Genomic Embedding vs.\ Token Embedding]
+A standard transformer embedding maps each token to a single learned vector. DOGMA's genomic embedding produces a \emph{structured} 4-tuple: the embedding $\sigma_i$ carries content, the type $\tau_i$ assigns functional role, the backbone $\rho_i$ encodes position with local context awareness, and the weight $\omega_i$ provides an initial importance signal from complementarity structure. This richer representation allows downstream stages to exploit structure that would be invisible to a standard embedding.
+\end{keyinsight}
+
 % ───────────────────────────────────────────────────────────────────────────────
 \section{The Six-Stage Pipeline: Overview}
 \label{sec:six-stages}
@@ -274,7 +476,7 @@ This yields $\binom{4}{2} = 6$ directed interaction edges per tetrahedron.
 \begin{tikzpicture}[
   vertex/.style={circle, draw, thick, fill=dogmalight, minimum size=8mm, font=\small\bfseries},
   edge/.style={thick, dogmablue},
-  face/.style={fill=dogmamint, fill opacity=0.3},
+  face/.style={fill=dogmamint, fill opacity=0.9},
   arrow/.style={-{Latex[length=2.5mm]}, thick},
 ]
   % First tetrahedron
@@ -289,7 +491,7 @@ This yields $\binom{4}{2} = 6$ directed interaction edges per tetrahedron.
     % Faces (back)
     \fill[face] (A) -- (B) -- (D) -- cycle;
     \fill[face] (A) -- (C) -- (D) -- cycle;
-    \fill[dogmawarm, fill opacity=0.3] (B) -- (C) -- (D) -- cycle;
+    \fill[dogmawarm, fill opacity=0.9] (B) -- (C) -- (D) -- cycle;
 
     % Edges (6 edges for K4)
     \draw[edge] (A) -- (B);
@@ -306,13 +508,13 @@ This yields $\binom{4}{2} = 6$ directed interaction edges per tetrahedron.
     \node[vertex, fill=dogmawarm] at (D) {$x_4$};
 
     % Label
-    \node[font=\footnotesize, text=dogmagray] at (0, -1) {6 edges = $\binom{4}{2}$};
+    \node[font=\small, text=dogmagray] at (0, -1) {6 edges = $\binom{4}{2}$};
   \end{scope}
 
   % Arrow between tetrahedra
   \draw[arrow, dogmared, very thick, decorate, decoration={snake, amplitude=1.5mm, segment length=5mm}]
-    (-0.5, 0.8) -- (1.5, 0.8);
-  \node[font=\footnotesize, color=dogmared] at (0.5, 1.4) {face sharing};
+    (-1.0, 0.8) -- (2.0, 0.8);
+  \node[font=\small, color=dogmared] at (0.5, 1.4) {face sharing};
 
   % Second tetrahedron
   \begin{scope}[shift={(5,0)}]
@@ -324,7 +526,7 @@ This yields $\binom{4}{2} = 6$ directed interaction edges per tetrahedron.
 
     \fill[face] (A2) -- (B2) -- (D2) -- cycle;
     \fill[face] (A2) -- (C2) -- (D2) -- cycle;
-    \fill[dogmawarm, fill opacity=0.3] (B2) -- (C2) -- (D2) -- cycle;
+    \fill[dogmawarm, fill opacity=0.9] (B2) -- (C2) -- (D2) -- cycle;
 
     \draw[edge] (A2) -- (B2);
     \draw[edge] (A2) -- (C2);
@@ -338,7 +540,7 @@ This yields $\binom{4}{2} = 6$ directed interaction edges per tetrahedron.
     \node[vertex] at (C2) {$x_6$};
     \node[vertex] at (D2) {$x_7$};
 
-    \node[font=\footnotesize, text=dogmagray] at (0, -1) {6 edges = $\binom{4}{2}$};
+    \node[font=\small, text=dogmagray] at (0, -1) {6 edges = $\binom{4}{2}$};
   \end{scope}
 \end{tikzpicture}
 \caption{Two adjacent tetrahedra in TetraMemory. Each tetrahedron forms a $K_4$ complete graph with 6 pairwise interactions. Adjacent tetrahedra share a face (3 vertices, shown in gold), enabling information propagation along the sequence without global attention.}
@@ -460,10 +662,10 @@ A remarkable property of the DNA Computing Block is that three of its four paths
   \draw[arrow, dogmablue] (input.south) -| (ds.north);
 
   % Arrows to gate
-  \draw[arrow, dogmateal] (sd.south) -- ++(0,-0.7) -| (gate.north -| -3,0);
-  \draw[arrow, dogmateal] (ps.south) -- ++(0,-1.0) -| (gate.north -| -1,0);
-  \draw[arrow, dogmateal] (sc.south) -- ++(0,-1.0) -| (gate.north -| 1,0);
-  \draw[arrow, dogmateal] (ds.south) -- ++(0,-0.7) -| (gate.north -| 3,0);
+  \draw[arrow, dogmateal] (sd.south) -- ++(0,-0.7) -- (gate.north -| -3,0);
+  \draw[arrow, dogmateal] (ps.south) -- ++(0,-1.0) -- (gate.north -| -1,0);
+  \draw[arrow, dogmateal] (sc.south) -- ++(0,-1.0) -- (gate.north -| 1,0);
+  \draw[arrow, dogmateal] (ds.south) -- ++(0,-0.7) -- (gate.north -| 3,0);
 
   % Arrow to output
   \draw[arrow, dogmared, very thick] (gate.south) -- (output.north);
@@ -587,9 +789,9 @@ where $\sigma$ is the sigmoid function, $\mathbf{W}_e, \mathbf{W}_s \in \mathbb{
   gate/.style={draw, circle, minimum size=7mm, fill=dogmawarm, font=\footnotesize},
 ]
   % Input h
-  \node[block, fill=dogmalight] (h) at (0, 3) {$\mathbf{h}$ from Stage 2};
+  \node[block, fill=dogmalight] (h) at (-1.5, 3) {$\mathbf{h}$ from Stage 2};
   % Context c
-  \node[block, fill=dogmamint] (c) at (5, 3) {Context $\mathbf{c}$};
+  \node[block, fill=dogmamint] (c) at (2.5, 3) {Context $\mathbf{c}$};
 
   % Express gate
   \node[block, fill=dogmamint, draw=dogmateal] (express) at (-1.5, 1) {Express $\sigma(\cdot)$};
@@ -603,16 +805,16 @@ where $\sigma$ is the sigmoid function, $\mathbf{W}_e, \mathbf{W}_s \in \mathbb{
   \node[block, fill=dogmalight] (out) at (0.5, -3) {$\mathbf{h}_{\text{reg}}$};
 
   % Arrows
-  \draw[arrow, dogmablue] (h.south) -- ++(0, -0.5) -| (express.north);
-  \draw[arrow, dogmablue] (h.south) -- ++(0, -0.5) -| (suppress.north);
-  \draw[arrow, dogmateal] (c.south) -- ++(0, -0.5) -| (express.north east);
-  \draw[arrow, dogmateal] (c.south) -- ++(0, -0.5) -| (suppress.north east);
+  \draw[arrow, dogmablue] (h.south) -- ++(0, -0.2) -- (express.north);
+  \draw[arrow, dogmablue] (h.south) -- ++(0, -0.2) -- (suppress.north west);
+  \draw[arrow, dogmateal] (c.south) -- ++(0, -0.2) -- (express.north east);
+  \draw[arrow, dogmateal] (c.south) -- ++(0, -0.2) -- (suppress.north);
   \draw[arrow, dogmateal] (express.south) -- (prod);
   \draw[arrow, dogmared] (suppress.south) -- (prod);
   \draw[arrow, dogmablue] (prod.south) -- (out.north);
 
   % Annotation
-  \node[font=\footnotesize, text=dogmagray, anchor=west] at (3, -1) {$\mathbf{r} = \mathbf{g}_e \odot (1 - \mathbf{g}_s)$};
+  \node[font=\footnotesize, text=dogmagray, anchor=west] at (1, -1) {$\mathbf{r} = \mathbf{g}_e \odot (1 - \mathbf{g}_s)$};
 \end{tikzpicture}
 \caption{The Regulation Gate. Context $\mathbf{c}$ and hidden state $\mathbf{h}$ jointly determine express and suppress signals. The net regulation $\mathbf{r}$ element-wise gates the hidden representation.}
 \label{fig:regulation-gate}
@@ -732,15 +934,15 @@ where the sums are over dinucleotide pairs and $T$ is the physical temperature i
   arrow/.style={-{Latex[length=2mm]}, thick},
 ]
   % Query strand
-  \node[font=\bfseries, color=dogmablue] at (-3, 2) {Query strand};
+  \node[font=\bfseries, color=dogmablue] at (-4, 2.0) {Query strand};
   \foreach \i/\c in {1/A, 2/C, 3/G, 4/T, 5/A} {
-    \node[base, fill=dogmalight] (q\i) at (\i*1.1 - 3, 1.5) {\c};
+    \node[base, fill=dogmalight] (q\i) at (\i*1.5 - 4.0, 1.5) {\c};
   }
 
   % Key strand
-  \node[font=\bfseries, color=dogmared] at (-3, -0.5) {Key strand};
+  \node[font=\bfseries, color=dogmared] at (-4, -0.5) {Key strand};
   \foreach \i/\c in {1/T, 2/G, 3/C, 4/A, 5/T} {
-    \node[base, fill=dogmawarm] (k\i) at (\i*1.1 - 3, 0) {\c};
+    \node[base, fill=dogmawarm] (k\i) at (\i*1.5 - 4.0, 0) {\c};
   }
 
   % Binding lines
@@ -749,7 +951,7 @@ where the sums are over dinucleotide pairs and $T$ is the physical temperature i
   }
 
   % Energy annotations
-  \draw[decorate, decoration={brace, amplitude=5pt, mirror}] (3.6, 1.5) -- (3.6, 0)
+  \draw[decorate, decoration={brace, amplitude=5pt, mirror}] (5.2, 1.5) -- (5.2, 0)
     node[midway, right=8pt, font=\footnotesize] {$\Delta G = \Delta H - T\Delta S$};
 
   % Labels for stacking
@@ -905,34 +1107,34 @@ Figure~\ref{fig:full-dogma-architecture} presents the complete DOGMA architectur
   label/.style={font=\footnotesize\bfseries},
 ]
   % ===== LEFT SIDE: Main Pipeline =====
-  \node[label, color=dogmablue] at (-4, 13) {\large Six-Stage Pipeline};
+  \node[label, color=dogmablue] at (-4, 16) {\large Six-Stage Pipeline};
 
   % Input
-  \node[stage, fill=dogmalight] (input) at (-4, 11.5) {Input Tokens\\$\mathbf{x} \in \mathbb{R}^{T \times d}$};
+  \node[stage, fill=dogmalight] (input) at (-4, 15.0) {Input Tokens\\$\mathbf{x} \in \mathbb{R}^{T \times d}$};
 
   % Stage 1
-  \node[stage, fill=dogmamint, draw=dogmateal] (s1) at (-4, 9.5) {\textbf{Stage 1:} TetraMemory\\$K_4$ local attention, $O(T)$};
+  \node[stage, fill=dogmamint, draw=dogmateal] (s1) at (-4, 13.5) {\textbf{Stage 1:} TetraMemory\\$K_4$ local attention, $O(T)$};
 
   % Stage 2
-  \node[stage, fill=dogmawarm, draw=dogmagold] (s2) at (-4, 7.5) {\textbf{Stage 2:} DNA Computing Block\\4 parallel paths, gated fusion};
+  \node[stage, fill=dogmawarm, draw=dogmagold] (s2) at (-4, 12.0) {\textbf{Stage 2:} DNA Computing Block\\4 parallel paths, gated fusion};
 
   % Stage 3
-  \node[stage, fill=dogmamint, draw=dogmateal] (s3) at (-4, 5.5) {\textbf{Stage 3:} Regulation Gate\\express / suppress, $\sigma$-gating};
+  \node[stage, fill=dogmamint, draw=dogmateal] (s3) at (-4, 10.5) {\textbf{Stage 3:} Regulation Gate\\express / suppress, $\sigma$-gating};
 
   % Stage 4
-  \node[stage, fill=dogmalight, draw=dogmablue] (s4) at (-4, 3.5) {\textbf{Stage 4:} Codon Translation\\$64 \to 21$, $T \to T/3$};
+  \node[stage, fill=dogmalight, draw=dogmablue] (s4) at (-4, 9.0) {\textbf{Stage 4:} Codon Translation\\$64 \to 21$, $T \to T/3$};
 
   % Stage 5
-  \node[stage, fill=dogmawarm, draw=dogmared] (s5) at (-4, 1.5) {\textbf{Stage 5:} Strand Attention\\$\Delta G$ thermodynamic scores};
+  \node[stage, fill=dogmawarm, draw=dogmared] (s5) at (-4, 7.5) {\textbf{Stage 5:} Strand Attention\\$\Delta G$ thermodynamic scores};
 
   % Stage 6
-  \node[stage, fill=dogmamint, draw=dogmateal] (s6) at (-4, -0.5) {\textbf{Stage 6:} Epigenetic + Allosteric\\$O(TM)$ + $O(Tk)$};
+  \node[stage, fill=dogmamint, draw=dogmateal] (s6) at (-4, 6.0) {\textbf{Stage 6:} Epigenetic + Allosteric\\$O(TM)$ + $O(Tk)$};
 
   % Expression Folder
-  \node[stage, fill=dogmalight, draw=dogmablue] (fold) at (-4, -2.5) {Expression Folder\\Phenotype $\Phi$};
+  \node[stage, fill=dogmalight, draw=dogmablue] (fold) at (-4, 4.5) {Expression Folder\\Phenotype $\Phi$};
 
   % Output
-  \node[stage, fill=white, draw=dogmared, thick] (out) at (-4, -4.5) {Realization Head\\$y_t$};
+  \node[stage, fill=white, draw=dogmared, thick] (out) at (-4, 3.0) {Realization Head\\$y_t$};
 
   % Pipeline arrows
   \draw[bigarrow, dogmablue] (input) -- (s1);
@@ -945,44 +1147,44 @@ Figure~\ref{fig:full-dogma-architecture} presents the complete DOGMA architectur
   \draw[bigarrow, dogmablue] (fold) -- (out);
 
   % ===== RIGHT SIDE: DNA Computing Block Detail =====
-  \node[label, color=dogmagold] at (5, 13) {\large DNA Computing Block Detail};
+  \node[label, color=dogmagold] at (5, 16) {\large DNA Computing Block Detail};
 
   % Expanded view bracket
   \draw[thick, dogmagold, decorate, decoration={brace, amplitude=8pt}]
-    (-1.5, 8.2) -- (-1.5, 6.8);
+    (-1.2, 12.8) -- (-1.2, 11.3);
 
   % Detail input
-  \node[detail, fill=dogmalight] (dinput) at (5, 10.5) {Input $\mathbf{x}$};
+  \node[detail, fill=dogmalight] (dinput) at (5, 14.5) {Input $\mathbf{x}$};
 
   % Four paths
-  \node[detail, fill=dogmamint] (p1) at (2.5, 8.5) {(i) Strand\\Displacement};
-  \node[detail, fill=dogmawarm] (p2) at (5, 8.5) {(ii) Parallel\\Scan / SSM};
-  \node[detail, fill=dogmalight] (p3) at (7.5, 8.5) {(iii) Stochastic\\Computing};
-  \node[detail, fill=white, draw=dogmablue] (p4) at (5, 6.8) {(iv) Double Strand};
+  \node[detail, fill=dogmamint] (p1) at (2.5, 12.4) {(i) Strand\\Displacement};
+  \node[detail, fill=dogmawarm] (p2) at (4.0, 11.0) {(ii) Parallel\\Scan / SSM};
+  \node[detail, fill=dogmalight] (p3) at (5.5, 9.6) {(iii) Stochastic\\Computing};
+  \node[detail, fill=white, draw=dogmablue] (p4) at (7.5, 8.5) {(iv) Double Strand};
 
   % Gate
-  \node[detail, fill=dogmawarm, draw=dogmared, minimum width=4cm] (dgate) at (5, 5) {Softmax Gate $\boldsymbol{\alpha}$};
+  \node[detail, fill=dogmawarm, draw=dogmared, minimum width=4cm] (dgate) at (5, 6.0) {Softmax Gate $\boldsymbol{\alpha}$};
 
   % Detail output
-  \node[detail, fill=dogmamint] (dout) at (5, 3.5) {Gated Output $\mathbf{y}$};
+  \node[detail, fill=dogmamint] (dout) at (5, 4.5) {Gated Output $\mathbf{y}$};
 
   % Detail arrows
-  \draw[arrow, dogmablue] (dinput.south) -| (p1.north);
-  \draw[arrow, dogmablue] (dinput.south) -- (p2.north);
-  \draw[arrow, dogmablue] (dinput.south) -| (p3.north);
-  \draw[arrow, dogmablue] (dinput.south) -- ++(0,-1.5) -| (p4.west);
+  \draw[arrow, dogmablue] (dinput.south) -- ++(0,-0.5) -| (p1.north);
+  \draw[arrow, dogmablue] (dinput.south) -- ++(0,-0.5) -| (p2.north);
+  \draw[arrow, dogmablue] (dinput.south) -- ++(0,-0.5) -| (p3.north);
+  \draw[arrow, dogmablue] (dinput.south) -- ++(0,-0.5) -| (p4.north);
 
   \draw[arrow, dogmateal] (p1.south) |- (dgate.west);
   \draw[arrow, dogmateal] (p2.south) -- (dgate.north -| p2);
-  \draw[arrow, dogmateal] (p3.south) |- (dgate.east);
-  \draw[arrow, dogmateal] (p4.south) -- (dgate.north -| p4);
+  \draw[arrow, dogmateal] (p3.south) -- (dgate.north -| p3);
+  \draw[arrow, dogmateal] (p4.south) |- (dgate.east);
 
   \draw[arrow, dogmared] (dgate.south) -- (dout.north);
 
   % Turing-complete annotations
-  \node[font=\tiny, color=dogmared] at (2.5, 7.7) {Turing-complete};
-  \node[font=\tiny, color=dogmared] at (5, 7.7) {Turing-complete};
-  \node[font=\tiny, color=dogmared] at (5, 6.1) {Turing-complete};
+  \node[font=\tiny, color=dogmared] at (2.5, 7.2) {Turing-complete};
+  \node[font=\tiny, color=dogmared] at (5.5, 7.2) {Turing-complete};
+  \node[font=\tiny, color=dogmared] at (7.5, 7.2) {Turing-complete};
 \end{tikzpicture}
 \caption{Complete DOGMA architecture. \textbf{Left:} The six-stage pipeline from input tokens to output realization, passing through TetraMemory, the DNA Computing Block, Regulation Gate, Codon Translation, Strand Attention, and Epigenetic+Allosteric mechanisms, followed by the Expression Folder. \textbf{Right:} Detailed view of the DNA Computing Block showing four parallel paths merged by a learned softmax gate. Three of the four paths are independently Turing-complete.}
 \label{fig:full-dogma-architecture}

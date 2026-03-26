@@ -88,7 +88,7 @@ The expected error of a model can be decomposed as:
 \begin{center}
 \begin{tikzpicture}[scale=0.85]
   % Axes
-  \draw[->] (0,0) -- (8,0) node[right] {Model Complexity};
+  \draw[->] (0,0) -- (10,0) node[right] {Model Complexity};
   \draw[->] (0,0) -- (0,5.5) node[above] {Error};
 
   % Bias^2 curve (decreasing)
@@ -101,10 +101,10 @@ The expected error of a model can be decomposed as:
 
   % Total error (sum)
   \draw[black, thick, dashed, domain=0.5:7.5, smooth] plot (\x, {4.5*exp(-0.4*\x) + 0.02*\x*\x + 0.1})
-    node[right] {Total};
+    node[above] {Total};
 
   % Irreducible noise
-  \draw[gray, dotted, thick] (0.5, 0.3) -- (7.5, 0.3) node[right, gray] {Noise};
+  \draw[gray, dotted, thick] (0.5, 0.3) -- (7.5, 0.3) node[above, gray] {Noise};
 
   % Optimal point
   \draw[<-, thick, green!50!black] (3.2, {4.5*exp(-0.4*3.2) + 0.02*3.2*3.2 + 0.1 + 0.3}) -- (3.2, 5.2)

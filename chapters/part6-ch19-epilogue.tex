@@ -133,12 +133,12 @@ The mapping between the biological and computational pipelines is systematic and
   scale=0.88, every node/.style={transform shape}
 ]
   % Biological pipeline (top)
-  \node[font=\small\bfseries\color{dogmateal}] at (-2.5, 2.5) {Biology:};
-  \node[stage, fill=blue!12] (dna) at (0, 2.5) {DNA\\Genome};
-  \node[stage, fill=green!12] (reg) at (3.2, 2.5) {Gene\\Regulation};
-  \node[stage, fill=yellow!12] (txn) at (6.4, 2.5) {Transcription\\(mRNA)};
-  \node[stage, fill=orange!12] (tln) at (9.6, 2.5) {Translation\\\& Folding};
-  \node[stage, fill=red!12] (phn) at (12.8, 2.5) {Functional\\Phenotype};
+  \node[font=\small\bfseries\color{dogmateal}] at (-2.5, 2.0) {Biology:};
+  \node[stage, fill=blue!12] (dna) at (0, 2.0) {DNA\\Genome};
+  \node[stage, fill=green!12] (reg) at (3.2, 2.0) {Gene\\Regulation};
+  \node[stage, fill=yellow!12] (txn) at (6.4, 2.0) {Transcription\\(mRNA)};
+  \node[stage, fill=orange!12] (tln) at (9.6, 2.0) {Translation\\\& Folding};
+  \node[stage, fill=red!12] (phn) at (12.8, 2.0) {Functional\\Phenotype};
 
   \draw[arrow] (dna) -- (reg);
   \draw[arrow] (reg) -- (txn);
@@ -166,8 +166,8 @@ The mapping between the biological and computational pipelines is systematic and
   \draw[dashed, thick, dogmagold] (phn) -- (real);
 
   % Evolution feedback loops
-  \draw[arrow, dogmateal, bend left=22] (phn.north) to node[above, font=\scriptsize, align=center] {Mutation \&\\Selection} (dna.north);
-  \draw[arrow, dogmared, bend right=22] (real.south) to node[below, font=\scriptsize, align=center] {Evolutionary\\Synthesis} (gen.south);
+  \draw[arrow, dogmateal, bend right=22] (phn.north) to node[above, font=\scriptsize, align=center] {Mutation \&\\Selection} (dna.north);
+  \draw[arrow, dogmared, bend left=22] (real.south) to node[below, font=\scriptsize, align=center] {Evolutionary\\Synthesis} (gen.south);
 \end{tikzpicture}
 \caption{The parallel structure of the biological Central Dogma (top) and the DOGMA computational pipeline (bottom). Dashed gold lines indicate the systematic mapping between corresponding stages. Curved arrows show the evolutionary feedback loops in both systems.}
 \label{fig:dogma-pipeline-mapping}

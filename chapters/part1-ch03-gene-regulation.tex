@@ -59,15 +59,15 @@ In computational terms, a promoter is a \emph{conditional gate}: it permits down
   \node[font=\tiny, above] at (4.2,0.65) {TSS (+1)};
 
   % RNA Polymerase
-  \node[protein, fill=dogmawarm, minimum width=1.8cm] (rnap) at (4.5,1.5) {RNA Pol II};
+  \node[protein, fill=dogmawarm, minimum width=1.8cm] (rnap) at (4.5,2.0) {RNA Pol II};
   \draw[-{Latex[length=2mm]}, dashed, gray] (rnap) -- (4.2,0.2);
 
   % Transcription factors
-  \node[protein, minimum width=1.2cm] (tf1) at (2.7,1.5) {TF};
+  \node[protein, minimum width=1.2cm] (tf1) at (2.7,2.0) {TF};
   \draw[-{Latex[length=2mm]}, dashed, gray] (tf1) -- (2.7,0.2);
 
   % Arrow showing transcription direction
-  \draw[-{Latex[length=3mm]}, very thick, dogmateal] (5,0.5) -- (8,0.5)
+  \draw[-{Latex[length=3mm]}, very thick, dogmateal] (5.5,1.2) -- (8.5,1.2)
     node[midway, above, font=\footnotesize] {Transcription};
 
   % Upstream / Downstream labels
@@ -156,7 +156,7 @@ The binding process works as follows:
   % RNA Pol
   \node[protein, fill=dogmawarm] (pol1) at (5, 1.2) {RNA Pol};
   \draw[-{Latex[length=2mm]}, dashed, dogmateal] (act.east) -- (pol1.west)
-    node[midway, above, font=\tiny] {Recruits};
+    node[midway, above=3mm, font=\tiny] {Recruits};
   \draw[-{Latex[length=2mm]}, thick, dogmateal] (pol1) -- (5, 0.2);
 
   % Result arrow
@@ -182,7 +182,7 @@ The binding process works as follows:
   \draw[-{Latex[length=2mm]}, thick, dogmared] (rep) -- (4.5, -3.8);
 
   % RNA Pol blocked
-  \node[protein, fill=gray!30] (pol2) at (2.5, -2.8) {RNA Pol};
+  \node[protein, fill=gray!30] (pol2) at (2.0, -2.8) {RNA Pol};
   \draw[-{Latex[length=2mm]}, dashed, dogmared] (pol2.east) -- (rep.west);
   \node[font=\Large, dogmared] at (3.5,-2.8) {$\times$};
 
@@ -353,7 +353,7 @@ The lac operon implements $\textit{express} = (\lnot \textit{glucose}) \land \te
 
   % Truth table
   \node[font=\footnotesize\bfseries] at (11.5, 2.5) {Truth Table};
-  \node[font=\tiny, anchor=north] at (11.5, 2.1) {
+  \node[font=\small, anchor=north] at (11.5, 2.1) {
     \begin{tabular}{cc|c}
     Glu & Lac & Express \\
     \hline
@@ -463,31 +463,31 @@ This is precisely a \emph{ring oscillator}---the same circuit used in electronic
   signal/.style={-{Latex[length=2.5mm]}, thick},
 ]
   % === Electronic ring oscillator (top) ===
-  \node[font=\bfseries] at (-2, 2) {Electronic:};
+  \node[font=\bfseries] at (-3, 2) {Electronic:};
 
   \node[notgate] (n1) at (0, 2) {NOT};
   \node[notgate] (n2) at (3, 2) {NOT};
   \node[notgate] (n3) at (6, 2) {NOT};
 
   \draw[signal] (n1.east) -- (n2.west);
-  \draw[signal] (n2.east) -- (n3.east |- n2.east);
+  \draw[signal] (n2.east) -- (n3.west |- n2.east);
   \draw[signal] (n3.east) -- ++(0.8,0) |- ++(0,1.2) -| ($(n1.west)+(-0.8,0)$) -- (n1.west);
 
   % === Biological repressilator (bottom) ===
-  \node[font=\bfseries] at (-2, -1) {Biological:};
+  \node[font=\bfseries] at (-3, -1) {Biological:};
 
   \node[gene] (g1) at (0, -1) {LacI};
   \node[gene] (g2) at (3, -1) {TetR};
   \node[gene] (g3) at (6, -1) {$\lambda$CI};
 
-  \draw[signal, dogmared, dashed] (g1) -- (g2) node[midway, above, font=\tiny] {represses};
-  \draw[signal, dogmared, dashed] (g2) -- (g3) node[midway, above, font=\tiny] {represses};
+  \draw[signal, dogmared, dashed] (g1) -- (g2) node[midway, above, font=\small] {represses};
+  \draw[signal, dogmared, dashed] (g2) -- (g3) node[midway, above, font=\small] {represses};
   \draw[signal, dogmared, dashed] (g3.east) -- ++(0.8,0) |- ++(0,-1.2) -| ($(g1.west)+(-0.8,0)$) -- (g1.west);
-  \node[font=\tiny] at (3, -2.8) {represses};
+  \node[font=\small] at (3, -2.6) {represses};
 
   % Equivalence
-  \draw[{Latex[length=2mm]}-{Latex[length=2mm]}, thick, gray, dashed] (3, 0.7) -- (3, -0.2)
-    node[midway, right, font=\tiny, text=gray] {equivalent};
+  \draw[{Latex[length=2mm]}-{Latex[length=2mm]}, thick, gray, dashed] (3, 1.2) -- (3, -0.2)
+    node[midway, right, font=\small, text=gray] {equivalent};
 \end{tikzpicture}
 \caption{The repressilator is the biological equivalent of an electronic ring oscillator. Three repressor genes form a loop where each represses the next, producing sustained oscillations in protein expression levels.}
 \label{fig:repressilator-circuit}
@@ -521,30 +521,30 @@ The \emph{genetic toggle switch} \citep{gardner2000} consists of two genes that 
   signal/.style={-{Latex[length=2.5mm]}, thick},
 ]
   % State 1
-  \node[font=\bfseries] at (0, 2.2) {State 1: Gene A dominant};
+  \node[font=\bfseries] at (0, 2.8) {State 1: Gene A dominant};
   \node[gene, fill=dogmamint] (a1) at (-1.2, 1) {Gene A};
   \node[gene, fill=gray!20] (b1) at (1.8, 1) {Gene B};
   \node[font=\tiny, dogmateal] at (-1.2, 0.2) {HIGH};
   \node[font=\tiny, gray] at (1.8, 0.2) {LOW};
   \draw[signal, dogmared, dashed, thick] (a1) -- (b1) node[midway, above, font=\tiny] {represses};
-  \draw[signal, gray!40, dashed] (b1.south) to[bend right=40] node[below, font=\tiny, gray] {too weak} (a1.south);
+  \draw[signal, gray!40, dashed] (b1.north) to[bend right=40] node[below, font=\tiny, gray] {too weak} (a1.north);
 
   % State 2
-  \node[font=\bfseries] at (7, 2.2) {State 2: Gene B dominant};
+  \node[font=\bfseries] at (7, 2.8) {State 2: Gene B dominant};
   \node[gene, fill=gray!20] (a2) at (5.8, 1) {Gene A};
   \node[gene, fill=dogmamint] (b2) at (8.8, 1) {Gene B};
   \node[font=\tiny, gray] at (5.8, 0.2) {LOW};
   \node[font=\tiny, dogmateal] at (8.8, 0.2) {HIGH};
   \draw[signal, gray!40, dashed] (a2) -- (b2) node[midway, above, font=\tiny, gray] {too weak};
-  \draw[signal, dogmared, dashed, thick] (b2.south) to[bend right=40] node[below, font=\tiny] {represses} (a2.south);
+  \draw[signal, dogmared, dashed, thick] (b2.north) to[bend right=40] node[below, font=\tiny] {represses} (a2.north);
 
   % Flip arrow
-  \draw[{Latex[length=3mm]}-{Latex[length=3mm]}, very thick, dogmagold] (3.3, 1) -- (4.7, 1)
-    node[midway, above, font=\tiny\bfseries] {Transient};
-  \node[font=\tiny\bfseries, dogmagold] at (4, 0.5) {signal};
+  \draw[{Latex[length=3mm]}-{Latex[length=3mm]}, very thick, dogmagold] (3.0, 1) -- (4.7, 1)
+    node[midway, above, font=\small\bfseries] {Transient};
+  \node[font=\small\bfseries, dogmagold] at (4, 0.5) {signal};
 
   % Digital analogy
-  \node[draw, dashed, gray, rounded corners, inner sep=5pt, font=\tiny, text=gray] at (4, -1.2)
+  \node[draw, dashed, gray, rounded corners, inner sep=5pt, font=\small, text=gray] at (4, -0.8)
     {Digital equivalent: SR Latch (1-bit memory)};
 \end{tikzpicture}
 \caption{The toggle switch as a bistable flip-flop. In State 1, Gene A is dominant and represses Gene B. In State 2, Gene B is dominant and represses Gene A. A transient signal can flip between states, but each state is self-maintaining---a 1-bit biological memory.}
@@ -674,8 +674,8 @@ While this numerical coincidence is not proof, the conceptual framework is power
   % Attractor 2 (fixed point): 111
   \node[attractor, fill=dogmawarm] (s111) at (6, 1.2) {111};
   \draw[trans, thick, dogmagold] (s111) to[loop right] (s111);
-  \node[font=\tiny, dogmagold, below] at (6, 0.5) {Attractor 2 (fixed point)};
-  \node[font=\tiny, dogmagold, below] at (6, 0.1) {``Cell type B''};
+  \node[font=\tiny, dogmagold, below] at (7.0, 0.5) {Attractor 2 (fixed point)};
+  \node[font=\tiny, dogmagold, below] at (7.0, 0.1) {``Cell type B''};
 
   % Transient states flowing into attractor 2
   \node[state, fill=gray!15] (s101) at (4.5, 2.5) {101};
@@ -786,29 +786,29 @@ Signal transduction pathways are not simple linear chains---they contain extensi
   negarr/.style={-{Latex[length=2.5mm]}, thick, dogmared, dashed},
 ]
   % === Negative feedback ===
-  \node[font=\footnotesize\bfseries] at (1.5, 2) {Negative Feedback};
+  \node[font=\footnotesize\bfseries] at (1.5, 2.6) {Negative Feedback};
   \node[box] (a1) at (0, 0.8) {$A$};
   \node[box] (b1) at (3, 0.8) {$B$};
-  \draw[posarr] (a1) -- (b1) node[midway, above, font=\tiny] {activates};
-  \draw[negarr] (b1.south) to[bend right=35] node[below, font=\tiny] {inhibits} (a1.south);
-  \node[font=\tiny, gray] at (1.5, -0.4) {Effect: damping, stability};
+  \draw[posarr] (a1) -- (b1) node[midway, above, font=\small] {activates};
+  \draw[negarr] (b1.south) to[bend left=35] node[below, font=\small] {inhibits} (a1.south);
+  \node[font=\small, gray] at (1.5, -0.9) {Effect: damping, stability};
 
   % === Positive feedback ===
-  \node[font=\footnotesize\bfseries] at (7.5, 2) {Positive Feedback};
-  \node[box] (a2) at (6, 0.8) {$A$};
-  \node[box] (b2) at (9, 0.8) {$B$};
-  \draw[posarr] (a2) -- (b2) node[midway, above, font=\tiny] {activates};
-  \draw[posarr] (b2.south) to[bend right=35] node[below, font=\tiny] {activates} (a2.south);
-  \node[font=\tiny, gray] at (7.5, -0.4) {Effect: bistability, switch};
+  \node[font=\footnotesize\bfseries] at (7.0, 2.6) {Positive Feedback};
+  \node[box] (a2) at (5.5, 0.8) {$A$};
+  \node[box] (b2) at (8.5, 0.8) {$B$};
+  \draw[posarr] (a2) -- (b2) node[midway, above, font=\small] {activates};
+  \draw[posarr] (b2.north) to[bend right=35] node[above, font=\small] {activates} (a2.north);
+  \node[font=\small, gray] at (7.0, -0.9) {Effect: bistability, switch};
 
   % === Combined ===
-  \node[font=\footnotesize\bfseries] at (13, 2) {Combined};
-  \node[box] (a3) at (12, 0.8) {$A$};
+  \node[font=\footnotesize\bfseries] at (13, 2.6) {Combined};
+  \node[box] (a3) at (11.5, 0.8) {$A$};
   \node[box] (b3) at (14.5, 0.8) {$B$};
-  \draw[posarr] (a3) -- (b3) node[midway, above, font=\tiny] {activates};
-  \draw[posarr] (b3.north) to[bend left=35] node[above, font=\tiny] {$+$} (a3.north);
-  \draw[negarr] (b3.south) to[bend right=35] node[below, font=\tiny] {$-$} (a3.south);
-  \node[font=\tiny, gray] at (13.25, -0.4) {Effect: oscillation, adaptation};
+  \draw[posarr] (a3) -- (b3) node[midway, above, font=\small] {activates};
+  \draw[posarr] (b3.north) to[bend right=35] node[above, font=\small] {$+$} (a3.north);
+  \draw[negarr] (b3.south) to[bend left=35] node[below, font=\small] {$-$} (a3.south);
+  \node[font=\small, gray] at (13.25, -0.9) {Effect: oscillation, adaptation};
 \end{tikzpicture}
 \caption{Three types of feedback in signal transduction. Negative feedback creates stability and damping. Positive feedback creates bistability and switching. Combined feedback can produce oscillations or adaptation.}
 \label{fig:feedback-types}
@@ -851,31 +851,31 @@ Epigenetics refers to heritable changes in gene expression that do not alter the
   }
 
   % TF binds
-  \node[draw, rounded corners, fill=dogmamint, font=\tiny] (tf) at (5, 1.5) {TF binds};
+  \node[draw, rounded corners, fill=dogmamint, font=\small] (tf) at (5, 1.5) {TF binds};
   \draw[-{Latex[length=1.5mm]}, dogmateal] (tf) -- (5, 0.6);
 
-  \node[font=\tiny, dogmateal] at (11, 0.5) {Gene ON};
+  \node[font=\tiny, dogmateal] at (11.5, 0.45) {Gene ON};
   \draw[-{Latex[length=2mm]}, thick, dogmateal] (10.2, 0.42) -- (10.8, 0.42);
 
   % === Methylated (silenced) ===
   \node[font=\footnotesize\bfseries] at (-1, -1.2) {Methylated (Silenced):};
-  \draw[dna, gray] (2, -1.7) -- (10, -1.7);
-  \draw[dna, gray] (2, -1.85) -- (10, -1.85);
+  \draw[dna, gray] (2, -1.75) -- (10, -1.75);
+  \draw[dna, gray] (2, -1.90) -- (10, -1.90);
 
   % CpG sites with methylation
   \foreach \x in {3, 5, 7} {
-    \node[methyl] at (\x, -1.35) {M};
-    \node[font=\tiny, gray] at (\x, -1.15) {CpG};
+    \node[methyl] at (\x, -1.55) {M};
+    \node[font=\tiny, gray] at (\x, -1.25) {CpG};
   }
 
   % TF blocked
-  \node[draw, rounded corners, fill=gray!20, font=\tiny, text=gray] (tf2) at (5, -0.5) {TF blocked};
+  \node[draw, rounded corners, fill=gray!20, font=\small, text=gray] (tf2) at (5, -0.5) {TF blocked};
   \draw[-{Latex[length=1.5mm]}, gray, dashed] (tf2) -- (5, -1.2);
   \node[font=\Large, dogmared] at (5, -0.9) {$\times$};
 
-  \node[font=\tiny, dogmared] at (11, -1.7) {Gene OFF};
-  \draw[thick, dogmared] (10.3, -1.6) -- (10.7, -1.9);
-  \draw[thick, dogmared] (10.3, -1.9) -- (10.7, -1.6);
+  \node[font=\tiny, dogmared] at (11.5, -1.75) {Gene OFF};
+  \draw[thick, dogmared] (10.3, -1.65) -- (10.7, -1.95);
+  \draw[thick, dogmared] (10.3, -1.95) -- (10.7, -1.65);
 \end{tikzpicture}
 \caption{DNA methylation silences genes. Methyl groups (M) added to CpG sites block transcription factor binding, effectively switching the gene off without changing the DNA sequence.}
 \label{fig:dna-methylation}

@@ -153,7 +153,7 @@ Figure~\ref{fig:supreme-pipeline} provides a high-level view of the six-stage pi
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[
-    stage/.style={draw, rounded corners=4pt, minimum width=4.2cm, minimum height=1.1cm, font=\small, align=center},
+    stage/.style={draw, rounded corners=4pt, minimum width=5.0cm, minimum height=1.1cm, font=\small, align=center},
     tensor/.style={font=\scriptsize\ttfamily, text=black!70},
     >=Latex,
     scale=0.88, every node/.style={transform shape}
@@ -175,12 +175,12 @@ Figure~\ref{fig:supreme-pipeline} provides a high-level view of the six-stage pi
   \node[tensor, right=0.3cm of s4] {$\mathbb{R}^{B \times T \times 512} \to \mathbb{R}^{B \times T \times 512}$};
 
   % Epigenetic Memory (side, top)
-  \node[stage, fill=purple!12, minimum width=3cm] (epi) at (6.5, -4.4) {Epigenetic Memory\\(256 slots)};
-  \draw[<->, thick, purple!60] (s4.east) ++(2.0,0.5) -- (epi.west) node[midway, above, font=\scriptsize] {read/write};
+  \node[stage, fill=purple!12, minimum width=4cm] (epi) at (-6.5, -4.4) {Epigenetic Memory\\(256 slots)};
+  \draw[<->, thick, purple!60] (s4.north west) -- (epi.east) node[midway, above, font=\scriptsize] {read/write};
 
   % TetraMemory (side, bottom)
-  \node[stage, fill=purple!12, minimum width=3cm] (mem) at (6.5, -6.4) {TetraMemory\\(multi-scale)};
-  \draw[<->, thick, purple!60] (s4.east) ++(2.0,-0.5) -- (mem.west) node[midway, above, font=\scriptsize] {read/write};
+  \node[stage, fill=purple!12, minimum width=4cm] (mem) at (-6.5, -6.4) {TetraMemory\\(multi-scale)};
+  \draw[<->, thick, purple!60] (s4.south west) -- (mem.east) node[midway, above, font=\scriptsize] {read/write};
 
   % Stage 6
   \node[stage, fill=red!10] (s6) at (0, -7.2) {Stage 6:\\Realization Head};
@@ -1108,12 +1108,12 @@ Figure~\ref{fig:deployment-architecture} illustrates the end-to-end deployment p
   \draw[->, thick] (compile) -- (inference);
 
   % ── Application domains (fan out) ──
-  \node[app, fill=blue!8] (nlp) at (-6.5, -6.5) {NLP\\(LM, summarization)};
-  \node[app, fill=green!10] (chat) at (-3.5, -6.5) {Conversational AI\\(ChatSession)};
-  \node[app, fill=purple!8] (multi) at (-0.5, -6.5) {Multimodal\\(3D, image, audio)};
-  \node[app, fill=red!8] (genomic) at (2.5, -6.5) {Genomics\\(sequence analysis)};
-  \node[app, fill=orange!10] (science) at (5.5, -6.5) {Scientific\\(drug design)};
-  \node[app, fill=dogmawarm] (code) at (8.5, -6.5) {Code\\(completion)};
+  \node[app, fill=blue!8] (nlp) at (-7.5, -6.5) {NLP\\(LM, summarization)};
+  \node[app, fill=green!10] (chat) at (-4.0, -6.5) {Conversational AI\\(ChatSession)};
+  \node[app, fill=purple!8] (multi) at (-0.7, -6.5) {Multimodal\\(3D, image, audio)};
+  \node[app, fill=red!8] (genomic) at (2.7, -6.5) {Genomics\\(sequence analysis)};
+  \node[app, fill=orange!10] (science) at (5.9, -6.5) {Scientific\\(drug design)};
+  \node[app, fill=dogmawarm] (code) at (8.9, -6.5) {Code\\(completion)};
 
   \draw[->, thick, dogmablue] (inference) -- (nlp);
   \draw[->, thick, dogmateal] (inference) -- (chat);
@@ -1130,7 +1130,7 @@ Figure~\ref{fig:deployment-architecture} illustrates the end-to-end deployment p
   \node[font=\small\bfseries, dogmablue] at (-5.5, 0) {Training};
   \node[font=\small\bfseries, dogmagold] at (-5.5, -2) {Compilation};
   \node[font=\small\bfseries, dogmared] at (-5.5, -4) {Inference};
-  \node[font=\small\bfseries, dogmateal] at (-5.5, -6.5) {Applications};
+  \node[font=\small\bfseries, dogmateal] at (-5.5, -5.5) {Applications};
 \end{tikzpicture}
 \caption{DOGMA-Supreme deployment architecture: from pretraining on mixed text-genomic data, through SDANS compilation and the inference engine, to six application domains. Epigenetic memory provides persistent state across inference sessions.}
 \label{fig:deployment-architecture}

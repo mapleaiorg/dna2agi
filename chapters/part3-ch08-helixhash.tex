@@ -83,7 +83,7 @@ The two strands are ``bonded'' position-by-position. Position $i$ on the forward
 
   \foreach \i/\base/\col in {0/A/dogmared, 1/C/dogmablue, 2/G/dogmateal, 3/T/dogmagold, 4/A/dogmared, 5/C/dogmablue, 6/G/dogmateal, 7/T/dogmagold} {
     \node[base, fill=\col!15, text=\col] (f\i) at (\i*1.1 + 0.2, 0.8) {\base};
-    \node[font=\tiny, text=dogmagray] at (\i*1.1 + 0.2, 0.35) {$f_{\the\numexpr\i+1}$};
+    \node[font=\tiny, text=dogmagray] at (\i*1.1 + 0.5, 0.35) {$f_{\the\numexpr\i+1}$};
   }
 
   % Reverse strand (antisense, 3'->5')

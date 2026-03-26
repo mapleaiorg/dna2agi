@@ -171,6 +171,7 @@ The model is trained end-to-end with a composite loss:
 
 The \textbf{FAPE} (Frame Aligned Point Error) loss measures the error in predicted atomic positions after aligning local reference frames. It is more informative than simple RMSD because it penalizes errors in local geometry even when the global superposition is poor. The distogram loss trains auxiliary heads that predict binned inter-residue distances. The pLDDT loss trains the confidence predictor. The MSA loss ensures the model correctly predicts masked residues in the MSA.
 
+\newpage
 \subsection{AlphaFold2 Architecture Diagram}
 
 The following diagram illustrates the complete AlphaFold2 pipeline:
@@ -198,7 +199,7 @@ The following diagram illustrates the complete AlphaFold2 pipeline:
 \node[procbox, below right=0.8cm and 0.2cm of msa] (pairrep) {Pair Repr.};
 
 % Evoformer
-\node[procbox, below=1.6cm of msa, minimum width=6.5cm, fill=dogmamint!60] (evo) {\textbf{Evoformer} ($\times 48$ blocks)};
+\node[procbox, below=2.6cm of msa, minimum width=6.5cm, fill=dogmamint!60] (evo) {\textbf{Evoformer} ($\times 48$ blocks)};
 \node[label, below=0.05cm of evo] {Row attn + Col attn + Outer product + Triangle updates};
 
 % Structure module
@@ -207,7 +208,7 @@ The following diagram illustrates the complete AlphaFold2 pipeline:
 
 % Recycling arrow
 \node[label, left=1.0cm of evo] (recycle) {Recycle $\times 3$};
-\draw[arrow, dogmateal, dashed] (struct.west) -- ++(-1.5,0) |- (evo.west);
+\draw[arrow, dogmateal, dashed] (struct.west) -- ++(-1.6,0) |- (evo.west);
 
 % Output
 \node[outbox, below=0.8cm of struct] (coords) {3D Coordinates};
@@ -390,6 +391,42 @@ Through extensive probing studies, researchers have catalogued what ESM-2's repr
 In protein language models, the training distribution is curated by natural selection rather than by human annotators. The loss function in Equation~\ref{eq:esm-mlm} implicitly encodes biophysical constraints: folding stability, catalytic activity, binding specificity, and cellular fitness. This is a form of self-supervised learning where the ``supervisor'' is evolution itself. DOGMA generalizes this idea: the evolutionary training loop (Chapter~\ref{ch:dogma-architecture}) treats fitness-based selection as a first-class training mechanism alongside gradient descent.
 \end{dogmadef}
 
+\begin{example}[Worked Example: ESM-2 Forward Pass on a Short Peptide]
+Consider the 8-residue peptide \texttt{MKVILHGS}. We trace the ESM-2 forward pass step by step.
+
+\textbf{Step 1: Tokenization.} Each amino acid maps to its vocabulary index:
+
+\begin{center}
+\begin{tabular}{cccccccc}
+\texttt{M} & \texttt{K} & \texttt{V} & \texttt{I} & \texttt{L} & \texttt{H} & \texttt{G} & \texttt{S} \\
+\midrule
+10 & 8 & 18 & 7 & 9 & 6 & 5 & 15
+\end{tabular}
+\end{center}
+
+Special tokens are prepended and appended: \texttt{[CLS] M K V I L H G S [EOS]}, giving token IDs $[0, 10, 8, 18, 7, 9, 6, 5, 15, 2]$.
+
+\textbf{Step 2: Masking (15\%).} With 8 amino acid tokens, we mask $\lceil 0.15 \times 8 \rceil = 1$ position. Suppose position 5 (\texttt{L}, leucine) is selected. The input becomes: \texttt{[CLS] M K V I [MASK] H G S [EOS]}.
+
+\textbf{Step 3: Embedding.} Each token is converted to a $d$-dimensional vector via an embedding matrix $\mathbf{E} \in \mathbb{R}^{|\mathcal{V}| \times d}$. For ESM-2 (8M), $d = 320$. The input becomes $\mathbf{X} \in \mathbb{R}^{10 \times 320}$. Learned positional embeddings $\mathbf{P} \in \mathbb{R}^{1024 \times 320}$ are added: $\mathbf{X} \leftarrow \mathbf{X} + \mathbf{P}_{0:9}$.
+
+\textbf{Step 4: Transformer layers.} The embedded sequence passes through 6 transformer layers (for ESM-2 8M). Each layer applies multi-head attention (20 heads, $d_k = 16$ per head) followed by a feed-forward network ($d_{\text{ff}} = 1280$):
+\[
+\mathbf{H}^{(l)} = \text{FFN}\!\left(\text{LayerNorm}\!\left(\text{MHA}(\mathbf{H}^{(l-1)}) + \mathbf{H}^{(l-1)}\right)\right) + \text{LayerNorm}(\ldots).
+\]
+
+\textbf{Step 5: Prediction at masked position.} The representation at position 5 (the masked \texttt{L}) is projected to a 33-dimensional logit vector (20 amino acids + special tokens) via a linear head:
+\[
+\hat{\mathbf{y}}_5 = \mathbf{W}_{\text{head}} \, \mathbf{h}_5^{(6)} + \mathbf{b}_{\text{head}}, \quad \hat{\mathbf{y}}_5 \in \mathbb{R}^{33}.
+\]
+
+The softmax gives probabilities over amino acids. If the model has learned that position 5 is buried in a hydrophobic core (inferred from surrounding V, I context), it will assign high probability to hydrophobic residues: $p(\texttt{L}) \approx 0.35$, $p(\texttt{I}) \approx 0.25$, $p(\texttt{V}) \approx 0.15$, $p(\texttt{F}) \approx 0.10$, etc. The cross-entropy loss penalizes the model for not assigning all probability mass to the true answer (\texttt{L}).
+\end{example}
+
+\begin{implnote}[From ESM-2 to DOGMA: What Changes]
+DOGMA's approach differs from ESM-2 in three fundamental ways: (1)~DOGMA uses byte-level tokenization (257 tokens) instead of amino acid tokens (33), operating at the nucleotide level where all biological information originates; (2)~DOGMA replaces generic transformer layers with the biologically grounded 6-stage Central Dogma pipeline; and (3)~DOGMA trains with evolutionary optimization in addition to gradient descent, allowing exploration of configurations that gradient descent alone cannot reach. The key insight: ESM-2 treats protein sequences as opaque strings; DOGMA treats genomic sequences as \emph{programs} with structure, regulation, and expression.
+\end{implnote}
+
 % ───────────────────────────────────────────────────────────────────────────────
 \section{DNABERT: Tokenizing and Learning from DNA}
 \label{sec:dnabert}
@@ -537,6 +574,24 @@ Generated sequences exhibit remarkable biological realism:
   \item \textbf{Regulatory motif placement}: Promoter-like sequences appear upstream of predicted genes.
   \item \textbf{Operon structure}: Multi-gene clusters are organized coherently.
 \end{itemize}
+
+\begin{example}[Worked Example: Evo Processing a DNA Promoter]
+Consider a short DNA sequence containing a bacterial promoter: \texttt{TTGACA...TATAAT} (the $-35$ and $-10$ boxes). Let us trace how Evo's SSM state responds to this biologically meaningful motif, using a simplified 2-state model.
+
+Each nucleotide is tokenized as a single character: A$\to$0, C$\to$1, G$\to$2, T$\to$3. Processing the sequence \texttt{T T G A C A}:
+
+At positions 1--2 (\texttt{T T}): The SSM processes two thymines. The state transitions depend on the input:
+\[
+x_1 = \bar{\mathbf{B}}(T) \cdot e_T, \quad x_2 = \bar{\mathbf{A}}(T) \cdot x_1 + \bar{\mathbf{B}}(T) \cdot e_T.
+\]
+Because both inputs are the same (T), the model accumulates signal in the ``T-responsive'' state dimensions.
+
+At position 3 (\texttt{G}): The input changes to G, producing different $\bar{\mathbf{B}}(G)$ and $\Delta(G)$. If the model has learned that \texttt{TTG} is the beginning of a $-35$ box, the selectivity mechanism will \emph{increase $\Delta$} (forget less) to retain the emerging promoter signal.
+
+At position 6 (\texttt{A}): After processing \texttt{TTGACA}, the hidden state encodes a compressed representation of the complete $-35$ box. The selective gating has prevented this critical regulatory information from being overwritten.
+
+The key biological insight: Evo learns that promoter motifs are ``worth remembering'' (large $\Delta$, small $\bar{\mathbf{A}}$ decay) while intergenic sequence can be compressed (small $\Delta$, strong decay). This data-dependent selection is the SSM analogue of chromatin accessibility: some genomic regions are ``open'' (retained in memory) while others are ``closed'' (compressed away).
+\end{example}
 
 \begin{keyinsight}[Single-Nucleotide Resolution at Genome Scale]
 Evo operates at single-nucleotide resolution across 131 kb contexts. This is the computational equivalent of reading and writing DNA at the level of individual bases while maintaining coherent structure across entire gene clusters. The combination of fine-grained resolution with long-range context is precisely what DOGMA aims to achieve: individual genomic bases with region-level organizational structure (Chapter~\ref{ch:dogma-architecture}).

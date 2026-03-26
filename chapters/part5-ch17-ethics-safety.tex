@@ -431,9 +431,9 @@ Biology employs two modes of gene regulation that map to distinct safety strateg
   node distance=1.2cm and 2.0cm,
   every node/.style={font=\small},
   rootbox/.style={rectangle, rounded corners=4pt, draw=dogmablue, fill=dogmalight,
-    text width=3.8cm, minimum height=1cm, align=center, font=\small\bfseries},
+    text width=5.0cm, minimum height=1cm, align=center, font=\small\bfseries},
   levelone/.style={rectangle, rounded corners=4pt, draw=dogmateal, fill=dogmamint,
-    text width=3.2cm, minimum height=0.9cm, align=center, font=\small},
+    text width=5.0cm, minimum height=0.9cm, align=center, font=\small},
   leveltwo/.style={rectangle, rounded corners=4pt, draw=dogmagold, fill=dogmawarm,
     text width=3.0cm, minimum height=0.8cm, align=center, font=\small},
   arrow/.style={-{Stealth[length=5pt]}, thick, dogmablue},
@@ -443,26 +443,26 @@ Biology employs two modes of gene regulation that map to distinct safety strateg
 \node[rootbox] (root) {The Alignment\\Problem};
 
 % Level 1
-\node[levelone, below left=1.5cm and 2.5cm of root] (outer) {Outer Alignment\\(Objective Specification)};
-\node[levelone, below right=1.5cm and 2.5cm of root] (inner) {Inner Alignment\\(Learned Objectives)};
+\node[levelone, below left=1.0cm and -1.5cm of root] (outer) {Outer Alignment\\(Objective Specification)};
+\node[levelone, below right=1.0cm and -1.5cm of root] (inner) {Inner Alignment\\(Learned Objectives)};
 
 % Level 2 - Outer
-\node[leveltwo, below left=1.2cm and 0.5cm of outer] (goodhart) {Goodhart's Law\\(Proxy Gaming)};
-\node[leveltwo, below right=1.2cm and 0.5cm of outer] (reward) {Reward\\Hacking};
+\node[leveltwo, below left=0.6cm and -2.5cm of outer] (goodhart) {Goodhart's Law\\(Proxy Gaming)};
+\node[leveltwo, below right=0.6cm and -2.5cm of outer] (reward) {Reward\\Hacking};
 
 % Level 2 - Inner
-\node[leveltwo, below left=1.2cm and 0.5cm of inner] (mesa) {Mesa-Optimization\\(Emergent Goals)};
-\node[leveltwo, below right=1.2cm and 0.5cm of inner] (deceptive) {Deceptive\\Alignment};
+\node[leveltwo, below left=0.6cm and -2.5cm of inner] (mesa) {Mesa-Optimization\\(Emergent Goals)};
+\node[leveltwo, below right=0.6cm and -2.5cm of inner] (deceptive) {Deceptive\\Alignment};
 
 % Mitigations row
-\node[rootbox, below=4.5cm of root, text width=5cm, draw=dogmared, fill=dogmared!8] (mitigate)
+\node[rootbox, below=5.0cm of root, text width=5cm, draw=dogmared, fill=dogmared!8] (mitigate)
   {Mitigation Strategies};
 
-\node[leveltwo, below left=1.2cm and 2.5cm of mitigate, text width=2.8cm, draw=dogmared!60, fill=dogmared!5]
+\node[leveltwo, below left=1.2cm and -1.0cm of mitigate, text width=3.0cm, draw=dogmared!60, fill=dogmared!5]
   (rlhf) {RLHF /\\Constitutional AI};
 \node[leveltwo, below=1.2cm of mitigate, text width=2.8cm, draw=dogmared!60, fill=dogmared!5]
   (interp) {Mechanistic\\Interpretability};
-\node[leveltwo, below right=1.2cm and 2.5cm of mitigate, text width=2.8cm, draw=dogmared!60, fill=dogmared!5]
+\node[leveltwo, below right=1.2cm and -1.0cm of mitigate, text width=3.0cm, draw=dogmared!60, fill=dogmared!5]
   (dogmasafe) {DOGMA Safety\\(Regulation Stage)};
 
 % Arrows
@@ -492,35 +492,35 @@ Biology employs two modes of gene regulation that map to distinct safety strateg
 \begin{figure}[htbp]
 \centering
 \begin{tikzpicture}[
-  node distance=0.8cm and 1.5cm,
+  node distance=0.5cm and 1.5cm,
   every node/.style={font=\small},
   stagebox/.style={rectangle, rounded corners=4pt, draw=dogmablue, fill=dogmalight,
     text width=3.0cm, minimum height=1.0cm, align=center, font=\small\bfseries},
   mechbox/.style={rectangle, rounded corners=4pt, draw=dogmateal, fill=dogmamint,
     text width=3.5cm, minimum height=0.8cm, align=center, font=\small},
   biobox/.style={rectangle, rounded corners=4pt, draw=dogmagold, fill=dogmawarm,
-    text width=3.5cm, minimum height=0.8cm, align=center, font=\small\itshape},
+    text width=3.0cm, minimum height=0.8cm, align=center, font=\small\itshape},
   arrow/.style={-{Stealth[length=5pt]}, thick, dogmablue},
   bioarrow/.style={-{Stealth[length=4pt]}, thick, dogmateal, dashed},
 ]
 
 % Pipeline stages (vertical)
 \node[stagebox] (genome) {Genomic\\Storage};
-\node[stagebox, below=1.5cm of genome] (regulate) {Regulation\\Stage};
-\node[stagebox, below=1.5cm of regulate] (express) {Expression\\Stage};
-\node[stagebox, below=1.5cm of express] (evolve) {Evolutionary\\Selection};
+\node[stagebox, below=0.5cm of genome] (regulate) {Regulation\\Stage};
+\node[stagebox, below=0.5cm of regulate] (express) {Expression\\Stage};
+\node[stagebox, below=0.5cm of express] (evolve) {Evolutionary\\Selection};
 
 % Safety mechanisms (right side)
-\node[mechbox, right=2.5cm of genome] (audit) {Genome Audit\\Protocol};
-\node[mechbox, right=2.5cm of regulate] (constit) {Constitutive\\Repression};
-\node[mechbox, right=2.5cm of express] (filter) {Output Filtering\\and Monitoring};
-\node[mechbox, right=2.5cm of evolve] (pareto) {Safety-Augmented\\Pareto Selection};
+\node[mechbox, right=1.0cm of genome] (audit) {Genome Audit\\Protocol};
+\node[mechbox, right=1.0cm of regulate] (constit) {Constitutive\\Repression};
+\node[mechbox, right=1.0cm of express] (filter) {Output Filtering\\and Monitoring};
+\node[mechbox, right=1.0cm of evolve] (pareto) {Safety-Augmented\\Pareto Selection};
 
 % Biological analogues (far right)
-\node[biobox, right=1.5cm of audit] {DNA repair\\mechanisms};
-\node[biobox, right=1.5cm of constit] {Epigenetic\\silencing};
-\node[biobox, right=1.5cm of filter] {Immune\\surveillance};
-\node[biobox, right=1.5cm of pareto] {Multi-objective\\natural selection};
+\node[biobox, right=0.8cm of audit] {DNA repair\\mechanisms};
+\node[biobox, right=0.8cm of constit] {Epigenetic\\silencing};
+\node[biobox, right=0.8cm of filter] {Immune\\surveillance};
+\node[biobox, right=0.8cm of pareto] {Multi-objective\\natural selection};
 
 % Pipeline arrows
 \draw[arrow] (genome) -- (regulate);
@@ -535,15 +535,15 @@ Biology employs two modes of gene regulation that map to distinct safety strateg
 \draw[arrow, dogmateal] (pareto) -- (evolve);
 
 % Bio arrows
-\draw[bioarrow] (audit.east) -- ++(1.5,0);
-\draw[bioarrow] (constit.east) -- ++(1.5,0);
-\draw[bioarrow] (filter.east) -- ++(1.5,0);
-\draw[bioarrow] (pareto.east) -- ++(1.5,0);
+\draw[bioarrow] (audit.east) -- ++(0.8,0);
+\draw[bioarrow] (constit.east) -- ++(0.8,0);
+\draw[bioarrow] (filter.east) -- ++(0.8,0);
+\draw[bioarrow] (pareto.east) -- ++(0.8,0);
 
 % Labels
 \node[above=0.3cm of genome, font=\bfseries\small, color=dogmablue] {DOGMA Pipeline};
 \node[above=0.3cm of audit, font=\bfseries\small, color=dogmateal] {Safety Mechanism};
-\node[above right=0.3cm and 1.5cm of audit, font=\bfseries\small, color=dogmagold] {Biological Analogue};
+\node[above right=0.3cm and 0.8cm of audit, font=\bfseries\small, color=dogmagold] {Biological Analogue};
 
 \end{tikzpicture}
 \caption{DOGMA safety mechanisms mapped to pipeline stages and their biological analogues. Each stage of the DOGMA pipeline has a corresponding safety mechanism inspired by a biological defense system. The feedback loop from evolutionary selection back to genomic storage represents the evolutionary cycle, with safety-augmented Pareto selection ensuring that unsafe genomes are eliminated across generations.}

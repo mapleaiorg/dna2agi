@@ -248,6 +248,49 @@ n+1 & \text{if } n = k, \\
 
 This initialization ensures that the state $x_k$ maintains a compressed polynomial approximation of the entire input history up to step $k$, enabling the model to capture dependencies across thousands of time steps.
 
+\begin{example}[Worked Example: Processing a Sequence Through a 2-State SSM]
+Let us trace a concrete 4-element sequence $u = [1.0, 0.5, 0.8, 0.2]$ through a minimal SSM with state dimension $n=2$. We use:
+
+\[
+\mathbf{A} = \begin{pmatrix} -1 & 0 \\ 0 & -2 \end{pmatrix}, \quad \mathbf{B} = \begin{pmatrix} 1 \\ 1 \end{pmatrix}, \quad \mathbf{C} = \begin{pmatrix} 1 & 0.5 \end{pmatrix}, \quad D = 0.
+\]
+
+With step size $\Delta = 0.5$, the discretized matrices are:
+\[
+\bar{\mathbf{A}} = \exp(\Delta \mathbf{A}) = \begin{pmatrix} e^{-0.5} & 0 \\ 0 & e^{-1.0} \end{pmatrix} \approx \begin{pmatrix} 0.607 & 0 \\ 0 & 0.368 \end{pmatrix}.
+\]
+For $\bar{\mathbf{B}}$, using the simplified form $\bar{\mathbf{B}} \approx \Delta \mathbf{B}$:
+\[
+\bar{\mathbf{B}} \approx 0.5 \cdot \begin{pmatrix} 1 \\ 1 \end{pmatrix} = \begin{pmatrix} 0.5 \\ 0.5 \end{pmatrix}.
+\]
+
+\textbf{Step 1} ($u_1 = 1.0$, start from $x_0 = [0, 0]^\top$):
+\[
+x_1 = \bar{\mathbf{A}} x_0 + \bar{\mathbf{B}} u_1 = \begin{pmatrix}0\\0\end{pmatrix} + \begin{pmatrix}0.5\\0.5\end{pmatrix} = \begin{pmatrix}0.500\\0.500\end{pmatrix}, \quad y_1 = \mathbf{C} x_1 = 1.0 \cdot 0.500 + 0.5 \cdot 0.500 = \mathbf{0.750}.
+\]
+
+\textbf{Step 2} ($u_2 = 0.5$):
+\[
+x_2 = \begin{pmatrix}0.607 \cdot 0.500 + 0.5 \cdot 0.5\\0.368 \cdot 0.500 + 0.5 \cdot 0.5\end{pmatrix} = \begin{pmatrix}0.554\\0.434\end{pmatrix}, \quad y_2 = 0.554 + 0.5 \cdot 0.434 = \mathbf{0.771}.
+\]
+
+\textbf{Step 3} ($u_3 = 0.8$):
+\[
+x_3 = \begin{pmatrix}0.607 \cdot 0.554 + 0.5 \cdot 0.8\\0.368 \cdot 0.434 + 0.5 \cdot 0.8\end{pmatrix} = \begin{pmatrix}0.736\\0.560\end{pmatrix}, \quad y_3 = 0.736 + 0.5 \cdot 0.560 = \mathbf{1.016}.
+\]
+
+\textbf{Step 4} ($u_4 = 0.2$):
+\[
+x_4 = \begin{pmatrix}0.607 \cdot 0.736 + 0.5 \cdot 0.2\\0.368 \cdot 0.560 + 0.5 \cdot 0.2\end{pmatrix} = \begin{pmatrix}0.547\\0.306\end{pmatrix}, \quad y_4 = 0.547 + 0.5 \cdot 0.306 = \mathbf{0.700}.
+\]
+
+The output sequence is $y = [0.750, 0.771, 1.016, 0.700]$. Notice how the state \emph{remembers} past inputs: $y_3 = 1.016$ is higher than $u_3 = 0.8$ because the state carries forward information from the earlier large input $u_1 = 1.0$. The exponential decay in $\bar{\mathbf{A}}$ ($0.607$ and $0.368$) ensures that older information fades, with the second state dimension decaying faster (modeling shorter-range dependencies).
+\end{example}
+
+\begin{bioinsight}[SSMs and Biological Signal Propagation]
+The state space formulation mirrors how biological neurons propagate signals. The state vector $x_k$ is analogous to membrane potential: it integrates incoming signals ($\bar{\mathbf{B}} u_k$) while decaying toward rest ($\bar{\mathbf{A}} x_{k-1}$). The HiPPO initialization ensures the ``neuron'' remembers a polynomial summary of its recent input history---remarkably similar to how synaptic plasticity encodes temporal patterns of stimulation. DOGMA's DNA computing layers implement a biological version of this principle: strand displacement cascades provide selective memory analogous to Mamba's input-dependent gating.
+\end{bioinsight}
+
 \subsection{Mamba: Selective State Spaces}
 \label{sec:mamba}
 
@@ -291,6 +334,34 @@ The selective scan over a sequence of length $T$ can be computed in $O(T \log T)
 \end{proposition}
 
 The key insight is that the recurrence $x_k = \bar{\mathbf{A}}_k x_{k-1} + \bar{\mathbf{B}}_k u_k$ can be reformulated as an associative binary operation, enabling the use of Blelloch's parallel prefix sum algorithm. Mamba further optimizes this by keeping the state in GPU SRAM (fast on-chip memory) rather than HBM (slow off-chip memory), achieving up to $3\times$ speedup over standard implementations.
+
+\begin{example}[Worked Example: Selective Scan with Actual Numbers]
+Process the same sequence $u = [1.0, 0.5, 0.8, 0.2]$ through a \emph{selective} Mamba layer ($n=2$). Unlike the fixed SSM above, here $\mathbf{B}_k$ and $\Delta_k$ are input-dependent:
+
+\[
+\mathbf{B}_k = W_B \cdot u_k, \quad \Delta_k = \text{softplus}(w_\Delta \cdot u_k + b_\Delta).
+\]
+
+With $W_B = [0.6,\; 0.4]^\top$, $w_\Delta = 1.0$, $b_\Delta = -0.5$, $\mathbf{A} = \text{diag}(-1, -2)$, $\mathbf{C} = [1, 0.5]$:
+
+\textbf{Step 1} ($u_1 = 1.0$): $\Delta_1 = \text{softplus}(1.0 - 0.5) = \ln(1 + e^{0.5}) \approx 0.974$.
+\[
+\bar{\mathbf{A}}_1 = \begin{pmatrix}e^{-0.974}\\&e^{-1.948}\end{pmatrix} \approx \begin{pmatrix}0.378\\&0.143\end{pmatrix}, \quad \bar{\mathbf{B}}_1 \approx 0.974 \begin{pmatrix}0.6\\0.4\end{pmatrix} = \begin{pmatrix}0.584\\0.390\end{pmatrix}.
+\]
+$x_1 = \bar{\mathbf{B}}_1 \cdot 1.0 = [0.584, 0.390]^\top$, \quad $y_1 = 0.584 + 0.5 \cdot 0.390 = \mathbf{0.779}$.
+
+\textbf{Step 2} ($u_2 = 0.5$): $\Delta_2 = \text{softplus}(0.5 - 0.5) = \ln 2 \approx 0.693$.
+\[
+\bar{\mathbf{A}}_2 \approx \begin{pmatrix}0.500\\&0.250\end{pmatrix}, \quad \bar{\mathbf{B}}_2 \approx 0.693 \begin{pmatrix}0.3\\0.2\end{pmatrix} = \begin{pmatrix}0.208\\0.139\end{pmatrix}.
+\]
+$x_2 = [0.500 \cdot 0.584 + 0.208 \cdot 0.5,\; 0.250 \cdot 0.390 + 0.139 \cdot 0.5]^\top = [0.396, 0.167]^\top$, \quad $y_2 = \mathbf{0.480}$.
+
+Notice how the \emph{smaller} input $u_2 = 0.5$ produces a \emph{smaller} $\Delta_2 = 0.693 < 0.974$, which makes $\bar{\mathbf{A}}_2$ larger ($0.500 > 0.378$). This means the model \emph{remembers more} when the input is weak (nothing important to overwrite) and \emph{forgets more} when the input is strong (make room for new information). This is the essence of selectivity.
+\end{example}
+
+\begin{implnote}[Connection to DOGMA's ParallelScan Path]
+DOGMA's Path B (Automaton) in the DNA Computing Block uses the \emph{same} parallel scan algorithm as Mamba, but with a key difference: the state dimension is biologically motivated (automaton states represent molecular configurations) rather than arbitrary. The scan state $s_k = \bar{\mathbf{A}}_k s_{k-1} + \bar{\mathbf{B}}_k x_k$ is computed using the same Blelloch prefix sum, giving DOGMA's automaton path $O(T \log T)$ complexity identical to Mamba. The biological grounding means each state dimension has an interpretable meaning (e.g., ``concentration of species $i$''), unlike Mamba's opaque hidden states.
+\end{implnote}
 
 % ───────────────────────────────────────────────────────────────────────────────
 \section{RWKV and Linear Attention}
@@ -511,6 +582,68 @@ DOGMA's four base types create four parallel processing pathways through the arc
 \end{center}
 
 This four-path diversity means that scaling one capability (e.g., knowledge storage) does not require scaling all capabilities proportionally, unlike a dense transformer where all parameters participate in every computation.
+
+\subsection{Parameter Allocation: DOGMA vs.\ Transformer}
+
+To understand DOGMA's scaling at a concrete level, let us compare exactly where 224.7M parameters are allocated in DOGMA-Supreme versus a standard Transformer of equal size.
+
+\begin{table}[H]
+\centering
+\caption{Parameter allocation comparison: DOGMA-Supreme (224.7M) vs.\ Transformer (224M). Both use $d=512$, $T=512$.}
+\label{tab:param-allocation}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.95\textwidth}{L{4cm} C{2.5cm} C{2.5cm} Y}
+\toprule
+\textbf{Component} & \textbf{DOGMA} & \textbf{Transformer} & \textbf{Notes} \\
+\midrule
+Token embedding & 0.13M & 16.4M & DOGMA: $257 \times 512$; Trans: $32{,}000 \times 512$ \\
+TetraMemory & 33.8M & --- & $K_4$ graph ops, face propagation, multi-scale \\
+DNA Computing (4 paths) & 88.3M & --- & Strand displ.\ + automaton + stochastic + double \\
+Regulation Gate & 22.4M & --- & Sigmoid gating, analogous to Trans.\ layer norm \\
+Strand Attention & 44.8M & 100.7M & Thermo-weighted vs.\ $\mathbf{QKV}$ projections \\
+Expression Folder & 22.4M & --- & LayerNorm + MLP folding \\
+FFN / MLP & --- & 100.7M & $4d \times d$ up/down projections \\
+Epigenetic Memory & 8.4M & --- & Persistent cross-block state \\
+Allosteric Regulation & 4.2M & --- & Sparse top-$k$ communication \\
+Output head & 0.13M & 6.1M & DOGMA: byte-level; Trans: 32K vocab \\
+\midrule
+\textbf{Total} & \textbf{224.7M} & \textbf{224M} & \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{keyinsight}[Where the Parameters Go]
+The fundamental difference is \emph{diversity vs.\ uniformity}. A Transformer distributes parameters equally across identical layers, each with the same attention + FFN structure. DOGMA distributes parameters across \emph{functionally specialized} components. This means:
+\begin{itemize}[leftmargin=1.5em]
+  \item DOGMA's 4-path DNA Computing Block uses 39\% of parameters but provides three independent Turing-completeness proofs---a Transformer's FFN is a universal approximator but not a structured computer.
+  \item DOGMA's tiny embedding layer (0.13M vs.\ 16.4M) reflects byte-level tokenization: 257 tokens vs.\ 32,000 BPE tokens. This is more parameter-efficient but shifts the burden of ``understanding'' tokens to the DNA computing layers.
+  \item DOGMA spends 15\% of parameters on TetraMemory (local structure) and 20\% on Strand Attention (global structure), providing a natural local/global split that Transformers achieve implicitly through attention head specialization.
+\end{itemize}
+\end{keyinsight}
+
+\subsection{Per-Block FLOP Analysis}
+
+For a concrete sense of computational cost, here is the FLOP count for one DOGMA block processing a batch of shape $(B{=}4, T{=}512, d{=}512)$:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{0.95\textwidth}{L{4cm} C{3cm} Y}
+\toprule
+\textbf{Stage} & \textbf{FLOPs per block} & \textbf{Computation} \\
+\midrule
+TetraMemory & $\sim$0.5B & $4 \times B \times T \times d$ face ops \\
+DNA Compute (4 paths) & $\sim$2.1B & CRN: $B \times T \times 64 \times 32$; Scan: $O(T \log T)$; etc. \\
+Regulation Gate & $\sim$0.5B & $B \times T \times 2d^2$ (gate projection) \\
+Strand Attention & $\sim$1.1B & $B \times T^2 \times d / h$ (thermo-weighted) \\
+Expression Folder & $\sim$0.5B & $B \times T \times 4d^2$ (MLP folding) \\
+\midrule
+\textbf{Total per block} & $\sim$4.7B & \\
+\textbf{16 blocks} & $\sim$75B & Comparable to 12-layer Transformer ($\sim$72B) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The total per-forward-pass cost is comparable to a same-sized Transformer, but the \emph{distribution} of compute is fundamentally different: DOGMA spends 45\% of FLOPs in the DNA Computing Block (structured computation) while a Transformer spends 67\% in FFN layers (unstructured matrix multiplications).
 
 \subsection{Complexity Analysis}
 

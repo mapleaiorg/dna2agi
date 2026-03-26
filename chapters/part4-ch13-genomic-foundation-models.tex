@@ -201,8 +201,8 @@ Each tokenization method excels in a specific regime: BPE for text-heavy corpora
 
 % BPE path
 \node[box, fill=red!15, minimum width=3cm] (bpe) at (-4, 3) {BPE Tokenizer};
-\node[seqbox, minimum width=3.5cm] (bpeout) at (-4, 2) {[AT][GC][GA][TC][GA][TG]};
-\node[font=\scriptsize, text=red!70!black] at (-4, 1.5) {Arbitrary boundaries};
+\node[seqbox, minimum width=3.5cm] (bpeout) at (-4.5, 2) {[AT][GC][GA][TC][GA][TG]};
+\node[font=\scriptsize, text=red!70!black] at (-4.5, 1.5) {Arbitrary boundaries};
 
 % k-mer path
 \node[box, fill=orange!15, minimum width=3cm] (kmer) at (0, 3) {6-mer Tokenizer};
@@ -565,10 +565,10 @@ Batches are constructed with curriculum-aware sampling (Equation~\ref{eq:curricu
 \node[process, minimum width=8cm] (render) at (3.75, 3.2) {Structured Rendering (codon / $k$-mer / annotated)};
 
 % Curriculum stages
-\node[stage, fill=green!15] (s1) at (0, 1.8) {Stage 1\\Synthetic};
+\node[stage, fill=green!15] (s1) at (-0.5, 1.8) {Stage 1\\Synthetic};
 \node[stage, fill=yellow!15] (s2) at (2.5, 1.8) {Stage 2\\Single Gene};
-\node[stage, fill=orange!15] (s3) at (5, 1.8) {Stage 3\\Multi-Gene};
-\node[stage, fill=red!15] (s4) at (7.5, 1.8) {Stage 4\\Chromosomal};
+\node[stage, fill=orange!15] (s3) at (5.5, 1.8) {Stage 3\\Multi-Gene};
+\node[stage, fill=red!15] (s4) at (8.5, 1.8) {Stage 4\\Chromosomal};
 
 % Batching
 \node[process, minimum width=8cm, fill=purple!10] (batch) at (3.75, 0.4) {Curriculum-Aware Batching};
@@ -1200,7 +1200,7 @@ Figure~\ref{fig:image-dna-pipeline} illustrates the complete image-to-DNA-to-ima
   % Arrows
   \draw[arr] (s1) -- (s2);
   \draw[arr] (s2) -- (s3);
-  \draw[arr] (s3.south) -- ++(0,-0.3) -| (s4.north);
+  \draw[arr] (s3.south) -- ++(0,-1.0) -| (s4.north);
   \draw[arr] (s4) -- (s5);
   \draw[arr] (s5) -- (out);
 
@@ -1473,21 +1473,21 @@ Figure~\ref{fig:multimodal-pipeline} illustrates how image, video, and audio dat
   \node[srcbox=yellow!15, right=0.5cm of prot] (mol) {Molecule};
 
   % Point cloud row
-  \node[box=gray!8, below=0.7cm of $(img)!0.5!(vid)$, text width=1.6cm] (pc1) {Point\\Cloud};
+  \node[box=gray!8, below=1.0cm of $(img)!0.5!(vid)$, text width=1.6cm] (pc1) {Point\\Cloud};
   \node[box=gray!8, below=0.7cm of aud, text width=1.6cm] (pc2) {Point\\Cloud};
-  \node[box=gray!8, below=0.7cm of $(prot)!0.5!(mol)$, text width=1.6cm] (pc3) {Point\\Cloud};
+  \node[box=gray!8, below=1.0cm of $(prot)!0.5!(mol)$, text width=1.6cm] (pc3) {Point\\Cloud};
 
   % TetraMesh row
-  \node[box=dogmamint, below=0.7cm of pc2, text width=2.0cm, minimum width=2.6cm] (tm) {TetraMesh\\(512-d, 128 tok)};
+  \node[box=dogmamint, below=0.7cm of pc2, text width=4.0cm, minimum width=6.0cm] (tm) {TetraMesh\\(512-d, 128 tok)};
 
   % DNA sequence
-  \node[box=dogmalight, below=0.6cm of tm, text width=2.2cm, minimum width=2.8cm] (dna) {DNA Base\\Sequence (ACGT)};
+  \node[box=dogmalight, below=0.6cm of tm, text width=4.0cm, minimum width=6.0cm] (dna) {DNA Base\\Sequence (ACGT)};
 
   % Central Dogma
-  \node[box=red!8, below=0.6cm of dna, text width=2.8cm, minimum width=3.4cm] (dogma) {Central Dogma Pipeline\\224.7M params, 16 layers};
+  \node[box=red!8, below=0.6cm of dna, text width=4.0cm, minimum width=6.0cm] (dogma) {Central Dogma Pipeline\\224.7M params, 16 layers};
 
   % Realizations
-  \node[outbox, below left=0.7cm and 2.0cm of dogma] (r1) {Text};
+  \node[outbox, below left=0.7cm and 0.2cm of dogma] (r1) {Text};
   \node[outbox, right=0.2cm of r1] (r2) {Code};
   \node[outbox, right=0.2cm of r2] (r3) {JSON};
   \node[outbox, right=0.2cm of r3] (r4) {Action};
@@ -1530,7 +1530,7 @@ Figure~\ref{fig:traditional-vs-dogma} contrasts the conventional multi-encoder a
 \centering
 \begin{tikzpicture}[
   node distance=0.6cm,
-  tbox/.style={draw, rounded corners=3pt, minimum height=0.7cm, font=\footnotesize, fill=#1, align=center, text width=2.2cm},
+  tbox/.style={draw, rounded corners=3pt, minimum height=0.7cm, font=\footnotesize, fill=#1, align=center, text width=4.0cm},
   lbl/.style={font=\small\bfseries, align=center},
   arr/.style={-{Stealth[length=4pt]}, semithick},
   sep/.style={draw, dashed, gray!60, line width=0.8pt},
@@ -1540,25 +1540,25 @@ Figure~\ref{fig:traditional-vs-dogma} contrasts the conventional multi-encoder a
 
   % Separate encoders
   \node[tbox=red!10, below=0.4cm of tlbl] (tcnn) {CNN\\(Image Encoder)};
-  \node[tbox=blue!10, below=0.3cm of tcnn] (trnn) {3D CNN / ViViT\\(Video Encoder)};
-  \node[tbox=green!10, below=0.3cm of trnn] (twave) {WaveNet\\(Audio Encoder)};
+  \node[tbox=blue!10, below=0.4cm of tcnn] (trnn) {3D CNN / ViViT\\(Video Encoder)};
+  \node[tbox=green!10, below=0.4cm of trnn] (twave) {WaveNet\\(Audio Encoder)};
 
   % Fusion
-  \node[tbox=gray!15, below=0.5cm of trnn, xshift=0cm, text width=2.2cm] (tfuse) {Multi-Modal\\Fusion Layer};
+  \node[tbox=gray!15, below=0.4cm of twave, text width=2.2cm] (tfuse) {Multi-Modal\\Fusion Layer};
 
   % Separate decoders
-  \node[tbox=orange!10, below=0.5cm of tfuse] (tdec) {Task-Specific\\Decoder};
+  \node[tbox=orange!10, below=0.4cm of tfuse] (tdec) {Task-Specific\\Decoder};
 
-  \draw[arr] (tcnn.south) -- (tfuse);
-  \draw[arr] (trnn.south) -- (tfuse);
+  \draw[arr] (tcnn.west) -- ++(-0.50,0) |- ([yshift=-0.2cm]tfuse.west);
+  \draw[arr] (trnn.west) -- ++(-0.25,0) |- ([yshift=0.2cm]tfuse.west);
   \draw[arr] (twave.south) -- (tfuse);
   \draw[arr] (tfuse) -- (tdec);
 
   % === Separator ===
-  \draw[sep] ($(tlbl.east)+(1.4,0.3)$) -- ($(tdec.east)+(1.4,-0.5)$);
+  \draw[sep] ($(tlbl.east)+(2.3,0.3)$) -- ($(tdec.east)+(1.6,-0.3)$);
 
   % === Right side: DOGMA ===
-  \node[lbl, right=3.0cm of tlbl] (dlbl) {DOGMA};
+  \node[lbl, right=5.0cm of tlbl] (dlbl) {DOGMA};
 
   % All inputs
   \node[tbox=purple!8, below=0.4cm of dlbl] (dinp) {Image / Video /\\Audio / Protein};

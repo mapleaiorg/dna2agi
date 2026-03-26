@@ -215,8 +215,8 @@ Figure~\ref{fig:evo-loop-cycle} visualizes the loop as a cycle diagram.
 % Nodes arranged in a circle
 \node[stage, fill=dogmamint] (load) {LOAD};
 \node[stage, fill=dogmagold!50, right=of load] (distill) {DISTILL\\[-2pt]{\scriptsize (optional)}};
-\node[stage, fill=dogmalight, below right=1.8cm and 1.4cm of distill] (evaluate) {EVALUATE};
-\node[stage, fill=dogmawarm!60, below left=1.8cm and 1.4cm of distill] (mutate) {MUTATE};
+\node[stage, fill=dogmalight, below right=2.0cm and 0.1cm of distill] (evaluate) {EVALUATE};
+\node[stage, fill=dogmawarm!60, below left=2.0cm and 0.1cm of distill] (mutate) {MUTATE};
 \node[stage, fill=dogmared!30, left=of mutate] (select) {SELECT};
 
 % Arrows
@@ -224,7 +224,7 @@ Figure~\ref{fig:evo-loop-cycle} visualizes the loop as a cycle diagram.
 \draw[arrow] (distill) -- (evaluate) node[midway, right, label, xshift=2mm] {teacher refs};
 \draw[arrow] (evaluate) -- (mutate) node[midway, below, label] {scores $\mathbf{s}_g$};
 \draw[arrow] (mutate) -- (select) node[midway, above, label] {mutant $\mathcal{B}'_g$};
-\draw[arrow, dogmared] (select) to[bend left=30] node[midway, left, label, xshift=-2mm] {next\\generation} (evaluate);
+\draw[arrow, dogmared] (select) to[bend right=30] node[midway, left, label, xshift=-2mm] {next\\generation} (evaluate);
 
 % Central label
 \node[font=\Large\sffamily\bfseries, text=dogmablue] at ($(evaluate)!0.5!(mutate) + (0, 1.2)$) {Evolutionary Loop};
@@ -382,6 +382,143 @@ Crossover is most effective when the population contains diverse, high-fitness i
 
 \begin{bioinsight}[Why Sex Evolved]
 In biology, sexual reproduction exists precisely because crossover is a powerful source of beneficial variation. Asexual organisms (which rely on mutation alone) adapt more slowly in changing environments because they cannot combine advantageous alleles from different lineages. The same principle applies in prompt evolution: mutation alone explores the fitness landscape through local steps, while crossover enables large leaps by combining independently evolved solutions.
+\end{bioinsight}
+
+\subsection{Single-Point Crossover}
+
+The simplest crossover variant selects a single \emph{crossover point} $j$ within the gene and takes all fragments before $j$ from one parent and all fragments at or after $j$ from the other. This mirrors the biological mechanism where a single chromosomal break-and-rejoin event produces two recombinant chromosomes.
+
+\begin{definition}[Single-Point Crossover]
+Given two parent genes $g_a = (f_1^a, f_2^a, \ldots, f_m^a)$ and $g_b = (f_1^b, f_2^b, \ldots, f_m^b)$, and a crossover point $j \in \{1, 2, \ldots, m-1\}$, single-point crossover produces two offspring:
+\begin{align}
+g_{c_1} &= (f_1^a, f_2^a, \ldots, f_j^a, f_{j+1}^b, \ldots, f_m^b), \\
+g_{c_2} &= (f_1^b, f_2^b, \ldots, f_j^b, f_{j+1}^a, \ldots, f_m^a).
+\end{align}
+\end{definition}
+
+\begin{example}[Single-Point Crossover: A Worked Example]
+Consider two parent \texttt{system.md} genes, each with five fragments:
+
+\medskip
+\noindent\textbf{Parent A} (high accuracy, low schema compliance):
+\begin{align*}
+g_a &= (\underbrace{f_1^a}_{\text{persona}},\; \underbrace{f_2^a}_{\text{domain}},\; \underbrace{f_3^a}_{\text{reasoning}},\; \underbrace{f_4^a}_{\text{format}},\; \underbrace{f_5^a}_{\text{examples}})
+\end{align*}
+
+\noindent where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $f_1^a$: ``You are a clinical pharmacology expert.''
+  \item $f_2^a$: ``Reference specific drug mechanisms when answering.''
+  \item $f_3^a$: ``Think through differential diagnoses step by step.''
+  \item $f_4^a$: ``Provide your answer in paragraph form.''
+  \item $f_5^a$: ``Example: Warfarin inhibits vitamin K epoxide reductase\ldots''
+\end{itemize}
+
+\noindent\textbf{Parent B} (low accuracy, high schema compliance):
+\begin{align*}
+g_b &= (\underbrace{f_1^b}_{\text{persona}},\; \underbrace{f_2^b}_{\text{domain}},\; \underbrace{f_3^b}_{\text{reasoning}},\; \underbrace{f_4^b}_{\text{format}},\; \underbrace{f_5^b}_{\text{examples}})
+\end{align*}
+
+\noindent where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $f_1^b$: ``You are a medical information assistant.''
+  \item $f_2^b$: ``Provide general health guidance.''
+  \item $f_3^b$: ``Keep answers brief and direct.''
+  \item $f_4^b$: ``Always respond with valid JSON: \texttt{\{"answer": "...", "confidence": "..."\}}.''
+  \item $f_5^b$: ``Example: \texttt{\{"answer": "Ibuprofen is an NSAID", "confidence": "high"\}}.''
+\end{itemize}
+
+\noindent With crossover point $j = 3$ (cut after the third fragment):
+
+\medskip
+\noindent\textbf{Offspring 1}: $(f_1^a, f_2^a, f_3^a, f_4^b, f_5^b)$ --- inherits the strong reasoning fragments from Parent~A and the strong formatting fragments from Parent~B. This offspring has both deep domain reasoning \emph{and} strict JSON output format.
+
+\noindent\textbf{Offspring 2}: $(f_1^b, f_2^b, f_3^b, f_4^a, f_5^a)$ --- inherits the general persona from Parent~B with the paragraph-style output from Parent~A. This offspring is typically less fit, demonstrating that crossover produces variance in both directions.
+\end{example}
+
+\subsection{Uniform Crossover}
+
+Uniform crossover makes an independent random choice for each fragment position, drawing from Parent~A with probability $p$ and from Parent~B with probability $1 - p$. The parameter $p$ controls the mixing ratio; $p = 0.5$ gives equal contribution from both parents.
+
+\begin{definition}[Uniform Crossover]
+Given two parent genes $g_a$ and $g_b$ with $m$ fragments, and a mixing probability $p \in [0, 1]$, uniform crossover produces one offspring:
+\begin{equation}
+f_i^c = \begin{cases} f_i^a & \text{with probability } p, \\ f_i^b & \text{with probability } 1 - p, \end{cases} \quad \text{independently for each } i = 1, \ldots, m.
+\end{equation}
+The expected number of fragments from Parent~A is $pm$, and the variance in the mixing ratio is $p(1-p)/m$, which decreases with gene length.
+\end{definition}
+
+\begin{implnote}[Choosing Between Crossover Types]
+Single-point crossover preserves contiguous blocks of co-adapted fragments---useful when adjacent fragments interact strongly (e.g., an instruction and its example). Uniform crossover maximizes recombination and is preferred when fragments are relatively independent. In practice, the evolutionary loop uses single-point crossover within individual genes (preserving local structure) and uniform crossover across genes (mixing \texttt{system.md} from one parent with \texttt{task.md} from another).
+\end{implnote}
+
+\subsection{Crossover on Prompt Fragments: The Homologous Recombination Analogy}
+
+In molecular biology, \emph{homologous recombination} requires that the two DNA sequences share regions of sequence similarity (homology) flanking the crossover site. Without homology, recombination produces non-functional chimeras. The same principle applies to prompt crossover: fragments can only be meaningfully recombined when they occupy \emph{homologous positions}---the same functional role within the gene.
+
+Consider two \texttt{system.md} genes that both contain a ``Persona'' section, a ``Constraints'' section, and an ``Output Format'' section, but in different orders. Naive positional crossover (cutting at position 3) would splice the end of the Persona section from one parent with the middle of the Output Format section from the other---producing an incoherent chimera.
+
+The evolutionary loop avoids this by performing \emph{alignment before crossover}: fragments are matched by their functional role (identified via section headings, semantic similarity, or structural position), and crossover operates on aligned positions. This is the prompt-space analogue of homologous recombination:
+
+\begin{equation}
+\text{align}: (g_a, g_b) \to \bigl\{(f_i^a, f_{\pi(i)}^b)\bigr\}_{i=1}^{m},
+\end{equation}
+where $\pi$ is a permutation that maps fragment positions in Parent~B to their homologous positions in Parent~A. Crossover then operates on the aligned pairs, ensuring that each offspring position receives fragments with the same functional role.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  frag/.style={draw, minimum width=2.0cm, minimum height=0.7cm, font=\small\ttfamily, rounded corners=2pt},
+  arrow/.style={-{Stealth[length=2.5mm]}, thick},
+  lbl/.style={font=\small\sffamily, align=center}
+]
+% Parent A
+\node[lbl, font=\sffamily\bfseries] at (0, 4.2) {Parent A};
+\node[frag, fill=dogmablue!25] (a1) at (-2, 3.4) {persona};
+\node[frag, fill=dogmablue!25] (a2) at (0, 3.4) {domain};
+\node[frag, fill=dogmablue!25] (a3) at (2, 3.4) {reason};
+\node[frag, fill=dogmablue!25] (a4) at (4, 3.4) {format};
+\node[frag, fill=dogmablue!25] (a5) at (6, 3.4) {examples};
+
+% Parent B
+\node[lbl, font=\sffamily\bfseries] at (0, 1.8) {Parent B};
+\node[frag, fill=dogmared!25] (b1) at (-2, 1.0) {persona};
+\node[frag, fill=dogmared!25] (b2) at (0, 1.0) {domain};
+\node[frag, fill=dogmared!25] (b3) at (2, 1.0) {reason};
+\node[frag, fill=dogmared!25] (b4) at (4, 1.0) {format};
+\node[frag, fill=dogmared!25] (b5) at (6, 1.0) {examples};
+
+% Crossover point line
+\draw[thick, dashed, dogmared] (3, 4.0) -- (3, 0.4);
+\node[lbl, text=dogmared, font=\sffamily\bfseries\small] at (3, 0.0) {crossover point $j{=}3$};
+
+% Offspring
+\node[lbl, font=\sffamily\bfseries] at (0, -1.2) {Offspring 1};
+\node[frag, fill=dogmablue!25] (c1) at (-2, -2.0) {persona};
+\node[frag, fill=dogmablue!25] (c2) at (0, -2.0) {domain};
+\node[frag, fill=dogmablue!25] (c3) at (2, -2.0) {reason};
+\node[frag, fill=dogmared!25] (c4) at (4, -2.0) {format};
+\node[frag, fill=dogmared!25] (c5) at (6, -2.0) {examples};
+
+% Arrows from parents to offspring
+\draw[arrow, dogmablue!60] (a1.south) -- (c1.north);
+\draw[arrow, dogmablue!60] (a2.south) -- (c2.north);
+\draw[arrow, dogmablue!60] (a3.south) -- (c3.north);
+\draw[arrow, dogmared!60] (b4.south) -- (c4.north);
+\draw[arrow, dogmared!60] (b5.south) -- (c5.north);
+
+% Legend
+\node[frag, fill=dogmablue!25, minimum width=1.2cm] at (8.5, 3.4) {};
+\node[right, font=\small\sffamily] at (9.2, 3.4) {From A};
+\node[frag, fill=dogmared!25, minimum width=1.2cm] at (8.5, 2.6) {};
+\node[right, font=\small\sffamily] at (9.2, 2.6) {From B};
+\end{tikzpicture}
+\caption{Single-point crossover on prompt fragments. Parent~A contributes fragments 1--3 (persona, domain knowledge, reasoning strategy) and Parent~B contributes fragments 4--5 (output format, examples). The crossover point at $j=3$ is chosen to separate reasoning-oriented content from formatting-oriented content, producing an offspring that combines the strengths of both parents.}
+\label{fig:crossover-diagram}
+\end{figure}
+
+\begin{bioinsight}[Homologous Recombination in DNA]
+In biology, homologous recombination is catalyzed by the RecA protein (in bacteria) or Rad51 (in eukaryotes), which aligns homologous sequences before strand exchange. The alignment step is critical: recombination between non-homologous sequences causes chromosomal rearrangements that are typically deleterious. The evolutionary loop's fragment alignment step serves the same protective function, ensuring that crossover produces semantically coherent offspring rather than garbled chimeras.
 \end{bioinsight}
 
 % ───────────────────────────────────────────────────────────────────────────────

@@ -209,9 +209,9 @@ Figure~\ref{fig:attention-mechanism} illustrates the self-attention mechanism wi
   \draw[attnh] (v3.north) to[bend right=5] (o3.south);
 
   % Legend
-  \node[font=\scriptsize, dogmablue] at (7.5, 4.2) {Low attention};
+  \node[font=\scriptsize, dogmablue] at (8.0, 4.2) {Low attention};
   \draw[attn] (6.5, 4.2) -- (7.0, 4.2);
-  \node[font=\scriptsize, dogmared] at (7.5, 3.7) {High attention};
+  \node[font=\scriptsize, dogmared] at (8.0, 3.7) {High attention};
   \draw[attnh] (6.5, 3.7) -- (7.0, 3.7);
 \end{tikzpicture}
 \caption{Self-attention mechanism for three tokens. Each token is projected into query ($\mathbf{q}$), key ($\mathbf{k}$), and value ($\mathbf{v}$) vectors. Attention scores (computed as $\mathbf{q}_i \cdot \mathbf{k}_j / \sqrt{d_k}$, then softmax-normalized) determine how much of each value vector contributes to each output. Thicker red arrows indicate higher attention weights.}
@@ -410,16 +410,16 @@ Figure~\ref{fig:transformer-block} illustrates the structure of a single transfo
   \draw[arr] (add2) -- (output);
 
   % Residual connections
-  \draw[skip] (input.east) -- ++(1.8,0) |- (add1.east);
-  \draw[skip] (add1.east) -- ++(2.1,0) |- (add2.east);
+  \draw[skip] (input.east) -- ++(1.8,0) |- ([yshift=-2mm]add1.east);
+  \draw[skip] (add1.east) -- ++(1.6,0) |- (add2.east);
 
   % Labels for residual
-  \node[font=\scriptsize, gray] at (2.6, 1.6) {residual};
-  \node[font=\scriptsize, gray] at (2.9, 4.8) {residual};
+  \node[font=\scriptsize, gray] at (3.0, 1.6) {residual};
+  \node[font=\scriptsize, gray] at (3.3, 4.8) {residual};
 
   % Annotations
-  \node[annot, anchor=west] at (3.2, 2.2) {$h$ parallel heads\\each $d_k = d/h$};
-  \node[annot, anchor=west] at (3.2, 5.4) {$\text{ReLU}(\mathbf{x}\mathbf{W}_1\!+\!\mathbf{b}_1)\mathbf{W}_2\!+\!\mathbf{b}_2$\\inner dim $= 4d$};
+  \node[annot, anchor=west] at (4.0, 2.2) {$h$ parallel heads\\each $d_k = d/h$};
+  \node[annot, anchor=west] at (4.2, 5.4) {$\text{ReLU}(\mathbf{x}\mathbf{W}_1\!+\!\mathbf{b}_1)\mathbf{W}_2\!+\!\mathbf{b}_2$\\inner dim $= 4d$};
 
   % N times bracket
   \draw[decorate, decoration={brace, amplitude=6pt, mirror}, thick] (-3.4, 0.6) -- (-3.4, 6.8);
@@ -893,29 +893,29 @@ Multi-stage processing & Single left-to-right pass & DNA $\to$ RNA $\to$ Protein
 \begin{figure}[htbp]
 \centering
 \begin{tikzpicture}[
-  block/.style={draw, rounded corners=4pt, minimum width=2.6cm, minimum height=0.7cm, font=\small\sffamily, align=center},
+  block/.style={draw, rounded corners=4pt, minimum width=4.2cm, minimum height=0.7cm, font=\small\sffamily, align=center},
   arrow/.style={-{Stealth[length=2.5mm]}, thick},
   lbl/.style={font=\scriptsize\sffamily\itshape, text=dogmagray, align=center},
   colsep/.style={draw=dogmagray!50, dashed, very thin},
 ]
 % Column headers
-\node[font=\bfseries\sffamily, text=dogmablue] at (0, 4.5) {Transformer};
-\node[font=\bfseries\sffamily, text=dogmagray] at (3.6, 4.5) {Analogy};
-\node[font=\bfseries\sffamily, text=dogmateal] at (7.2, 4.5) {DOGMA};
+\node[font=\bfseries\sffamily, text=dogmablue] at (-1, 4.5) {Transformer};
+\node[font=\bfseries\sffamily, text=dogmagray] at (3.0, 4.5) {Analogy};
+\node[font=\bfseries\sffamily, text=dogmateal] at (7.8, 4.5) {DOGMA};
 
 % Transformer column
-\node[block, fill=dogmalight] (tpe) at (0, 3.6) {Positional\\Encoding};
-\node[block, fill=dogmalight] (temb) at (0, 2.5) {Token\\Embedding};
-\node[block, fill=dogmalight] (tatt) at (0, 1.4) {Self-Attention};
-\node[block, fill=dogmalight] (tffn) at (0, 0.3) {Feed-Forward\\Network};
-\node[block, fill=dogmalight] (tout) at (0, -0.8) {Linear +\\Softmax};
+\node[block, fill=dogmalight] (tpe) at (-1, 3.6) {Positional Encoding};
+\node[block, fill=dogmalight] (temb) at (-1, 2.5) {Token Embedding};
+\node[block, fill=dogmalight] (tatt) at (-1, 1.4) {Self-Attention};
+\node[block, fill=dogmalight] (tffn) at (-1, 0.3) {Feed-Forward Network};
+\node[block, fill=dogmalight] (tout) at (-1, -0.8) {Linear + Softmax};
 
 % DOGMA column
-\node[block, fill=dogmamint] (dge) at (7.2, 3.6) {Genomic\\Embedding};
-\node[block, fill=dogmamint] (dreg) at (7.2, 2.5) {Typed Region\\Encoding};
-\node[block, fill=dogmamint] (dsa) at (7.2, 1.4) {Strand\\Attention};
-\node[block, fill=dogmamint] (ddna) at (7.2, 0.3) {DNA Computing\\Block};
-\node[block, fill=dogmamint] (drea) at (7.2, -0.8) {Realization\\Stage};
+\node[block, fill=dogmamint] (dge) at (7.8, 3.6) {Genomic Embedding};
+\node[block, fill=dogmamint] (dreg) at (7.8, 2.5) {Typed Region Encoding};
+\node[block, fill=dogmamint] (dsa) at (7.8, 1.4) {Strand Attention};
+\node[block, fill=dogmamint] (ddna) at (7.8, 0.3) {DNA Computing Block};
+\node[block, fill=dogmamint] (drea) at (7.8, -0.8) {Realization Stage};
 
 % Analogy arrows
 \draw[arrow, dogmagold, densely dashed] (tpe) -- (dge) node[midway, above, lbl] {position $\to$ helix coordinates};
